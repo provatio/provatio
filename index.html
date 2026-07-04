@@ -3544,6 +3544,71 @@ function renderSoon(){
 // ══════════════════════════════════════════════════════════════════════
 
 // ── EXPORTAR OPERACIÓN COMPLETA ──
+
+
+async function restaurarBackup(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = async(e) => {
+    try {
+      const backup = JSON.parse(e.target.result);
+      
+      if(!backup.version || !backup.ingredientes || !backup.recetas){
+        showToast('Archivo de backup inválido','error');
+        return;
+      }
+      
+      if(!confirm(`¿Restaurar backup del ${backup.timestamp}?\n\nEsto va a reemplazar los datos actuales de la operación.`)) return;
+      
+      // Restaurar datos
+      demoData.ingredientes = backup.ingredientes;
+      demoData.mermas = backup.mermas || [];
+      
+      // Restaurar recetas de esta operación
+      demoData.recetas = demoData.recetas.filter(r=>r.opId !== currentOpId);
+      backup.recetas.forEach(r=>{ r.opId = currentOpId; demoData.recetas.push(r); });
+      
+      // Guardar en Firebase
+      await guardarEnFirestore();
+      
+      navigate('dashboard');
+      showToast('Backup restaurado exitosamente ✓', 'success');
+    } catch(err){
+      showToast('Error al leer el backup: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function exportarBackup(){
+  const op = getOp();
+  const timestamp = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+  const backup = {
+    version: '1.0',
+    timestamp,
+    operacion: {
+      id: currentOpId,
+      ...op
+    },
+    ingredientes: demoData.ingredientes,
+    mermas: demoData.mermas,
+    recetas: getRecetas(),
+  };
+  
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `provatio-backup-${op.nombre.replace(/[^a-z0-9]/gi,'-')}-${timestamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Backup descargado ✓', 'success');
+}
+
 function exportarOperacion(){
   const op = getOp();
   const exportData = {
