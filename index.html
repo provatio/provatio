@@ -1753,7 +1753,7 @@ function buildSidebar(rol){
   const nav = document.getElementById('sidebar-nav');
   const items = rol==='admin' ? [
     {section:'Principal'},
-    {icon:'📊', label:'Dashboard', vista:'dashboard'},
+    {icon:'📊', label:'Panel general', vista:'dashboard'},
     {icon:'👥', label:'Clientes', vista:'clientes'},
     {section:'Operación'},
     {icon:'📋', label:'Ingredientes', vista:'ingredientes'},
@@ -1799,7 +1799,7 @@ function buildSidebar(rol){
 // ── NAVEGACIÓN ──
 function abrirOperacion(opId){
   currentOpId = opId;
-  navigate('dashboard');
+  navigate('operacion');
 }
 
 function navigate(vista, params={}){
@@ -1814,6 +1814,7 @@ function navigate(vista, params={}){
   
   const vistas = {
     dashboard: renderDashboard,
+    operacion: renderDashboardOperacion,
     clientes: renderClientes,
     ingredientes: renderIngredientes,
     mermas: renderMermas,
@@ -1844,55 +1845,177 @@ function setContent(titulo, html, acciones=''){
 // ══════════════════════════════════════════════════════════════════════
 
 // ── DASHBOARD ──
+// Dashboard: el admin ve el panel general (flota de clientes),
+// el cliente ve el resumen de su operación.
 function renderDashboard(){
-  const op = getOp();
-  const totalRecetas = getRecetas().length;
-  const totalIngs = demoData.ingredientes.length;
-  
-  // Calcular costo promedio de recetas
-  let costos = getRecetas().map(r=>{
-    const porciones = 120;
-    const {merc} = calcReceta(r, porciones);
-    return merc;
-  });
-  const avgMerc = costos.reduce((s,v)=>s+v,0)/costos.length||0;
-  const pct = avgMerc/op.precioVenta*100;
+  if(currentUser && currentUser.rol === 'admin') renderDashboardAdmin();
+  else renderDashboardOperacion();
+}
 
-  setContent('Dashboard', `
-    <!-- Alertas poka-yoke en dashboard -->
+// Estadísticas de una operación (rentabilidad por receta, no por operación)
+function opStats(opId){
+  const recetas = demoData.recetas.filter(r=>r.opId===opId);
+  const conPrecio = recetas.filter(r=>r.precioVenta>0);
+  let sumPct = 0, sumMerc = 0, nMerc = 0;
+  recetas.forEach(r=>{
+    const {merc} = calcReceta(r, r.porciones||1);
+    sumMerc += merc; nMerc++;
+    if(r.precioVenta>0) sumPct += merc/r.precioVenta*100;
+  });
+  return {
+    total: recetas.length,
+    conPrecio: conPrecio.length,
+    sinPrecio: recetas.length - conPrecio.length,
+    sinIngredientes: recetas.filter(r=>!r.ingredientes||r.ingredientes.length===0).length,
+    pctProm: conPrecio.length ? sumPct/conPrecio.length : null,
+    mercProm: nMerc ? sumMerc/nMerc : 0,
+  };
+}
+
+// ── DASHBOARD ADMIN — panel general de clientes/operaciones ──
+function renderDashboardAdmin(){
+  const ops = Object.values(demoData.operaciones);
+  const statsPorOp = ops.map(op=>({op, s: opStats(op.id)}));
+  const totalRecetas = statsPorOp.reduce((a,x)=>a+x.s.total,0);
+  const ingsSinPrecio = demoData.ingredientes.filter(i=>!i.precio||i.precio<=0);
+
+  // Alertas agregadas de todas las operaciones
+  const alerts = [];
+  if(ingsSinPrecio.length > 0) alerts.push(`⚠ ${ingsSinPrecio.length} ingrediente${ingsSinPrecio.length>1?'s':''} sin precio — los cálculos no serán correctos`);
+  statsPorOp.forEach(({op, s})=>{
+    if(s.sinPrecio > 0) alerts.push(`⚠ <strong>${op.nombre}</strong>: ${s.sinPrecio} receta${s.sinPrecio>1?'s':''} sin precio de venta`);
+    if(s.sinIngredientes > 0) alerts.push(`⚠ <strong>${op.nombre}</strong>: ${s.sinIngredientes} receta${s.sinIngredientes>1?'s':''} sin ingredientes`);
+  });
+
+  setContent('Panel general', `
+    ${alerts.length ? `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:16px;margin-bottom:20px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px">Acción requerida</div>
+      ${alerts.map(a=>`<div style="font-size:13px;margin-bottom:4px">${a}</div>`).join('')}
+    </div>` : ''}
+
+    <div class="metric-grid">
+      <div class="metric">
+        <div class="metric-label">Operaciones activas</div>
+        <div class="metric-value">${ops.length}</div>
+        <div class="metric-sub">clientes en gestión</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Recetas totales</div>
+        <div class="metric-value">${totalRecetas}</div>
+        <div class="metric-sub">en todas las operaciones</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Ingredientes</div>
+        <div class="metric-value">${demoData.ingredientes.length}</div>
+        <div class="metric-sub">${ingsSinPrecio.length ? ingsSinPrecio.length+' sin precio' : 'con precio actualizado'}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Alertas pendientes</div>
+        <div class="metric-value" style="color:${alerts.length?'var(--rojo, #A33)':'inherit'}">${alerts.length}</div>
+        <div class="metric-sub">${alerts.length ? 'requieren atención' : 'todo en orden'}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Operaciones / Clientes</span>
+        <button class="btn btn-primary btn-sm" onclick="modalNuevaOperacion()">+ Nueva operación</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Operación</th><th>Tipo</th>
+            <th style="text-align:right">Recetas</th>
+            <th style="text-align:right">% costo prom.</th>
+            <th>Salud</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${statsPorOp.length ? statsPorOp.map(({op, s})=>`<tr style="cursor:pointer" onclick="abrirOperacion('${op.id}')">
+              <td><strong>${op.nombre}</strong></td>
+              <td><span class="badge badge-op">${op.tipo==='catering'?'Catering':'Restaurante'}</span></td>
+              <td style="text-align:right">${s.total}${s.sinPrecio?` <span style="color:#B8860B;font-size:11px">(${s.sinPrecio} sin precio)</span>`:''}</td>
+              <td style="text-align:right">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : '<span style="color:var(--gris-3)">—</span>'}</td>
+              <td>${s.pctProm!==null ? semaforo(s.pctProm) : '<span style="color:var(--gris-3);font-size:12px">Sin datos</span>'}</td>
+              <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${op.id}')">Abrir →</button></td>
+            </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gris-3);padding:32px">Sin operaciones. Creá la primera.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Accesos rápidos</span></div>
+      <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        <button class="btn btn-secondary" onclick="modalNuevaOperacion()" style="padding:16px;flex-direction:column;gap:6px;height:auto">
+          <span style="font-size:24px">➕</span>
+          <strong>Nueva operación</strong>
+          <span style="font-size:12px;color:#5A5A52">Sumá un cliente</span>
+        </button>
+        <button class="btn btn-secondary" onclick="navigate('clientes')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
+          <span style="font-size:24px">👥</span>
+          <strong>Gestión de clientes</strong>
+          <span style="font-size:12px;color:#5A5A52">Usuarios y accesos</span>
+        </button>
+        <button class="btn btn-secondary" onclick="navigate('ingredientes')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
+          <span style="font-size:24px">📋</span>
+          <strong>Ingredientes</strong>
+          <span style="font-size:12px;color:#5A5A52">Actualizá precios</span>
+        </button>
+        <button class="btn btn-secondary" onclick="navigate('importExport')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
+          <span style="font-size:24px">↕️</span>
+          <strong>Importar / Exportar</strong>
+          <span style="font-size:12px;color:#5A5A52">Migrar datos</span>
+        </button>
+      </div>
+    </div>
+  `);
+}
+
+// ── DASHBOARD DE OPERACIÓN — rentabilidad por receta ──
+function renderDashboardOperacion(){
+  const op = getOp();
+  if(!op){ renderDashboardAdmin(); return; }
+  const esAdmin = currentUser && currentUser.rol === 'admin';
+  const s = opStats(op.id);
+
+  setContent(esAdmin ? op.nombre : 'Resumen', `
+    ${esAdmin ? `<div style="margin-bottom:14px">
+      <button class="btn btn-secondary btn-sm" onclick="navigate('dashboard')">← Volver al panel general</button>
+    </div>` : ''}
+
     ${(()=>{
       const alerts = [];
       const ingsSinPrecio = demoData.ingredientes.filter(i=>!i.precio||i.precio<=0);
       if(ingsSinPrecio.length > 0) alerts.push(`⚠ ${ingsSinPrecio.length} ingrediente${ingsSinPrecio.length>1?'s':''} sin precio — los cálculos no serán correctos`);
-      const recetasSinIng = getRecetas().filter(r=>!r.ingredientes||r.ingredientes.length===0);
-      if(recetasSinIng.length > 0) alerts.push(`⚠ ${recetasSinIng.length} receta${recetasSinIng.length>1?'s':''} sin ingredientes`);
-      if(!getOp().precioVenta||getOp().precioVenta<=0) alerts.push('⚠ Precio de venta no configurado — no podés ver la rentabilidad');
+      if(s.sinIngredientes > 0) alerts.push(`⚠ ${s.sinIngredientes} receta${s.sinIngredientes>1?'s':''} sin ingredientes`);
+      if(s.sinPrecio > 0) alerts.push(`⚠ ${s.sinPrecio} receta${s.sinPrecio>1?'s':''} sin precio de venta — <a href="#" onclick="navigate('recetas');return false" style="color:inherit;text-decoration:underline">cargalo en cada receta</a> para ver su rentabilidad`);
       if(alerts.length===0) return '';
       return `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:16px;margin-bottom:20px">
         <div style="font-weight:700;font-size:13px;margin-bottom:8px">Acción requerida</div>
         ${alerts.map(a=>`<div style="font-size:13px;margin-bottom:4px">${a}</div>`).join('')}
       </div>`;
     })()}
+
     <div class="metric-grid">
       <div class="metric">
-        <div class="metric-label">Operación activa</div>
+        <div class="metric-label">Operación</div>
         <div class="metric-value" style="font-size:15px;margin-top:4px">${op.nombre}</div>
         <div class="metric-sub">${op.tipo}</div>
       </div>
       <div class="metric">
         <div class="metric-label">Recetas cargadas</div>
-        <div class="metric-value">${totalRecetas}</div>
-        <div class="metric-sub">en ${demoData.mermas.length} combinaciones de merma</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Ingredientes</div>
-        <div class="metric-value">${totalIngs}</div>
-        <div class="metric-sub">con precio actualizado</div>
+        <div class="metric-value">${s.total}</div>
+        <div class="metric-sub">${s.conPrecio} con precio de venta</div>
       </div>
       <div class="metric">
         <div class="metric-label">Costo merc. promedio</div>
-        <div class="metric-value">$${fmt(avgMerc)}</div>
-        <div class="metric-sub">${semaforo(pct)} sobre $${fmt(op.precioVenta)} venta</div>
+        <div class="metric-value">$${fmt(s.mercProm)}</div>
+        <div class="metric-sub">por porción</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">% costo sobre venta</div>
+        <div class="metric-value">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : '—'}</div>
+        <div class="metric-sub">${s.pctProm!==null ? semaforo(s.pctProm)+' promedio de '+s.conPrecio+' receta'+(s.conPrecio!==1?'s':'') : 'cargá precios de venta en tus recetas'}</div>
       </div>
     </div>
 
@@ -1906,19 +2029,21 @@ function renderDashboard(){
           <thead><tr>
             <th>Receta</th><th>Servicio</th>
             <th style="text-align:right">Costo merc./p</th>
+            <th style="text-align:right">Precio venta</th>
             <th style="text-align:right">% sobre venta</th>
             <th>Estado</th>
           </tr></thead>
           <tbody>
             ${getRecetas().map(r=>{
               const {merc} = calcReceta(r, r.porciones||1);
-              const pct = merc/op.precioVenta*100;
+              const pct = r.precioVenta>0 ? merc/r.precioVenta*100 : null;
               return `<tr>
                 <td><strong>${r.nombre}</strong></td>
                 <td>${badgeLinea(r.tipoServicio)}</td>
                 <td style="text-align:right">$${fmt(merc)}</td>
-                <td style="text-align:right">${fmtD(pct)}%</td>
-                <td>${semaforo(pct)}</td>
+                <td style="text-align:right">${r.precioVenta>0 ? '$'+fmt(r.precioVenta) : '<span style="color:var(--gris-3)">—</span>'}</td>
+                <td style="text-align:right">${pct!==null ? fmtD(pct)+'%' : '<span style="color:var(--gris-3)">—</span>'}</td>
+                <td>${pct!==null ? semaforo(pct) : '<span class="badge badge-gray">Sin precio</span>'}</td>
               </tr>`;
             }).join('')}
           </tbody>
