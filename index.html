@@ -4,6 +4,49 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Provatio — Gestión de Costos Gastronómicos</title>
+<script>
+/* Caja negra de errores — ES5 puro, corre incluso en navegadores viejos */
+(function(){
+  window.__provErrores = [];
+  window.__appOk = false;
+  function mostrar(msg){
+    try{
+      var b = document.getElementById('prov-err-banner');
+      if(!b){
+        b = document.createElement('div');
+        b.id = 'prov-err-banner';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#8B1A1A;color:#fff;font-family:Arial;font-size:12px;padding:10px 14px;line-height:1.5;max-height:45vh;overflow:auto;box-shadow:0 2px 10px rgba(0,0,0,.4)';
+        document.body ? document.body.appendChild(b) : document.addEventListener('DOMContentLoaded', function(){ document.body.appendChild(b); });
+      }
+      var d = document.createElement('div');
+      d.textContent = '⚠ ' + msg;
+      b.appendChild(d);
+    }catch(e){}
+  }
+  window.onerror = function(msg, src, line, col){
+    var t = msg + ' (' + (src||'').split('/').pop() + ':' + line + ':' + (col||'') + ')';
+    window.__provErrores.push(t); mostrar(t);
+    return false;
+  };
+  window.addEventListener('unhandledrejection', function(ev){
+    var r = ev && ev.reason ? (ev.reason.message || String(ev.reason)) : 'promesa rechazada';
+    window.__provErrores.push(r); mostrar('Promesa: ' + r);
+  });
+  /* Vigía: si a los 25s la app no marcó arranque, diagnosticar */
+  setTimeout(function(){
+    if(!window.__appOk){
+      var faltan = [];
+      if(typeof firebase === 'undefined') faltan.push('Firebase (gstatic.com bloqueado o sin conexión)');
+      if(typeof XLSX === 'undefined') faltan.push('SheetJS (cdn.sheetjs.com)');
+      var msg = 'La app no arrancó. ';
+      if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
+      if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
+      if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
+      mostrar(msg + ' [versión 6-jul-2026-b]');
+    }
+  }, 25000);
+})();
+</script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -915,7 +958,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...</div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-b</div></div>
     </div>
   </main>
 </div>
@@ -6401,6 +6444,9 @@ auth.onAuthStateChanged(firebaseUser => {
     cargarUsuarioFirebase(firebaseUser);
   }
 });
+
+// Señal para la caja negra: el motor de la app arrancó completo
+window.__appOk = true;
 </script>
 
 <!-- ══════════════════════════════════════════════════════════════════════ -->
