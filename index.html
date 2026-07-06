@@ -1052,13 +1052,21 @@ async function guardarEnFirestore(){
   }
 }
 
+// Límite de tiempo para promesas: si la red no responde, la app no se queda colgada
+function conTimeout(promesa, ms, etiqueta){
+  return Promise.race([
+    promesa,
+    new Promise((_, rej)=>setTimeout(()=>rej(new Error((etiqueta||'La carga')+' tardó demasiado — revisá tu conexión')), ms))
+  ]);
+}
+
 async function cargarDesdeFirestore(uid){
   try {
     showLoading('Cargando tus datos...');
     
     // Cargar operaciones
-    const opsSnap = await db.collection('usuarios').doc(uid)
-      .collection('operaciones').get();
+    const opsSnap = await conTimeout(db.collection('usuarios').doc(uid)
+      .collection('operaciones').get(), 20000, 'La carga de operaciones');
     
     if(opsSnap.empty){
       // Primera vez — usar datos demo como punto de partida
@@ -1078,12 +1086,12 @@ async function cargarDesdeFirestore(uid){
     currentOpId = Object.keys(demoData.operaciones)[0];
 
     // Cargar ingredientes, mermas y recetas de la operación activa
-    const [ingsSnap, mermasSnap, recetasSnap, eventosSnap] = await Promise.all([
+    const [ingsSnap, mermasSnap, recetasSnap, eventosSnap] = await conTimeout(Promise.all([
       db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId).collection('ingredientes').get(),
       db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId).collection('mermas').get(),
       db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId).collection('recetas').get(),
       db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId).collection('eventos').get(),
-    ]);
+    ]), 20000, 'La carga de datos');
 
     demoData.ingredientes = [];
     ingsSnap.forEach(doc => demoData.ingredientes.push(doc.data()));
@@ -1103,7 +1111,8 @@ async function cargarDesdeFirestore(uid){
   } catch(err){
     console.error('Error cargando desde Firestore:', err);
     hideLoading();
-    showToast('Error al cargar datos: ' + err.message, 'error');
+    navigate('dashboard');
+    showToast('No pude traer tus datos de la nube: ' + err.message + '. Podés seguir trabajando y reintentar con Guardar.', 'error');
     return false;
   }
 }
@@ -1120,6 +1129,9 @@ function hideLoading(){
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+// Redes móviles y proxies a veces rompen el canal en tiempo real de Firestore
+// (síntoma: "Cargando..." infinito en celulares). Esto lo detecta y usa un canal compatible.
+db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
 
 // ── ESTADO GLOBAL ──
 let currentUser = null;
@@ -1519,7 +1531,7 @@ function login(){
 
 async function cargarUsuarioFirebase(firebaseUser){
   try {
-    const userDoc = await db.collection('usuarios').doc(firebaseUser.uid).get();
+    const userDoc = await conTimeout(db.collection('usuarios').doc(firebaseUser.uid).get(), 20000, 'La carga del perfil');
     let userData;
     if(userDoc.exists){
       userData = userDoc.data();
