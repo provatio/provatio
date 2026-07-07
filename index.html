@@ -42,7 +42,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-b]');
+      mostrar(msg + ' [versión 6-jul-2026-c]');
     }
   }, 25000);
 })();
@@ -945,6 +945,9 @@ input:focus, select:focus, textarea:focus {
     </div>
   </aside>
 
+  <!-- Fondo oscuro detrás del menú en mobile — tocar afuera lo cierra -->
+  <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
   <!-- MAIN -->
   <main class="main">
     <div class="topbar">
@@ -958,7 +961,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-b</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-c</div></div>
     </div>
   </main>
 </div>
@@ -5925,15 +5928,15 @@ async function confirmarCambiarRol(userId){
 function toggleSidebar(){
   const sidebar = document.querySelector('.sidebar');
   const overlay = document.querySelector('.sidebar-overlay');
-  sidebar.classList.toggle('open');
-  overlay.classList.toggle('open');
+  if(sidebar) sidebar.classList.toggle('open');
+  if(overlay) overlay.classList.toggle('open');
 }
 
 function closeSidebar(){
   const sidebar = document.querySelector('.sidebar');
   const overlay = document.querySelector('.sidebar-overlay');
-  sidebar.classList.remove('open');
-  overlay.classList.remove('open');
+  if(sidebar) sidebar.classList.remove('open');
+  if(overlay) overlay.classList.remove('open');
 }
 
 // Cerrar sidebar al navegar en mobile
