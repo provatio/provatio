@@ -42,7 +42,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-c]');
+      mostrar(msg + ' [versión 6-jul-2026-d]');
     }
   }, 25000);
 })();
@@ -961,7 +961,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-c</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-d</div></div>
     </div>
   </main>
 </div>
@@ -1186,6 +1186,9 @@ let currentOpId = 'op-patagonia';  // ID de operación activa
 let vistaActual = null;
 
 function getOp(){ return demoData.operaciones[currentOpId] || Object.values(demoData.operaciones)[0]; }
+
+// Nivel de acceso: 'cocina' ve solo lo operativo, sin precios de venta ni números del negocio
+function esNivelCocina(){ return currentUser && currentUser.rol==='cliente' && currentUser.nivel==='cocina'; }
 
 // ── DATOS DEMO EN MEMORIA ──
 let demoData = {
@@ -1910,10 +1913,21 @@ function buildSidebar(rol){
     {section:'Próximamente'},
     {icon:'store', label:'Proveedores', vista:'proveedores', soon:true},
     {icon:'chart', label:'Comparador de precios', vista:'comparador', soon:true},
+  ] : (esNivelCocina() ? [
+    {section:'Mi operación'},
+    {icon:'chart', label:'Resumen', vista:'dashboard'},
+    {icon:'clipboard', label:'Mis ingredientes', vista:'ingredientes'},
+    {icon:'flame', label:'Mermas', vista:'mermas'},
+    {icon:'chef', label:'Mis recetas', vista:'recetas'},
+    {section:'Planificación'},
+    {icon:'calendar', label:'Semana actual', vista:'semanal'},
+    {section:'Compras'},
+    {icon:'cart', label:'Lista de compras', vista:'compras'},
   ] : [
     {section:'Mi operación'},
     {icon:'chart', label:'Resumen', vista:'dashboard'},
     {icon:'clipboard', label:'Mis ingredientes', vista:'ingredientes'},
+    {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
@@ -1922,7 +1936,7 @@ function buildSidebar(rol){
     {icon:'cart', label:'Lista de compras', vista:'compras'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
-  ];
+  ]);
 
   nav.innerHTML = items.map(item=>{
     if(item.section) return `<div class="nav-section">${item.section}</div>`;
@@ -1943,6 +1957,10 @@ function abrirOperacion(opId){
 function navigate(vista, params={}){
   // Cerrar sidebar en mobile al navegar
   if(window.innerWidth <= 768) closeSidebar();
+  // Nivel cocina: sin acceso a números del negocio
+  if(esNivelCocina() && ['rentabilidad','resultado','evento','desvios'].includes(vista)){
+    vista = 'dashboard';
+  }
   vistaActual = vista;
   
   // Actualizar nav activo
@@ -2027,6 +2045,7 @@ function renderDashboardAdmin(){
   });
 
   setContent('Panel general', `
+    <div id="alerta-registros"></div>
     ${alerts.length ? `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:16px;margin-bottom:20px">
       <div style="font-weight:700;font-size:13px;margin-bottom:8px">Acción requerida</div>
       ${alerts.map(a=>`<div style="font-size:13px;margin-bottom:4px">${a}</div>`).join('')}
@@ -2070,7 +2089,10 @@ function renderDashboardAdmin(){
           </tr></thead>
           <tbody>
             ${statsPorOp.length ? statsPorOp.map(({op, s})=>`<tr style="cursor:pointer" onclick="abrirOperacion('${op.id}')">
-              <td><strong>${op.nombre}</strong></td>
+              <td>
+                <strong>${op.nombre}</strong>
+                <div style="font-size:11px;color:var(--gris-2);margin-top:2px">${op.responsable || '<span style="color:#B8860B">Sin contacto — cargalo en Clientes</span>'}${op.telefono ? ' · '+op.telefono : ''}</div>
+              </td>
               <td><span class="badge badge-op">${op.tipo==='catering'?'Catering':'Restaurante'}</span></td>
               <td style="text-align:right">${s.total}${s.sinPrecio?` <span style="color:#B8860B;font-size:11px">(${s.sinPrecio} sin precio)</span>`:''}</td>
               <td style="text-align:right">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : '<span style="color:var(--gris-3)">—</span>'}</td>
@@ -2108,6 +2130,21 @@ function renderDashboardAdmin(){
       </div>
     </div>
   `);
+
+  // Aviso de registros nuevos: usuarios sin operación asignada (async, no bloquea el render)
+  if(typeof cargarUsuariosFirebase === 'function'){
+    cargarUsuariosFirebase().then(usuarios => {
+      const sinAsignar = (usuarios||[]).filter(u => u.rol !== 'admin' && !u.operacionId);
+      const cont = document.getElementById('alerta-registros');
+      if(cont && sinAsignar.length){
+        cont.innerHTML = `<div style="background:#E8EFE0;color:#2D5016;border:1px solid #A9D8B2;border-radius:10px;padding:16px;margin-bottom:20px">
+          <div style="font-weight:700;font-size:13px;margin-bottom:6px">${sinAsignar.length===1?'Registro nuevo':'Registros nuevos'} (${sinAsignar.length})</div>
+          <div style="font-size:13px;margin-bottom:10px">${sinAsignar.map(u=>`<strong>${u.email||u.uid}</strong>`).join(' · ')} — esperando que le${sinAsignar.length>1?'s':''} asignes una operación y nivel de acceso.</div>
+          <button class="btn btn-primary btn-sm" onclick="navigate('clientes')">Ir a Clientes</button>
+        </div>`;
+      }
+    }).catch(()=>{});
+  }
 }
 
 // ── DASHBOARD DE OPERACIÓN — rentabilidad por receta ──
@@ -2115,6 +2152,7 @@ function renderDashboardOperacion(){
   const op = getOp();
   if(!op){ renderDashboardAdmin(); return; }
   const esAdmin = currentUser && currentUser.rol === 'admin';
+  const cocina = esNivelCocina();
   const s = opStats(op.id);
 
   setContent(esAdmin ? op.nombre : 'Resumen', `
@@ -2151,11 +2189,11 @@ function renderDashboardOperacion(){
         <div class="metric-value">$${fmt(s.mercProm)}</div>
         <div class="metric-sub">por porción</div>
       </div>
-      <div class="metric">
+      ${cocina ? '' : `<div class="metric">
         <div class="metric-label">% costo sobre venta</div>
         <div class="metric-value">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : '—'}</div>
         <div class="metric-sub">${s.pctProm!==null ? semaforo(s.pctProm)+' promedio de '+s.conPrecio+' receta'+(s.conPrecio!==1?'s':'') : 'cargá precios de venta en tus recetas'}</div>
-      </div>
+      </div>`}
     </div>
 
     <div class="card">
@@ -2168,9 +2206,9 @@ function renderDashboardOperacion(){
           <thead><tr>
             <th>Receta</th><th>Servicio</th>
             <th style="text-align:right">Costo merc./p</th>
-            <th style="text-align:right">Precio venta</th>
+            ${cocina ? '' : `<th style="text-align:right">Precio venta</th>
             <th style="text-align:right">% sobre venta</th>
-            <th>Estado</th>
+            <th>Estado</th>`}
           </tr></thead>
           <tbody>
             ${getRecetas().map(r=>{
@@ -2180,9 +2218,9 @@ function renderDashboardOperacion(){
                 <td><strong>${r.nombre}</strong></td>
                 <td>${badgeLinea(r.tipoServicio)}</td>
                 <td style="text-align:right">$${fmt(merc)}</td>
-                <td style="text-align:right">${r.precioVenta>0 ? '$'+fmt(r.precioVenta) : '<span style="color:var(--gris-3)">—</span>'}</td>
+                ${cocina ? '' : `<td style="text-align:right">${r.precioVenta>0 ? '$'+fmt(r.precioVenta) : '<span style="color:var(--gris-3)">—</span>'}</td>
                 <td style="text-align:right">${pct!==null ? fmtD(pct)+'%' : '<span style="color:var(--gris-3)">—</span>'}</td>
-                <td>${pct!==null ? semaforo(pct) : '<span class="badge badge-gray">Sin precio</span>'}</td>
+                <td>${pct!==null ? semaforo(pct) : '<span class="badge badge-gray">Sin precio</span>'}</td>`}
               </tr>`;
             }).join('')}
           </tbody>
@@ -3197,12 +3235,12 @@ function renderEditorReceta(){
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="renderRecetas()">← Volver</button>
       <input type="text" id="rec-nombre" value="${r.nombre}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
-      <div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
+      ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
         <span style="font-size:11px;font-weight:700;color:var(--gris-1)">$ PRECIO VENTA</span>
         <input type="number" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
           style="width:110px;border:none;background:transparent;font-size:14px;font-weight:700;color:var(--negro);text-align:right"
           onchange="recetaEditando.precioVenta=+this.value;renderEditorReceta()">
-      </div>
+      </div>`}
       <select onchange="recetaEditando.tipoServicio=this.value" style="width:150px">
         ${(getOp().tiposServicio||['Operario']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
       </select>
@@ -4308,14 +4346,14 @@ function renderClientes(){
             <tbody>
               ${usuarios.map(u=>`<tr>
                 <td><strong>${u.email||u.displayName||u.uid}</strong></td>
-                <td><span class="badge ${u.rol==='admin'?'badge-op':'badge-sc'}">${u.rol||'cliente'}</span></td>
-                <td>${u.operacionId||'<span style="color:var(--gris-3)">Sin asignar</span>'}</td>
+                <td><span class="badge ${u.rol==='admin'?'badge-op':'badge-sc'}">${u.rol==='admin'?'admin':(u.nivel==='cocina'?'cocina':'gestión')}</span></td>
+                <td>${u.operacionId ? `<strong>${(demoData.operaciones[u.operacionId]||{}).nombre || u.operacionId}</strong>` : '<span style="color:#B8860B;font-weight:600">Sin asignar</span>'}</td>
                 <td style="display:flex;gap:6px">
-                  <button class="btn btn-secondary btn-sm" data-uid="${u.id}" data-email="${u.email||''}" onclick="modalAsignarOperacion(this.dataset.uid, this.dataset.email)">
-                    ${ico('link',13)} Asignar operación
+                  <button class="btn ${u.operacionId?'btn-secondary':'btn-primary'} btn-sm" data-uid="${u.id}" data-email="${u.email||''}" onclick="modalAsignarOperacion(this.dataset.uid, this.dataset.email)">
+                    ${ico('link',13)} ${u.operacionId ? 'Cambiar operación' : 'Asignar operación'}
                   </button>
-                  <button class="btn btn-secondary btn-sm" data-uid="${u.id}" data-rol="${u.rol||'cliente'}" onclick="modalCambiarRol(this.dataset.uid, this.dataset.rol)">
-                    ${ico('user',13)} Cambiar rol
+                  <button class="btn btn-secondary btn-sm" data-uid="${u.id}" data-rol="${u.rol||'cliente'}" data-nivel="${u.nivel||'gestion'}" onclick="modalCambiarRol(this.dataset.uid, this.dataset.rol, this.dataset.nivel)">
+                    ${ico('user',13)} Rol / Nivel
                   </button>
                   <button class="btn btn-danger btn-sm" data-uid="${u.id}" data-email="${u.email||u.uid}" onclick="eliminarUsuario(this.dataset.uid, this.dataset.email)">
                     ${ico('trash',13)} Eliminar
@@ -4334,15 +4372,67 @@ function renderClientes(){
 
   const ops = Object.values(demoData.operaciones);
   const rows = ops.map(op=>`<tr>
-    <td><strong>${op.nombre}</strong></td>
+    <td>
+      <strong>${op.nombre}</strong>
+      <div style="font-size:11px;color:var(--gris-2);margin-top:2px">
+        ${op.responsable ? op.responsable : '<span style="color:#B8860B">Sin datos de contacto</span>'}${op.telefono ? ' · '+op.telefono : ''}${op.direccion ? ' · '+op.direccion : ''}
+      </div>
+    </td>
     <td><span class="badge badge-op">${op.tipo==='catering'?'Catering':'Restaurante'}</span></td>
     <td>${demoData.recetas.filter(r=>r.opId===op.id).length} recetas</td>
     <td><span class="sem sem-v"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> Activo</span></td>
     <td style="display:flex;gap:6px">
+      <button class="btn btn-secondary btn-sm" onclick="modalDatosCliente('${op.id}')">${ico('edit',13)} Datos</button>
       <button class="btn btn-secondary btn-sm" onclick="abrirOperacion('${op.id}')">Ver operación</button>
       <button class="btn btn-danger btn-sm" onclick="delOperacion('${op.id}')">${ico('trash',13)} Eliminar</button>
     </td>
   </tr>`).join('');
+
+// ── Modal de datos de contacto del cliente ──
+window.modalDatosCliente = function(opId){
+  const op = demoData.operaciones[opId];
+  if(!op) return;
+  const esc = v => (v||'').replace(/"/g,'&quot;');
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Datos del cliente — ${op.nombre}</span>
+      <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label>Responsable / contacto</label>
+        <input type="text" id="dc-resp" value="${esc(op.responsable)}" placeholder="Ej: Juan Pérez — Gerente de servicios"></div>
+      <div class="form-group"><label>Teléfono</label>
+        <input type="text" id="dc-tel" value="${esc(op.telefono)}" placeholder="Ej: +54 9 2657 ..."></div>
+      <div class="form-group"><label>Email de contacto</label>
+        <input type="text" id="dc-email" value="${esc(op.emailContacto)}" placeholder="contacto@cliente.com"></div>
+      <div class="form-group"><label>Dirección</label>
+        <input type="text" id="dc-dir" value="${esc(op.direccion)}" placeholder="Calle, ciudad, provincia"></div>
+      <div class="form-group"><label>CUIT / razón social</label>
+        <input type="text" id="dc-cuit" value="${esc(op.cuit)}" placeholder="Opcional"></div>
+      <div class="form-group"><label>Notas</label>
+        <textarea id="dc-notas" rows="3" placeholder="Condiciones de pago, horarios de entrega, lo que necesites recordar...">${op.notas||''}</textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarDatosCliente('${opId}')">Guardar datos</button>
+    </div>
+  `);
+};
+
+window.guardarDatosCliente = function(opId){
+  const op = demoData.operaciones[opId];
+  if(!op) return;
+  op.responsable = document.getElementById('dc-resp').value.trim();
+  op.telefono = document.getElementById('dc-tel').value.trim();
+  op.emailContacto = document.getElementById('dc-email').value.trim();
+  op.direccion = document.getElementById('dc-dir').value.trim();
+  op.cuit = document.getElementById('dc-cuit').value.trim();
+  op.notas = document.getElementById('dc-notas').value.trim();
+  closeModal();
+  renderClientes();
+  showToast('Datos de '+op.nombre+' guardados','success');
+  guardarEnFirestore();
+};
 
   setContent('Clientes', `
     <div class="card">
@@ -5890,19 +5980,24 @@ async function confirmarAsignarOperacion(userId){
   }
 }
 
-function modalCambiarRol(userId, rolActual){
+function modalCambiarRol(userId, rolActual, nivelActual){
   openModal(`
     <div class="modal-header">
-      <span class="modal-title">Cambiar rol de usuario</span>
+      <span class="modal-title">Rol y nivel de acceso</span>
       <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>Rol actual: <strong>${rolActual}</strong></label>
+        <label>Rol y nivel</label>
         <select id="nuevo-rol">
-          <option value="cliente" ${rolActual==='cliente'?'selected':''}>Cliente</option>
-          <option value="admin" ${rolActual==='admin'?'selected':''}>Administrador</option>
+          <option value="cliente|gestion" ${rolActual==='cliente'&&nivelActual!=='cocina'?'selected':''}>Cliente — Gestión completa (dueño / gerente / socio)</option>
+          <option value="cliente|cocina" ${rolActual==='cliente'&&nivelActual==='cocina'?'selected':''}>Cliente — Cocina / Operativo (chef / encargado)</option>
+          <option value="admin|gestion" ${rolActual==='admin'?'selected':''}>Administrador de Provatio</option>
         </select>
+        <div style="font-size:11px;color:var(--gris-2);margin-top:6px">
+          <strong>Gestión completa:</strong> ve todo, incluidos precios de venta, rentabilidad y salud del negocio.<br>
+          <strong>Cocina / Operativo:</strong> ve ingredientes, mermas, recetas, planificación y compras — sin precios de venta ni números del negocio.
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -5913,9 +6008,9 @@ function modalCambiarRol(userId, rolActual){
 }
 
 async function confirmarCambiarRol(userId){
-  const rol = document.getElementById('nuevo-rol').value;
+  const [rol, nivel] = document.getElementById('nuevo-rol').value.split('|');
   try {
-    await db.collection('usuarios').doc(userId).set({rol}, {merge:true});
+    await db.collection('usuarios').doc(userId).set({rol, nivel}, {merge:true});
     closeModal();
     showToast('Rol actualizado', 'success');
     renderClientes();
