@@ -42,7 +42,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-d]');
+      mostrar(msg + ' [versión 6-jul-2026-e]');
     }
   }, 25000);
 })();
@@ -961,7 +961,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-d</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-e</div></div>
     </div>
   </main>
 </div>
@@ -3802,8 +3802,11 @@ function renderResultado(){
   // Equilibrio ajustado: los eventos cubren parte de los fijos
   const eqAjustado = (margenPctProm && margenPctProm>0) ? Math.max(0, (totalFijos - margenEventos)/margenPctProm) : null;
 
+  // Ingeniería de menú (Kasavana & Smith) para el mes seleccionado
+  const km = clasificarMenu(mesSel);
+
   // Snapshot para el informe descargable
-  window._saludCalc = {totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length};
+  window._saludCalc = {totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, matriz: km.matriz, kmListo: km.listo};
 
   const accionesInforme = (recetasConPrecio.length && totalFijos>0)
     ? `<button class="btn btn-secondary btn-sm" onclick="descargarInforme()">${ico('download',13)} Descargar informe</button>`
@@ -3945,6 +3948,50 @@ function renderResultado(){
             </div>
             <div id="chart-casc" style="overflow-x:auto">${chartCascada(ventasEst, margenPctProm, totalFijos, margenEventos)}</div>
           ` : `<div style="font-size:13px;color:var(--gris-2)">Escribí un monto de ventas (o de eventos) para simular el resultado del mes.</div>`}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Ingeniería de menú — Matriz de Kasavana & Smith</span>
+          ${km.listo ? `<button class="btn btn-secondary btn-sm" onclick="descargarGrafico('chart-matriz','matriz-menu-${(op.nombre||'operacion').replace(/[^a-z0-9]/gi,'-').toLowerCase()}')">${ico('download',13)} Descargar</button>` : ''}
+        </div>
+        <div class="card-body">
+          <div style="font-size:12px;color:var(--gris-2);margin-bottom:14px">Cargá las unidades vendidas de cada receta en <strong>${mesSel}</strong> y la matriz clasifica tu carta: qué platos sostienen el negocio, cuáles venden mucho pero pierden plata, y cuáles hay que sacar.</div>
+          <div class="table-wrap" style="margin-bottom:16px">
+            <table>
+              <thead><tr><th>Receta</th><th style="text-align:right">Precio venta</th><th style="text-align:right">Margen/porción</th><th style="text-align:right;width:140px">Unidades vendidas</th></tr></thead>
+              <tbody>
+                ${km.items.map(i=>`<tr>
+                  <td><strong>${i.nombre}</strong></td>
+                  <td style="text-align:right">$${fmt(i.pv)}</td>
+                  <td style="text-align:right">$${fmt(i.mc)}</td>
+                  <td style="text-align:right"><input type="number" min="0" value="${i.unid||''}" placeholder="0" style="width:110px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)"></td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+          ${km.listo ? `
+            <div id="chart-matriz" style="overflow-x:auto;margin-bottom:16px">${chartMatriz(km.matriz, km.popThreshold, km.mcProm)}</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Receta</th><th>Clase</th><th style="text-align:right">Food cost</th><th style="text-align:right">Unid.</th><th style="text-align:right">Contribución del mes</th><th>Qué hacer</th></tr></thead>
+                <tbody>
+                  ${km.matriz.map(i=>{
+                    const c = CLASES_MENU[i.clase];
+                    return `<tr>
+                      <td><strong>${i.nombre}</strong></td>
+                      <td><span class="sem" style="background:${c.col}18;color:${c.col};border:1px solid ${c.col}55"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> ${c.nombre}</span></td>
+                      <td style="text-align:right;${i.fc>35?'color:#C02626;font-weight:700':''}">${fmtD(i.fc)}%</td>
+                      <td style="text-align:right">${fmt(i.unid)}</td>
+                      <td style="text-align:right;font-weight:700">$${fmt(i.contribucion)}</td>
+                      <td style="font-size:12px;color:var(--gris-1)">${c.consejo}</td>
+                    </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : `<div style="font-size:13px;color:var(--gris-2);background:var(--crema);border-radius:10px;padding:12px 14px">Cargá unidades vendidas en al menos <strong>2 recetas</strong> para que aparezca la matriz.</div>`}
         </div>
       </div>
     `}
@@ -4112,6 +4159,86 @@ function chartCascada(ventas, margenPct, fijos, margenEventos=0){
   </svg>`;
 }
 
+// ── INGENIERÍA DE MENÚ — Matriz de Kasavana & Smith ──
+const CLASES_MENU = {
+  estrella:  {nombre:'Estrella',            col:'#2D5016', consejo:'Protegela: mantené calidad, precio y visibilidad. Es la que sostiene el negocio.'},
+  caballito: {nombre:'Caballito de batalla', col:'#B8860B', consejo:'Se vende mucho pero deja poco: subí el precio, ajustá la porción o bajá el costo de la receta.'},
+  puzzle:    {nombre:'Puzzle',              col:'#C8A96E', consejo:'Margen alto pero poca venta: dale visibilidad en la carta, renombrala o que el mozo la sugiera.'},
+  perro:     {nombre:'Perro',               col:'#8B1A1A', consejo:'Ni se vende ni deja margen: candidata a salir de la carta o reformularse por completo.'},
+};
+
+function clasificarMenu(mes){
+  const op = getOp();
+  const ventas = (op.ventasPorMes||{})[mes] || {};
+  const items = demoData.recetas
+    .filter(r=>r.opId===op.id && r.precioVenta>0)
+    .map(r=>{
+      const {merc} = calcReceta(r, r.porciones||1);
+      const unid = +ventas[r.id] || 0;
+      return {id:r.id, nombre:r.nombre, pv:r.precioVenta, costo:merc, mc:r.precioVenta-merc, unid};
+    });
+  const conVenta = items.filter(i=>i.unid>0);
+  if(conVenta.length < 2) return {items, matriz:[], listo:false};
+  const totalUnid = conVenta.reduce((s,i)=>s+i.unid,0);
+  // Umbral de popularidad clásico: (100%/n) × 0.7
+  const popThreshold = (1/conVenta.length)*0.7;
+  // Margen de contribución promedio ponderado por unidades
+  const mcProm = conVenta.reduce((s,i)=>s+i.mc*i.unid,0)/totalUnid;
+  const matriz = conVenta.map(i=>{
+    const pop = i.unid/totalUnid;
+    const popAlta = pop >= popThreshold;
+    const mcAlto = i.mc >= mcProm;
+    const clase = popAlta ? (mcAlto?'estrella':'caballito') : (mcAlto?'puzzle':'perro');
+    return {...i, pop, clase, contribucion: i.mc*i.unid, fc: i.costo/i.pv*100};
+  }).sort((a,b)=>b.contribucion-a.contribucion);
+  return {items, matriz, listo:true, popThreshold, mcProm, totalUnid};
+}
+
+function chartMatriz(matriz, popThreshold, mcProm){
+  if(!matriz.length) return '';
+  const W=640,H=380,mL=64,mR=24,mT=30,mB=50;
+  const pw=W-mL-mR, ph=H-mT-mB;
+  const maxPop = Math.max(...matriz.map(i=>i.pop), popThreshold)*1.2;
+  const maxMC = Math.max(...matriz.map(i=>i.mc), mcProm)*1.15;
+  const X = v=> mL + v/maxPop*pw;
+  const Y = v=> mT + ph - v/maxMC*ph;
+
+  const zonas = `
+    <text x="${(X(popThreshold)+mL)/2}" y="${mT+16}" font-family="Arial" font-size="11" font-weight="bold" fill="#C8A96E" opacity="0.55" text-anchor="middle">PUZZLE</text>
+    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+16}" font-family="Arial" font-size="11" font-weight="bold" fill="#2D5016" opacity="0.55" text-anchor="middle">ESTRELLA</text>
+    <text x="${(X(popThreshold)+mL)/2}" y="${mT+ph-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#8B1A1A" opacity="0.55" text-anchor="middle">PERRO</text>
+    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+ph-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#B8860B" opacity="0.55" text-anchor="middle">CABALLITO</text>`;
+
+  const ejes = `
+    <line x1="${mL}" y1="${mT}" x2="${mL}" y2="${mT+ph}" stroke="#D8D2C8" stroke-width="1.5"/>
+    <line x1="${mL}" y1="${mT+ph}" x2="${mL+pw}" y2="${mT+ph}" stroke="#D8D2C8" stroke-width="1.5"/>
+    <line x1="${X(popThreshold)}" y1="${mT}" x2="${X(popThreshold)}" y2="${mT+ph}" stroke="#8A8A80" stroke-width="1" stroke-dasharray="5,4"/>
+    <line x1="${mL}" y1="${Y(mcProm)}" x2="${mL+pw}" y2="${Y(mcProm)}" stroke="#8A8A80" stroke-width="1" stroke-dasharray="5,4"/>
+    <text x="${mL+pw/2}" y="${H-8}" font-family="Arial" font-size="11" fill="#5A5A52" text-anchor="middle">Popularidad (% de las ventas del mes)</text>
+    <text x="16" y="${mT+ph/2}" font-family="Arial" font-size="11" fill="#5A5A52" text-anchor="middle" transform="rotate(-90 16 ${mT+ph/2})">Margen de contribución por porción ($)</text>
+    <text x="${X(popThreshold)}" y="${mT-6}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="middle">${fmtD(popThreshold*100)}%</text>
+    <text x="${mL-6}" y="${Y(mcProm)+4}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="end">${fmtCorto(mcProm)}</text>`;
+
+  const puntos = matriz.map(i=>{
+    const c = CLASES_MENU[i.clase].col;
+    return `<circle cx="${X(i.pop)}" cy="${Y(i.mc)}" r="7" fill="${c}" opacity="0.85"/>
+      <text x="${X(i.pop)+11}" y="${Y(i.mc)+4}" font-family="Arial" font-size="11" font-weight="bold" fill="#1A1A18">${i.nombre.slice(0,20)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
+    ${zonas}${ejes}${puntos}
+  </svg>`;
+}
+
+function updVentaReceta(mes, recetaId, unidades){
+  const op = getOp();
+  if(!op.ventasPorMes) op.ventasPorMes = {};
+  if(!op.ventasPorMes[mes]) op.ventasPorMes[mes] = {};
+  op.ventasPorMes[mes][recetaId] = Math.max(0, +unidades||0);
+  renderResultado();
+  guardarEnFirestore();
+}
+
 // Descargar un gráfico SVG como imagen PNG
 function descargarGrafico(contId, nombre){
   const svg = document.querySelector('#'+contId+' svg');
@@ -4192,6 +4319,23 @@ function descargarInforme(){
     ${g('chart-dona') ? '<h2>Composición de gastos fijos</h2><div class="chart">'+g('chart-dona')+'</div>' : ''}
 
     ${g('chart-casc') ? '<h2>Resultado estimado del mes</h2><div class="chart">'+g('chart-casc')+'</div>' : ''}
+
+    ${c.kmListo && g('chart-matriz') ? `
+    <h2>Ingeniería de menú — Matriz de Kasavana &amp; Smith (${c.mesSel})</h2>
+    <div class="chart">${g('chart-matriz')}</div>
+    <table style="margin-bottom:22px">
+      <thead><tr><th>Receta</th><th>Clase</th><th class="num">Food cost</th><th class="num">Unidades</th><th class="num">Contribución del mes</th></tr></thead>
+      <tbody>
+        ${c.matriz.map(i=>`<tr>
+          <td>${i.nombre}</td>
+          <td><strong>${({estrella:'Estrella',caballito:'Caballito de batalla',puzzle:'Puzzle',perro:'Perro'})[i.clase]}</strong></td>
+          <td class="num">${fmtD(i.fc)}%</td>
+          <td class="num">${fmt(i.unid)}</td>
+          <td class="num">$${fmt(i.contribucion)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    ` : ''}
 
     <h2>Detalle de gastos fijos</h2>
     <table>
