@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Provatio — Gestión de Costos Gastronómicos</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 68' style='flex-shrink:0'%3E%3Ccircle cx='30' cy='34' r='30' fill='none' stroke='%231A1A18' stroke-width='2.5'/%3E%3Cline x1='22' y1='50' x2='22' y2='16' stroke='%23C8A96E' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M22 18 h9 a10 10 0 0 1 0 20 h-9' fill='none' stroke='%231A1A18' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='14' y1='50' x2='46' y2='50' stroke='%231A1A18' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='41' cy='43' r='2.6' fill='%23C8A96E'/%3E%3C/svg%3E">
 <script>
 /* Caja negra de errores — ES5 puro, corre incluso en navegadores viejos */
 (function(){
@@ -42,7 +43,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-e]');
+      mostrar(msg + ' [versión 6-jul-2026-f]');
     }
   }, 25000);
 })();
@@ -879,6 +880,7 @@ input:focus, select:focus, textarea:focus {
   <!-- Lado derecho — formulario -->
   <div class="auth-right">
     <div class="auth-logo">
+      <div style="margin-bottom:10px"><svg width="52" height="52" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#1A1A18" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#1A1A18" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#1A1A18" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#C8A96E"/></svg></div>
       <h1>Provatio</h1>
       <p>Gestión de costos gastronómicos</p>
     </div>
@@ -926,9 +928,12 @@ input:focus, select:focus, textarea:focus {
 <div id="app">
   <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-logo">
-      <h1>Provatio</h1>
-      <p>provatio.io</p>
+    <div class="sidebar-logo" style="display:flex;align-items:center;gap:12px">
+      <svg width="36" height="36" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#F5F0E8" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#F5F0E8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#F5F0E8" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#C8A96E"/></svg>
+      <div>
+        <h1>Provatio</h1>
+        <p>provatio.io</p>
+      </div>
     </div>
     <nav class="sidebar-nav" id="sidebar-nav">
       <!-- Se genera dinámicamente según rol -->
@@ -961,7 +966,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-e</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-f</div></div>
     </div>
   </main>
 </div>
@@ -4299,7 +4304,7 @@ function descargarInforme(){
     @media print{ body{padding:20px 24px} }
   </style></head><body>
     <div class="hd">
-      <div class="logo">Provatio<small>GESTIÓN GASTRONÓMICA</small></div>
+      <div class="logo" style="display:flex;align-items:center;gap:12px"><svg width="44" height="44" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#1A1A18" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#1A1A18" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#1A1A18" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#C8A96E"/></svg><span>Provatio<small>GESTIÓN GASTRONÓMICA</small></span></div>
       <div class="fecha">${fecha}</div>
     </div>
     <h1>Informe de salud del negocio — ${op.nombre}</h1>
