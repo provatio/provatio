@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Provatio — Gestión de Costos Gastronómicos</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 68' style='flex-shrink:0'%3E%3Ccircle cx='30' cy='34' r='30' fill='none' stroke='%231A1A18' stroke-width='2.5'/%3E%3Cline x1='22' y1='50' x2='22' y2='16' stroke='%23C8A96E' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M22 18 h9 a10 10 0 0 1 0 20 h-9' fill='none' stroke='%231A1A18' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='14' y1='50' x2='46' y2='50' stroke='%231A1A18' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='41' cy='43' r='2.6' fill='%23C8A96E'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 68'%3E%3Ccircle cx='30' cy='34' r='30' fill='none' stroke='%231A1A18' stroke-width='2.5'/%3E%3Cline x1='22' y1='50' x2='22' y2='16' stroke='%23C8A96E' stroke-width='5' stroke-linecap='round'/%3E%3Cpath d='M22 18 h9 a10 10 0 0 1 0 20 h-9' fill='none' stroke='%231A1A18' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='14' y1='50' x2='46' y2='50' stroke='%231A1A18' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='41' cy='43' r='2.6' fill='%23C8A96E'/%3E%3C/svg%3E">
+<link rel="alternate icon" type="image/png" href="data:image/png;base64,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">
 <script>
 /* Caja negra de errores — ES5 puro, corre incluso en navegadores viejos */
 (function(){
@@ -43,7 +44,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-f]');
+      mostrar(msg + ' [versión 6-jul-2026-g]');
     }
   }, 25000);
 })();
@@ -966,7 +967,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-f</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-g</div></div>
     </div>
   </main>
 </div>
