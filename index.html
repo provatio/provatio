@@ -44,7 +44,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-g]');
+      mostrar(msg + ' [versión 6-jul-2026-i]');
     }
   }, 25000);
 })();
@@ -967,7 +967,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-g</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-i</div></div>
     </div>
   </main>
 </div>
@@ -1044,63 +1044,49 @@ function limpiarParaFirestore(obj){
   return JSON.parse(JSON.stringify(obj));
 }
 
+// Guarda una colección en tandas de 400 (límite Firestore: 500) con timeout
+async function guardarColeccion(uid, opId, subcol, items){
+  const CHUNK = 400;
+  for(let i=0; i<items.length; i+=CHUNK){
+    const batch = db.batch();
+    items.slice(i, i+CHUNK).forEach(item => {
+      const ref = db.collection('usuarios').doc(uid)
+        .collection('operaciones').doc(opId)
+        .collection(subcol).doc(item.id);
+      batch.set(ref, limpiarParaFirestore(item));
+    });
+    await conTimeout(batch.commit(), 30000, `Guardado de ${subcol}`);
+  }
+}
+
 async function guardarEnFirestore(){
-  if(!currentUser) return;
+  if(!currentUser){ showToast('No hay sesión activa — no se pudo guardar','error'); return false; }
+  const btnGuardar = document.querySelector('#topbar-actions ~ button, .topbar button');
   try {
     const uid = currentUser.uid;
-    
-    // Guardar operaciones
+    showToast('Guardando…', 'success');
+
+    // Operaciones (metadatos)
     for(const [opId, op] of Object.entries(demoData.operaciones)){
-      await db.collection('usuarios').doc(uid)
-        .collection('operaciones').doc(opId).set(limpiarParaFirestore(op), {merge:true});
+      await conTimeout(
+        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).set(limpiarParaFirestore(op), {merge:true}),
+        30000, 'Guardado de la operación'
+      );
     }
 
-    // Guardar ingredientes de la operación activa
-    const batch1 = db.batch();
-    demoData.ingredientes.forEach(ing => {
-      const ref = db.collection('usuarios').doc(uid)
-        .collection('operaciones').doc(currentOpId)
-        .collection('ingredientes').doc(ing.id);
-      batch1.set(ref, limpiarParaFirestore(ing));
-    });
-    await batch1.commit();
+    // Colecciones de la operación activa, en tandas
+    await guardarColeccion(uid, currentOpId, 'ingredientes', demoData.ingredientes);
+    await guardarColeccion(uid, currentOpId, 'mermas', demoData.mermas);
+    await guardarColeccion(uid, currentOpId, 'recetas', getRecetas());
+    const eventosOp = (demoData.eventos||[]).filter(e=>e.opId===currentOpId);
+    if(eventosOp.length) await guardarColeccion(uid, currentOpId, 'eventos', eventosOp);
 
-    // Guardar mermas
-    const batch2 = db.batch();
-    demoData.mermas.forEach(m => {
-      const ref = db.collection('usuarios').doc(uid)
-        .collection('operaciones').doc(currentOpId)
-        .collection('mermas').doc(m.id);
-      batch2.set(ref, limpiarParaFirestore(m));
-    });
-    await batch2.commit();
-
-    // Guardar recetas de la operación activa
-    const batch3 = db.batch();
-    getRecetas().forEach(r => {
-      const ref = db.collection('usuarios').doc(uid)
-        .collection('operaciones').doc(currentOpId)
-        .collection('recetas').doc(r.id);
-      batch3.set(ref, limpiarParaFirestore(r));
-    });
-    await batch3.commit();
-
-    // Guardar eventos de la operación activa
-    if(demoData.eventos && demoData.eventos.length){
-      const batch4 = db.batch();
-      demoData.eventos.filter(e=>e.opId===currentOpId).forEach(e => {
-        const ref = db.collection('usuarios').doc(uid)
-          .collection('operaciones').doc(currentOpId)
-          .collection('eventos').doc(e.id);
-        batch4.set(ref, limpiarParaFirestore(e));
-      });
-      await batch4.commit();
-    }
-
-    showToast('Guardado en la nube', 'success');
+    showToast('Todo guardado en la nube ✓', 'success');
+    return true;
   } catch(err){
     console.error('Error guardando en Firestore:', err);
-    showToast('Error al guardar: ' + err.message, 'error');
+    showToast('NO se pudo guardar: ' + err.message + '. Revisá tu conexión y reintentá.', 'error');
+    return false;
   }
 }
 
@@ -1955,8 +1941,31 @@ function buildSidebar(rol){
 }
 
 // ── NAVEGACIÓN ──
-function abrirOperacion(opId){
+async function abrirOperacion(opId){
+  if(opId === currentOpId){ navigate('operacion'); return; }
   currentOpId = opId;
+  // Traer los datos de ESTA operación (ingredientes, mermas, recetas son por operación)
+  if(currentUser && currentUser.uid){
+    try {
+      showLoading('Cargando la operación…');
+      const uid = currentUser.uid;
+      const [ingsSnap, mermasSnap, recetasSnap, eventosSnap] = await conTimeout(Promise.all([
+        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('ingredientes').get(),
+        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('mermas').get(),
+        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('recetas').get(),
+        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('eventos').get(),
+      ]), 20000, 'La carga de la operación');
+      demoData.ingredientes = []; ingsSnap.forEach(d=>demoData.ingredientes.push(d.data()));
+      demoData.mermas = []; mermasSnap.forEach(d=>demoData.mermas.push(d.data()));
+      demoData.recetas = demoData.recetas.filter(r=>r.opId!==opId); recetasSnap.forEach(d=>demoData.recetas.push(d.data()));
+      if(!demoData.eventos) demoData.eventos=[];
+      demoData.eventos = demoData.eventos.filter(e=>e.opId!==opId); eventosSnap.forEach(d=>demoData.eventos.push(d.data()));
+      hideLoading();
+    } catch(err){
+      hideLoading();
+      showToast('No pude cargar la operación: '+err.message, 'error');
+    }
+  }
   navigate('operacion');
 }
 
@@ -3072,12 +3081,46 @@ function guardarNuevaMermaMulti(){
 // ── RECETAS ──
 let recetaEditando = null;
 
+// El borrador del editor sobrevive a cambios de pestaña / PDF abiertos
+function guardarBorradorEditor(){
+  try{ if(recetaEditando) sessionStorage.setItem('prov_borrador_receta', JSON.stringify({op:currentOpId, r:recetaEditando})); }catch(e){}
+}
+function limpiarBorradorEditor(){ try{ sessionStorage.removeItem('prov_borrador_receta'); }catch(e){} }
+function recuperarBorradorEditor(){
+  try{
+    const raw = sessionStorage.getItem('prov_borrador_receta');
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    if(d && d.op===currentOpId && d.r){ recetaEditando = d.r; return true; }
+  }catch(e){}
+  return false;
+}
+// Al volver el foco a la app, si había un borrador y la vista quedó vacía, restaurarlo
+window.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && recetaEditando && vistaActual==='editorReceta'){
+    if(!document.getElementById('rec-nombre')) renderEditorReceta();
+  }
+});
+
 function renderRecetas(){
   const op = getOp();
-  const rows = getRecetas().map(r=>{
+  const ordenTipo = ['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
+  const recetasOrdenadas = [...getRecetas()].sort((a,b)=>{
+    const ta = ordenTipo.indexOf(a.tipoPlato||''), tb = ordenTipo.indexOf(b.tipoPlato||'');
+    const oa = ta===-1?99:ta, ob = tb===-1?99:tb;
+    if(oa!==ob) return oa-ob;
+    return a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'});
+  });
+  let ultimoTipo = null;
+  const rows = recetasOrdenadas.map(r=>{
     const {merc} = calcReceta(r, r.porciones||1);
     const pct = r.precioVenta > 0 ? merc/r.precioVenta*100 : null;
-    return `<tr>
+    let sep = '';
+    if(r.tipoPlato !== ultimoTipo){
+      ultimoTipo = r.tipoPlato;
+      sep = `<tr><td colspan="7" style="background:var(--crema);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--gris-1);padding:8px 12px">${r.tipoPlato||'Sin categoría'}</td></tr>`;
+    }
+    return sep + `<tr>
       <td><strong>${r.nombre}</strong></td>
       <td>${badgeLinea(r.tipoServicio)}</td>
       <td><span class="badge badge-gray">${r.tipoPlato}</span></td>
@@ -3185,6 +3228,8 @@ function delReceta(id){
 
 function renderEditorReceta(){
   const r = recetaEditando;
+  vistaActual = 'editorReceta';
+  guardarBorradorEditor();
   const op = getOp();
   const porciones = r.porciones || 1;
   let merc = 0;
@@ -3239,7 +3284,7 @@ function renderEditorReceta(){
 
   setContent(r.nombre||'Nueva receta', `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btn btn-secondary" onclick="renderRecetas()">← Volver</button>
+      <button class="btn btn-secondary" onclick="recetaEditando=null;limpiarBorradorEditor();renderRecetas()">← Volver</button>
       <input type="text" id="rec-nombre" value="${r.nombre}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
         <span style="font-size:11px;font-weight:700;color:var(--gris-1)">$ PRECIO VENTA</span>
@@ -3337,6 +3382,7 @@ function guardarReceta(){
   else demoData.recetas.push({...recetaEditando});
   showToast('Receta guardada ✓','success');
   recetaEditando = null;
+  limpiarBorradorEditor();
   renderRecetas();
   guardarEnFirestore();
 }
@@ -3964,6 +4010,10 @@ function renderResultado(){
         </div>
         <div class="card-body">
           <div style="font-size:12px;color:var(--gris-2);margin-bottom:14px">Cargá las unidades vendidas de cada receta en <strong>${mesSel}</strong> y la matriz clasifica tu carta: qué platos sostienen el negocio, cuáles venden mucho pero pierden plata, y cuáles hay que sacar.</div>
+          <div style="margin-bottom:14px">
+            <button class="btn btn-secondary btn-sm" onclick="importarVentasDesdeExcel('${mesSel}')">${ico('chart',13)} Importar ventas desde Excel</button>
+            <span style="font-size:11px;color:var(--gris-3);margin-left:8px">Columnas: RECETA · UNIDADES VENDIDAS</span>
+          </div>
           <div class="table-wrap" style="margin-bottom:16px">
             <table>
               <thead><tr><th>Receta</th><th style="text-align:right">Precio venta</th><th style="text-align:right">Margen/porción</th><th style="text-align:right;width:140px">Unidades vendidas</th></tr></thead>
@@ -4243,6 +4293,49 @@ function updVentaReceta(mes, recetaId, unidades){
   op.ventasPorMes[mes][recetaId] = Math.max(0, +unidades||0);
   renderResultado();
   guardarEnFirestore();
+}
+
+// Importar unidades vendidas desde Excel — cruza por nombre de receta
+function importarVentasDesdeExcel(mes){
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.xlsx,.xls';
+  input.onchange = e => {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+        // Buscar hoja con columna de ventas; por defecto la que tenga "VENTA" en el nombre o la primera
+        let sheetName = wb.SheetNames.find(n=>/venta/i.test(n)) || wb.SheetNames[0];
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
+        const op = getOp();
+        if(!op.ventasPorMes) op.ventasPorMes = {};
+        if(!op.ventasPorMes[mes]) op.ventasPorMes[mes] = {};
+        const norm = s => String(s||'').toLowerCase().trim().replace(/\s+/g,' ');
+        const recetasOp = getRecetas();
+        let ok=0, sinMatch=[];
+        data.forEach(row=>{
+          const nombre = row['RECETA']||row['Receta']||row['receta']||row['PLATO']||row['Plato'];
+          const unid = parseFloat(row['UNIDADES VENDIDAS']||row['Unidades vendidas']||row['UNIDADES']||row['Unidades']||row['CANTIDAD']||row['Cantidad']||0);
+          if(!nombre || !unid) return;
+          const receta = recetasOp.find(r=>norm(r.nombre)===norm(nombre))
+            || recetasOp.find(r=>norm(r.nombre).includes(norm(nombre)) || norm(nombre).includes(norm(r.nombre)));
+          if(receta){ op.ventasPorMes[mes][receta.id] = Math.max(0,unid); ok++; }
+          else sinMatch.push(nombre);
+        });
+        renderResultado();
+        guardarEnFirestore();
+        let msg = `${ok} recetas con ventas cargadas para ${mes}`;
+        if(sinMatch.length) msg += ` · ${sinMatch.length} sin coincidencia`;
+        showToast(msg, ok?'success':'error');
+        if(sinMatch.length) console.log('Ventas sin match:', sinMatch);
+      } catch(err){
+        showToast('Error al leer el Excel: '+err.message, 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  input.click();
 }
 
 // Descargar un gráfico SVG como imagen PNG
@@ -4652,12 +4745,12 @@ function modalNuevaOperacion(){
   `);
 }
 
-function guardarNuevaOperacion(){
+async function guardarNuevaOperacion(){
   const nombre = document.getElementById('no-nombre').value.trim();
   if(!nombre){ showToast('Escribí el nombre de la operación','error'); return; }
 
   const id = 'op-'+Date.now();
-  demoData.operaciones[id] = {
+  const nuevaOp = {
     id,
     nombre,
     tipo: document.getElementById('no-tipo').value,
@@ -4665,15 +4758,36 @@ function guardarNuevaOperacion(){
     tiposServicio: document.getElementById('no-servicios').value.split(',').map(s=>s.trim()).filter(Boolean),
     tiposPlato: document.getElementById('no-platos').value.split(',').map(s=>s.trim()).filter(Boolean),
   };
+  demoData.operaciones[id] = nuevaOp;
   closeModal();
+
+  // La operación nueva arranca vacía y activa — así no arrastra datos de otra
+  currentOpId = id;
+  demoData.ingredientes = [];
+  demoData.mermas = [];
+  demoData.recetas = demoData.recetas.filter(r=>r.opId!==id);
+
+  showToast('Operación creada — ya podés cargar o importar sus datos','success');
   renderClientes();
-  showToast('Operación creada correctamente','success');
-  guardarEnFirestore();
+
+  // Guardar solo el documento de la operación (sin colecciones, que están vacías)
+  if(currentUser){
+    try {
+      await db.collection('usuarios').doc(currentUser.uid)
+        .collection('operaciones').doc(id).set(limpiarParaFirestore(nuevaOp), {merge:true});
+    } catch(err){ showToast('No se pudo guardar la operación: '+err.message,'error'); }
+  }
 }
 
-function delOperacion(id){
+async function delOperacion(id){
   if(!confirm('¿Eliminar esta operación? Se perderán todos sus datos.')) return;
   delete demoData.operaciones[id];
+  if(currentUser){
+    try {
+      await db.collection('usuarios').doc(currentUser.uid).collection('operaciones').doc(id).delete();
+    } catch(err){ console.error(err); }
+  }
+  if(currentOpId===id) currentOpId = Object.keys(demoData.operaciones)[0]||null;
   renderClientes();
   showToast('Operación eliminada');
 }
