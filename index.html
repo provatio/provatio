@@ -44,7 +44,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-j]');
+      mostrar(msg + ' [versión 6-jul-2026-L]');
     }
   }, 25000);
 })();
@@ -967,7 +967,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-j</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-L</div></div>
     </div>
   </main>
 </div>
@@ -1046,54 +1046,69 @@ function limpiarParaFirestore(obj){
 
 // Guarda una colección en tandas de 400 (límite Firestore: 500), en paralelo
 async function guardarColeccion(uid, opId, subcol, items){
+  if(!items || !items.length) return {subcol, total:0, ok:0};
   const CHUNK = 400;
   const tandas = [];
   for(let i=0; i<items.length; i+=CHUNK){
+    const slice = items.slice(i, i+CHUNK);
     const batch = db.batch();
-    items.slice(i, i+CHUNK).forEach(item => {
+    slice.forEach(item => {
+      if(!item.id){ console.warn('Item sin id en', subcol, item); return; }
       const ref = db.collection('usuarios').doc(uid)
         .collection('operaciones').doc(opId)
-        .collection(subcol).doc(item.id);
+        .collection(subcol).doc(String(item.id));
       batch.set(ref, limpiarParaFirestore(item));
     });
-    tandas.push(conTimeout(batch.commit(), 60000, `Guardado de ${subcol}`));
+    tandas.push(conTimeout(batch.commit(), 90000, `${subcol} (tanda ${Math.floor(i/CHUNK)+1})`));
   }
   await Promise.all(tandas);
+  return {subcol, total:items.length, ok:items.length};
 }
 
 async function guardarEnFirestore(){
   if(!currentUser){ showToast('No hay sesión activa — no se pudo guardar','error'); return false; }
+  const uid = currentUser.uid;
+  let paso = 'inicio';
   try {
-    const uid = currentUser.uid;
-    showToast('Guardando… puede tardar unos segundos', 'success');
+    showToast('Guardando… puede tardar hasta un minuto', 'success');
 
-    // Operación activa (metadatos) + sus colecciones — todo en paralelo
-    await Promise.all([
-      conTimeout(
-        db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId)
-          .set(limpiarParaFirestore(demoData.operaciones[currentOpId]||{}), {merge:true}),
-        60000, 'Guardado de la operación'
-      ),
-      guardarColeccion(uid, currentOpId, 'ingredientes', demoData.ingredientes),
-      guardarColeccion(uid, currentOpId, 'mermas', demoData.mermas),
-      guardarColeccion(uid, currentOpId, 'recetas', getRecetas()),
-      guardarColeccion(uid, currentOpId, 'eventos', (demoData.eventos||[]).filter(e=>e.opId===currentOpId)),
-    ]);
+    // Secuencial para poder reportar exactamente dónde falla
+    paso = 'operación';
+    await conTimeout(
+      db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId)
+        .set(limpiarParaFirestore(demoData.operaciones[currentOpId]||{}), {merge:true}),
+      60000, 'Guardado de la operación'
+    );
 
-    // Metadatos de las otras operaciones (rápido, solo el doc)
+    paso = `ingredientes (${demoData.ingredientes.length})`;
+    await guardarColeccion(uid, currentOpId, 'ingredientes', demoData.ingredientes);
+
+    paso = `mermas (${demoData.mermas.length})`;
+    await guardarColeccion(uid, currentOpId, 'mermas', demoData.mermas);
+
+    const recs = getRecetas();
+    paso = `recetas (${recs.length})`;
+    await guardarColeccion(uid, currentOpId, 'recetas', recs);
+
+    const evs = (demoData.eventos||[]).filter(e=>e.opId===currentOpId);
+    paso = `eventos (${evs.length})`;
+    await guardarColeccion(uid, currentOpId, 'eventos', evs);
+
+    // Metadatos de otras operaciones (rápido)
+    paso = 'otras operaciones';
     for(const [opId, op] of Object.entries(demoData.operaciones)){
       if(opId===currentOpId) continue;
       await conTimeout(
         db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).set(limpiarParaFirestore(op), {merge:true}),
-        30000, 'Guardado de operación'
+        30000, 'op'
       ).catch(()=>{});
     }
 
-    showToast('Todo guardado en la nube ✓', 'success');
+    showToast(`Todo guardado ✓ (${recs.length} recetas, ${demoData.ingredientes.length} ingredientes, ${demoData.mermas.length} mermas)`, 'success');
     return true;
   } catch(err){
-    console.error('Error guardando en Firestore:', err);
-    showToast('NO se pudo guardar: ' + err.message + '. Tus datos siguen en pantalla — reintentá Guardar.', 'error');
+    console.error('Error guardando en Firestore. Paso:', paso, err);
+    showToast(`NO se guardó — falló en: ${paso}. Motivo: ${err.message}. Tus datos siguen en pantalla, reintentá.`, 'error');
     return false;
   }
 }
@@ -4031,7 +4046,11 @@ function renderResultado(){
             <table>
               <thead><tr><th>Receta</th><th style="text-align:right">Precio venta</th><th style="text-align:right">Margen/porción</th><th style="text-align:right;width:140px">Unidades vendidas</th></tr></thead>
               <tbody>
-                ${km.items.map(i=>`<tr>
+                ${[...km.items].sort((a,b)=>{
+                  const ord=['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
+                  const ta=ord.indexOf(a.tipoPlato), tb=ord.indexOf(b.tipoPlato);
+                  return (ta===-1?99:ta)-(tb===-1?99:tb) || a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'});
+                }).map(i=>`<tr>
                   <td><strong>${i.nombre}</strong></td>
                   <td style="text-align:right">$${fmt(i.pv)}</td>
                   <td style="text-align:right">$${fmt(i.mc)}</td>
@@ -4041,25 +4060,66 @@ function renderResultado(){
             </table>
           </div>
           ${km.listo ? `
-            <div id="chart-matriz" style="overflow-x:auto;margin-bottom:16px">${chartMatriz(km.matriz, km.popThreshold, km.mcProm)}</div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Receta</th><th>Clase</th><th style="text-align:right">Food cost</th><th style="text-align:right">Unid.</th><th style="text-align:right">Contribución del mes</th><th>Qué hacer</th></tr></thead>
-                <tbody>
-                  ${km.matriz.map(i=>{
-                    const c = CLASES_MENU[i.clase];
-                    return `<tr>
-                      <td><strong>${i.nombre}</strong></td>
-                      <td><span class="sem" style="background:${c.col}18;color:${c.col};border:1px solid ${c.col}55"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> ${c.nombre}</span></td>
-                      <td style="text-align:right;${i.fc>35?'color:#C02626;font-weight:700':''}">${fmtD(i.fc)}%</td>
-                      <td style="text-align:right">${fmt(i.unid)}</td>
-                      <td style="text-align:right;font-weight:700">$${fmt(i.contribucion)}</td>
-                      <td style="font-size:12px;color:var(--gris-1)">${c.consejo}</td>
-                    </tr>`;
-                  }).join('')}
-                </tbody>
-              </table>
-            </div>
+            ${(()=>{
+              const tipos = [...new Set(km.matriz.map(i=>i.tipoPlato))];
+              const fTipo = window._matrizTipo || 'todos';
+              const orden = window._matrizOrden || 'contribucion';
+              let vis = fTipo==='todos' ? [...km.matriz] : km.matriz.filter(i=>i.tipoPlato===fTipo);
+              const ordFn = {
+                contribucion:(a,b)=>b.contribucion-a.contribucion,
+                alfabetico:(a,b)=>a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'}),
+                tipo:(a,b)=>(a.tipoPlato||'').localeCompare(b.tipoPlato||'')||b.contribucion-a.contribucion,
+                precio:(a,b)=>b.pv-a.pv,
+                foodcost:(a,b)=>b.fc-a.fc,
+                unidades:(a,b)=>b.unid-a.unid,
+              };
+              vis.sort(ordFn[orden]||ordFn.contribucion);
+              const chart = chartMatriz(vis, km.popThreshold, km.mcProm);
+              return `
+              <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <label style="font-size:12px;color:var(--gris-2)">Tipo:</label>
+                  <select onchange="window._matrizTipo=this.value;renderResultado()" style="padding:5px 10px;font-size:12px;width:auto">
+                    <option value="todos"${fTipo==='todos'?' selected':''}>Todos (${km.matriz.length})</option>
+                    ${tipos.map(t=>`<option value="${t}"${fTipo===t?' selected':''}>${t} (${km.matriz.filter(i=>i.tipoPlato===t).length})</option>`).join('')}
+                  </select>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <label style="font-size:12px;color:var(--gris-2)">Ordenar por:</label>
+                  <select onchange="window._matrizOrden=this.value;renderResultado()" style="padding:5px 10px;font-size:12px;width:auto">
+                    <option value="contribucion"${orden==='contribucion'?' selected':''}>Contribución (mayor primero)</option>
+                    <option value="alfabetico"${orden==='alfabetico'?' selected':''}>Alfabético (A-Z)</option>
+                    <option value="tipo"${orden==='tipo'?' selected':''}>Tipo de plato</option>
+                    <option value="precio"${orden==='precio'?' selected':''}>Precio de venta</option>
+                    <option value="foodcost"${orden==='foodcost'?' selected':''}>% Food cost (mayor primero)</option>
+                    <option value="unidades"${orden==='unidades'?' selected':''}>Unidades vendidas</option>
+                  </select>
+                </div>
+                <span style="font-size:11px;color:var(--gris-3)">${vis.length} plato${vis.length!==1?'s':''} en pantalla</span>
+              </div>
+              <div id="chart-matriz" style="overflow-x:auto;margin-bottom:16px">${chart}</div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Receta</th><th>Tipo</th><th>Clase</th><th style="text-align:right">Precio</th><th style="text-align:right">Food cost</th><th style="text-align:right">Unid.</th><th style="text-align:right">Contribución del mes</th><th>Qué hacer</th></tr></thead>
+                  <tbody>
+                    ${vis.map(i=>{
+                      const c = CLASES_MENU[i.clase];
+                      return `<tr>
+                        <td><strong>${i.nombre}</strong></td>
+                        <td><span class="badge badge-gray">${i.tipoPlato}</span></td>
+                        <td><span class="sem" style="background:${c.col}18;color:${c.col};border:1px solid ${c.col}55"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> ${c.nombre}</span></td>
+                        <td style="text-align:right">$${fmt(i.pv)}</td>
+                        <td style="text-align:right;${i.fc>35?'color:#C02626;font-weight:700':''}">${fmtD(i.fc)}%</td>
+                        <td style="text-align:right">${fmt(i.unid)}</td>
+                        <td style="text-align:right;font-weight:700">$${fmt(i.contribucion)}</td>
+                        <td style="font-size:12px;color:var(--gris-1)">${c.consejo}</td>
+                      </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+              `;
+            })()}
           ` : `<div style="font-size:13px;color:var(--gris-2);background:var(--crema);border-radius:10px;padding:12px 14px">Cargá unidades vendidas en al menos <strong>2 recetas</strong> para que aparezca la matriz.</div>`}
         </div>
       </div>
@@ -4244,14 +4304,12 @@ function clasificarMenu(mes){
     .map(r=>{
       const {merc} = calcReceta(r, r.porciones||1);
       const unid = +ventas[r.id] || 0;
-      return {id:r.id, nombre:r.nombre, pv:r.precioVenta, costo:merc, mc:r.precioVenta-merc, unid};
+      return {id:r.id, nombre:r.nombre, tipoPlato:r.tipoPlato||'Sin tipo', pv:r.precioVenta, costo:merc, mc:r.precioVenta-merc, unid};
     });
   const conVenta = items.filter(i=>i.unid>0);
   if(conVenta.length < 2) return {items, matriz:[], listo:false};
   const totalUnid = conVenta.reduce((s,i)=>s+i.unid,0);
-  // Umbral de popularidad clásico: (100%/n) × 0.7
   const popThreshold = (1/conVenta.length)*0.7;
-  // Margen de contribución promedio ponderado por unidades
   const mcProm = conVenta.reduce((s,i)=>s+i.mc*i.unid,0)/totalUnid;
   const matriz = conVenta.map(i=>{
     const pop = i.unid/totalUnid;
@@ -4259,43 +4317,52 @@ function clasificarMenu(mes){
     const mcAlto = i.mc >= mcProm;
     const clase = popAlta ? (mcAlto?'estrella':'caballito') : (mcAlto?'puzzle':'perro');
     return {...i, pop, clase, contribucion: i.mc*i.unid, fc: i.costo/i.pv*100};
-  }).sort((a,b)=>b.contribucion-a.contribucion);
+  });
   return {items, matriz, listo:true, popThreshold, mcProm, totalUnid};
 }
 
 function chartMatriz(matriz, popThreshold, mcProm){
   if(!matriz.length) return '';
-  const W=640,H=380,mL=64,mR=24,mT=30,mB=50;
+  const W=680,H=440,mL=68,mR=24,mT=34,mB=54;
   const pw=W-mL-mR, ph=H-mT-mB;
-  const maxPop = Math.max(...matriz.map(i=>i.pop), popThreshold)*1.2;
-  const maxMC = Math.max(...matriz.map(i=>i.mc), mcProm)*1.15;
-  const X = v=> mL + v/maxPop*pw;
-  const Y = v=> mT + ph - v/maxMC*ph;
+  // Escala logarítmica en popularidad (separa la nube de baja participación)
+  const pops = matriz.map(i=>i.pop).filter(p=>p>0);
+  const minPop = Math.min(...pops, popThreshold)*0.7;
+  const maxPop = Math.max(...pops, popThreshold)*1.15;
+  const lg = v => Math.log10(Math.max(v, minPop));
+  const lgMin = lg(minPop), lgMax = lg(maxPop);
+  const X = v => mL + (lg(v)-lgMin)/(lgMax-lgMin)*pw;
+  const maxMC = Math.max(...matriz.map(i=>i.mc), mcProm)*1.12;
+  const Y = v => mT + ph - v/maxMC*ph;
+  // Tamaño del punto ∝ contribución del mes
+  const maxContrib = Math.max(...matriz.map(i=>i.contribucion), 1);
+  const R = c => 4 + Math.sqrt(c/maxContrib)*11;
 
   const zonas = `
-    <text x="${(X(popThreshold)+mL)/2}" y="${mT+16}" font-family="Arial" font-size="11" font-weight="bold" fill="#C8A96E" opacity="0.55" text-anchor="middle">PUZZLE</text>
-    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+16}" font-family="Arial" font-size="11" font-weight="bold" fill="#2D5016" opacity="0.55" text-anchor="middle">ESTRELLA</text>
-    <text x="${(X(popThreshold)+mL)/2}" y="${mT+ph-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#8B1A1A" opacity="0.55" text-anchor="middle">PERRO</text>
-    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+ph-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#B8860B" opacity="0.55" text-anchor="middle">CABALLITO</text>`;
+    <text x="${(X(popThreshold)+mL)/2}" y="${mT+15}" font-family="Arial" font-size="11" font-weight="bold" fill="#C8A96E" opacity="0.5" text-anchor="middle">PUZZLE</text>
+    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+15}" font-family="Arial" font-size="11" font-weight="bold" fill="#2D5016" opacity="0.5" text-anchor="middle">ESTRELLA</text>
+    <text x="${(X(popThreshold)+mL)/2}" y="${mT+ph-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#8B1A1A" opacity="0.5" text-anchor="middle">PERRO</text>
+    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+ph-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#B8860B" opacity="0.5" text-anchor="middle">CABALLITO</text>`;
 
   const ejes = `
     <line x1="${mL}" y1="${mT}" x2="${mL}" y2="${mT+ph}" stroke="#D8D2C8" stroke-width="1.5"/>
     <line x1="${mL}" y1="${mT+ph}" x2="${mL+pw}" y2="${mT+ph}" stroke="#D8D2C8" stroke-width="1.5"/>
     <line x1="${X(popThreshold)}" y1="${mT}" x2="${X(popThreshold)}" y2="${mT+ph}" stroke="#8A8A80" stroke-width="1" stroke-dasharray="5,4"/>
     <line x1="${mL}" y1="${Y(mcProm)}" x2="${mL+pw}" y2="${Y(mcProm)}" stroke="#8A8A80" stroke-width="1" stroke-dasharray="5,4"/>
-    <text x="${mL+pw/2}" y="${H-8}" font-family="Arial" font-size="11" fill="#5A5A52" text-anchor="middle">Popularidad (% de las ventas del mes)</text>
+    <text x="${mL+pw/2}" y="${H-8}" font-family="Arial" font-size="11" fill="#5A5A52" text-anchor="middle">Popularidad — escala logarítmica (% de las ventas)</text>
     <text x="16" y="${mT+ph/2}" font-family="Arial" font-size="11" fill="#5A5A52" text-anchor="middle" transform="rotate(-90 16 ${mT+ph/2})">Margen de contribución por porción ($)</text>
     <text x="${X(popThreshold)}" y="${mT-6}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="middle">${fmtD(popThreshold*100)}%</text>
     <text x="${mL-6}" y="${Y(mcProm)+4}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="end">${fmtCorto(mcProm)}</text>`;
 
-  const puntos = matriz.map(i=>{
+  // puntos sin etiqueta, con transparencia y <title> para hover
+  const puntos = matriz.filter(i=>i.pop>0).map(i=>{
     const c = CLASES_MENU[i.clase].col;
-    return `<circle cx="${X(i.pop)}" cy="${Y(i.mc)}" r="7" fill="${c}" opacity="0.85"/>
-      <text x="${X(i.pop)+11}" y="${Y(i.mc)+4}" font-family="Arial" font-size="11" font-weight="bold" fill="#1A1A18">${i.nombre.slice(0,20)}</text>`;
+    return `<circle cx="${X(i.pop)}" cy="${Y(i.mc)}" r="${R(i.contribucion).toFixed(1)}" fill="${c}" opacity="0.55" stroke="${c}" stroke-width="1"><title>${i.nombre} · ${CLASES_MENU[i.clase].nombre} · ${i.unid} u · margen $${fmt(i.mc)} · contrib $${fmt(i.contribucion)}</title></circle>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
     ${zonas}${ejes}${puntos}
+    <text x="${mL}" y="${H-8}" font-family="Arial" font-size="9.5" fill="#B8B0A4">Tamaño del punto = plata que aporta al mes · pasá el mouse para ver cada plato</text>
   </svg>`;
 }
 
@@ -4543,7 +4610,23 @@ function renderRentabilidad(){
     </div>`:''}
 
     <div class="card">
-      <div class="card-header"><span class="card-title">Análisis por receta — ordenado por % de costo</span></div>
+      <div class="card-header">
+        <span class="card-title">Análisis por receta</span>
+      </div>
+      <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--crema-2)">
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:12px;color:var(--gris-2)">Tipo:</label>
+          <select onchange="window._rentTipo=this.value;renderRentabilidad()" style="padding:5px 10px;font-size:12px;width:auto">
+            ${(()=>{const tipos=[...new Set(recetasConCosto.map(r=>r.tipoPlato||'Sin tipo'))];const f=window._rentTipo||'todos';return `<option value="todos"${f==='todos'?' selected':''}>Todos (${recetasConCosto.length})</option>`+tipos.map(t=>`<option value="${t}"${f===t?' selected':''}>${t} (${recetasConCosto.filter(r=>(r.tipoPlato||'Sin tipo')===t).length})</option>`).join('');})()}
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:12px;color:var(--gris-2)">Ordenar por:</label>
+          <select onchange="window._rentOrden=this.value;renderRentabilidad()" style="padding:5px 10px;font-size:12px;width:auto">
+            ${(()=>{const o=window._rentOrden||'costo';const ops=[['costo','% costo (mayor primero)'],['alfabetico','Alfabético (A-Z)'],['tipo','Tipo de plato'],['precio','Precio de venta'],['margen','Margen bruto'],['costoporcion','Costo por porción']];return ops.map(([v,l])=>`<option value="${v}"${o===v?' selected':''}>${l}</option>`).join('');})()}
+          </select>
+        </div>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -4555,7 +4638,20 @@ function renderRentabilidad(){
             <th>Estado</th>
           </tr></thead>
           <tbody>
-            ${recetasConCosto.map(r=>`<tr>
+            ${(()=>{
+              const fTipo=window._rentTipo||'todos';
+              const orden=window._rentOrden||'costo';
+              let vis = fTipo==='todos'?[...recetasConCosto]:recetasConCosto.filter(r=>(r.tipoPlato||'Sin tipo')===fTipo);
+              const ord={
+                costo:(a,b)=>{if(a.pct===null&&b.pct===null)return 0;if(a.pct===null)return 1;if(b.pct===null)return -1;return b.pct-a.pct;},
+                alfabetico:(a,b)=>a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'}),
+                tipo:(a,b)=>{const O=['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];const ta=O.indexOf(a.tipoPlato),tb=O.indexOf(b.tipoPlato);return (ta===-1?99:ta)-(tb===-1?99:tb)||a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'});},
+                precio:(a,b)=>(b.pv||0)-(a.pv||0),
+                margen:(a,b)=>((b.pv||0)-b.merc)-((a.pv||0)-a.merc),
+                costoporcion:(a,b)=>b.merc-a.merc,
+              };
+              vis.sort(ord[orden]||ord.costo);
+              return vis.map(r=>`<tr>
               <td><strong>${r.nombre}</strong></td>
               <td>${badgeLinea(r.tipoServicio)}</td>
               <td><span class="badge badge-gray">${r.tipoPlato}</span></td>
@@ -4564,7 +4660,8 @@ function renderRentabilidad(){
               <td style="text-align:right;color:var(--oliva);font-weight:600">${r.pv?'$'+fmt(r.pv-r.merc):'—'}</td>
               <td style="text-align:right">${r.pct!==null?fmtD(r.pct)+'%':'<span style="color:var(--gris-3)">—</span>'}</td>
               <td>${r.pct!==null?semaforo(r.pct):'<span style="color:var(--gris-3);font-size:12px">Sin precio</span>'}</td>
-            </tr>`).join('')}
+            </tr>`).join('');
+            })()}
           </tbody>
         </table>
       </div>
@@ -4838,21 +4935,23 @@ async function restaurarBackup(event){
         return;
       }
       
-      if(!confirm(`¿Restaurar backup del ${backup.timestamp}?\n\nEsto va a reemplazar los datos actuales de la operación.`)) return;
-      
-      // Restaurar datos
+      if(!confirm(`¿Restaurar backup en la operación ACTUAL?\n\nSe cargarán ${backup.ingredientes.length} ingredientes, ${(backup.mermas||[]).length} mermas y ${backup.recetas.length} recetas.\n\n⚠ Asegurate de estar en la operación correcta (creá una nueva y vacía si es un cliente nuevo).`)) return;
+
+      // Cargar en memoria, asignando todo a la operación activa
       demoData.ingredientes = backup.ingredientes;
       demoData.mermas = backup.mermas || [];
-      
-      // Restaurar recetas de esta operación
       demoData.recetas = demoData.recetas.filter(r=>r.opId !== currentOpId);
       backup.recetas.forEach(r=>{ r.opId = currentOpId; demoData.recetas.push(r); });
-      
-      // Guardar en Firebase
-      await guardarEnFirestore();
-      
+
+      // Guardar y REPORTAR resultado real
+      showToast('Datos cargados en memoria. Guardando en la nube…', 'success');
+      const ok = await guardarEnFirestore();
       navigate('dashboard');
-      showToast('Backup restaurado exitosamente ✓', 'success');
+      if(ok){
+        showToast('Backup restaurado y guardado ✓', 'success');
+      } else {
+        showToast('Los datos están en pantalla pero NO se guardaron en la nube. Tocá Guardar de nuevo cuando tengas buena conexión.', 'error');
+      }
     } catch(err){
       showToast('Error al leer el backup: ' + err.message, 'error');
     }
