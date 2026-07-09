@@ -26,6 +26,8 @@
     }catch(e){}
   }
   window.onerror = function(msg, src, line, col){
+    // Errores opacos de scripts externos ("Script error." con línea 0) no dan info útil
+    if((msg==='Script error.' || msg==='Script error') && !line){ return false; }
     var t = msg + ' (' + (src||'').split('/').pop() + ':' + line + ':' + (col||'') + ')';
     window.__provErrores.push(t); mostrar(t);
     return false;
@@ -44,7 +46,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-M]');
+      mostrar(msg + ' [versión 6-jul-2026-N]');
     }
   }, 25000);
 })();
@@ -967,7 +969,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-M</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-N</div></div>
     </div>
   </main>
 </div>
@@ -1207,7 +1209,11 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 // Redes móviles/proxies rompen el canal en tiempo real de Firestore (síntoma:
 // "Cargando..." o "Guardando..." infinito). Forzar long-polling lo hace confiable.
-db.settings({ experimentalForceLongPolling: true, merge: true });
+try {
+  db.settings({ experimentalForceLongPolling: true });
+} catch(e){
+  console.warn('No se pudo aplicar long-polling:', e.message);
+}
 
 // ── ESTADO GLOBAL ──
 let currentUser = null;
