@@ -46,7 +46,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-N]');
+      mostrar(msg + ' [versión 6-jul-2026-P]');
     }
   }, 25000);
 })();
@@ -969,7 +969,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-N</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-P</div></div>
     </div>
   </main>
 </div>
@@ -1041,19 +1041,45 @@ async function fsDel(path){
 function getUserPath(){ return `usuarios/${currentUser.uid}`; }
 function getOpPath(opId){ return `${getUserPath()}/operaciones/${opId||currentOpId}`; }
 
-// Firestore rechaza campos con valor undefined — este helper los elimina antes de subir
+// Firestore rechaza undefined, NaN, Infinity y algunos valores raros.
+// Este saneador profundo los convierte a algo válido antes de subir.
 function limpiarParaFirestore(obj){
-  return JSON.parse(JSON.stringify(obj));
+  return sanear(obj);
+}
+function sanear(v){
+  if(v === null) return null;
+  if(v === undefined) return null;
+  if(typeof v === 'number'){
+    if(!isFinite(v)) return 0;          // NaN, Infinity → 0
+    return v;
+  }
+  if(typeof v === 'boolean' || typeof v === 'string') return v;
+  if(Array.isArray(v)) return v.map(sanear);
+  if(typeof v === 'object'){
+    const out = {};
+    for(const k in v){
+      if(!Object.prototype.hasOwnProperty.call(v, k)) continue;
+      const val = sanear(v[k]);
+      if(val !== undefined) out[k] = val;
+    }
+    return out;
+  }
+  // functions, symbols, bigint → descartar
+  return null;
 }
 
 // Reintenta una promesa hasta N veces con espera creciente
 async function conReintento(fn, intentos, etiqueta){
   let ultimoError;
   for(let i=0; i<intentos; i++){
-    try { return await conTimeout(fn(), 25000, etiqueta); }
-    catch(err){ ultimoError = err; await new Promise(r=>setTimeout(r, 1500*(i+1))); }
+    try { return await conTimeout(fn(), 15000, etiqueta); }
+    catch(err){
+      ultimoError = err;
+      mostrarProgreso(`Reintentando ${etiqueta}… (intento ${i+2})`);
+      await new Promise(r=>setTimeout(r, 1500*(i+1)));
+    }
   }
-  throw ultimoError;
+  throw new Error(`${etiqueta}: no se pudo tras ${intentos} intentos (${ultimoError?.message||'sin respuesta'})`);
 }
 
 // Muestra progreso de guardado en pantalla (overlay no bloqueante)
@@ -1069,13 +1095,11 @@ function mostrarProgreso(texto){
 }
 function ocultarProgreso(){ document.getElementById('prov-progreso')?.remove(); }
 
-// Guarda una colección en tandas CHICAS (150) con reintentos y progreso
+// Guarda una colección en tandas CHICAS (50) con reintentos, pausa y progreso
 async function guardarColeccion(uid, opId, subcol, items){
   if(!items || !items.length) return;
-  const CHUNK = 150;
-  const totalTandas = Math.ceil(items.length/CHUNK);
+  const CHUNK = 50;
   for(let i=0; i<items.length; i+=CHUNK){
-    const nTanda = Math.floor(i/CHUNK)+1;
     mostrarProgreso(`Guardando ${subcol}… ${Math.min(i+CHUNK, items.length)} de ${items.length}`);
     const slice = items.slice(i, i+CHUNK);
     await conReintento(() => {
@@ -1088,7 +1112,8 @@ async function guardarColeccion(uid, opId, subcol, items){
         batch.set(ref, limpiarParaFirestore(item));
       });
       return batch.commit();
-    }, 4, `${subcol} tanda ${nTanda}/${totalTandas}`);
+    }, 4, `${subcol} desde ${i}`);
+    await new Promise(r=>setTimeout(r, 250)); // respiro entre tandas
   }
 }
 
@@ -1128,8 +1153,30 @@ async function guardarEnFirestore(){
   } catch(err){
     ocultarProgreso();
     console.error('Error guardando. Paso:', paso, err);
-    showToast(`NO se guardó — falló en ${paso}: ${err.message}. Reintentá Guardar (los datos siguen en pantalla).`, 'error');
+    const codigo = err.code ? ` [${err.code}]` : '';
+    showToast(`NO se guardó — falló en ${paso}${codigo}: ${err.message}. Reintentá Guardar (los datos siguen en pantalla).`, 'error');
     return false;
+  }
+}
+
+// Diagnóstico: prueba una escritura mínima y reporta el resultado exacto en consola
+async function diagnosticarGuardado(){
+  if(!currentUser){ alert('No hay sesión'); return; }
+  const uid = currentUser.uid;
+  console.log('=== DIAGNÓSTICO DE GUARDADO ===');
+  console.log('Usuario:', uid);
+  console.log('Operación activa:', currentOpId);
+  const t0 = Date.now();
+  try {
+    console.log('Probando escritura mínima…');
+    await db.collection('usuarios').doc(uid).collection('_diagnostico').doc('test')
+      .set({ ts: Date.now(), prueba: true });
+    const ms = Date.now()-t0;
+    console.log(`✓ ESCRITURA OK en ${ms}ms — la conexión funciona.`);
+    alert(`Escritura de prueba OK en ${ms}ms. La conexión a la nube funciona. El problema es el volumen o un dato puntual.`);
+  } catch(err){
+    console.error('✗ ESCRITURA FALLÓ:', err.code, err.message, err);
+    alert('La escritura de prueba FALLÓ: ' + (err.code||'') + ' — ' + err.message);
   }
 }
 
@@ -1207,13 +1254,8 @@ function hideLoading(){
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
-// Redes móviles/proxies rompen el canal en tiempo real de Firestore (síntoma:
-// "Cargando..." o "Guardando..." infinito). Forzar long-polling lo hace confiable.
-try {
-  db.settings({ experimentalForceLongPolling: true });
-} catch(e){
-  console.warn('No se pudo aplicar long-polling:', e.message);
-}
+// Nota: probamos experimentalForceLongPolling para redes móviles pero rompía
+// las escrituras en algunas conexiones. Dejamos que Firestore negocie solo.
 
 // ── ESTADO GLOBAL ──
 let currentUser = null;
