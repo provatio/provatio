@@ -46,7 +46,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-P]');
+      mostrar(msg + ' [versión 6-jul-2026-Q]');
     }
   }, 25000);
 })();
@@ -969,7 +969,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-P</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-Q</div></div>
     </div>
   </main>
 </div>
@@ -1120,41 +1120,43 @@ async function guardarColeccion(uid, opId, subcol, items){
 async function guardarEnFirestore(){
   if(!currentUser){ showToast('No hay sesión activa — no se pudo guardar','error'); return false; }
   const uid = currentUser.uid;
-  let paso = 'inicio';
   try {
-    paso = 'operación';
-    mostrarProgreso('Guardando la operación…');
+    mostrarProgreso('Guardando…');
+
+    // TODA la operación en UN solo documento (elimina el problema de volumen).
+    // ~95 KB de datos entran holgados en el límite de 1 MB por documento.
+    const opData = {
+      ...(demoData.operaciones[currentOpId]||{}),
+      _datos: {
+        ingredientes: demoData.ingredientes,
+        mermas: demoData.mermas,
+        recetas: getRecetas(),
+        eventos: (demoData.eventos||[]).filter(e=>e.opId===currentOpId),
+      }
+    };
+
     await conReintento(() =>
       db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId)
-        .set(limpiarParaFirestore(demoData.operaciones[currentOpId]||{}), {merge:true}),
-      4, 'operación');
+        .set(limpiarParaFirestore(opData)),
+      4, 'guardar operación');
 
-    paso = 'ingredientes';
-    await guardarColeccion(uid, currentOpId, 'ingredientes', demoData.ingredientes);
-    paso = 'mermas';
-    await guardarColeccion(uid, currentOpId, 'mermas', demoData.mermas);
-    paso = 'recetas';
-    const recs = getRecetas();
-    await guardarColeccion(uid, currentOpId, 'recetas', recs);
-    paso = 'eventos';
-    await guardarColeccion(uid, currentOpId, 'eventos', (demoData.eventos||[]).filter(e=>e.opId===currentOpId));
-
-    paso = 'otras operaciones';
+    // Metadatos ligeros de las otras operaciones (sin sus datos pesados)
     for(const [opId, op] of Object.entries(demoData.operaciones)){
       if(opId===currentOpId) continue;
+      const meta = {...op}; delete meta._datos;
       await conReintento(() =>
-        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).set(limpiarParaFirestore(op), {merge:true}),
-        2, 'op').catch(()=>{});
+        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).set(limpiarParaFirestore(meta), {merge:true}),
+        2, 'meta op').catch(()=>{});
     }
 
     ocultarProgreso();
+    const recs = getRecetas();
     showToast(`Todo guardado ✓ — ${recs.length} recetas, ${demoData.ingredientes.length} ingredientes, ${demoData.mermas.length} mermas`, 'success');
     return true;
   } catch(err){
     ocultarProgreso();
-    console.error('Error guardando. Paso:', paso, err);
-    const codigo = err.code ? ` [${err.code}]` : '';
-    showToast(`NO se guardó — falló en ${paso}${codigo}: ${err.message}. Reintentá Guardar (los datos siguen en pantalla).`, 'error');
+    console.error('Error guardando:', err);
+    showToast(`NO se guardó${err.code?' ['+err.code+']':''}: ${err.message}. Reintentá (los datos siguen en pantalla).`, 'error');
     return false;
   }
 }
@@ -1212,8 +1214,22 @@ async function cargarDesdeFirestore(uid){
 
     // Usar primera operación como activa
     currentOpId = Object.keys(demoData.operaciones)[0];
+    const opActiva = demoData.operaciones[currentOpId] || {};
 
-    // Cargar ingredientes, mermas y recetas de la operación activa
+    if(opActiva._datos){
+      // Formato nuevo: todo en el documento de la operación
+      demoData.ingredientes = opActiva._datos.ingredientes || [];
+      demoData.mermas = opActiva._datos.mermas || [];
+      const rec = (opActiva._datos.recetas||[]).map(r=>({...r, opId:currentOpId}));
+      demoData.recetas = demoData.recetas.filter(r => r.opId !== currentOpId).concat(rec);
+      if(!demoData.eventos) demoData.eventos = [];
+      const evs = (opActiva._datos.eventos||[]).map(e=>({...e, opId:currentOpId}));
+      demoData.eventos = demoData.eventos.filter(e => e.opId !== currentOpId).concat(evs);
+      hideLoading();
+      return true;
+    }
+
+    // Formato viejo: subcolecciones (compatibilidad)
     const [ingsSnap, mermasSnap, recetasSnap, eventosSnap] = await conTimeout(Promise.all([
       db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId).collection('ingredientes').get(),
       db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId).collection('mermas').get(),
@@ -2029,21 +2045,34 @@ function buildSidebar(rol){
 // ── NAVEGACIÓN ──
 async function abrirOperacion(opId){
   if(opId === currentOpId){ navigate('operacion'); return; }
-  // Guardar en variables temporales — solo pisar memoria si la carga fue exitosa
   if(currentUser && currentUser.uid){
     try {
       showLoading('Cargando la operación…');
       const uid = currentUser.uid;
-      const [ingsSnap, mermasSnap, recetasSnap, eventosSnap] = await conTimeout(Promise.all([
-        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('ingredientes').get(),
-        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('mermas').get(),
-        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('recetas').get(),
-        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('eventos').get(),
-      ]), 30000, 'La carga de la operación');
-      const ings=[]; ingsSnap.forEach(d=>ings.push(d.data()));
-      const merm=[]; mermasSnap.forEach(d=>merm.push(d.data()));
-      const rec=[]; recetasSnap.forEach(d=>rec.push(d.data()));
-      const evs=[]; eventosSnap.forEach(d=>evs.push(d.data()));
+      const opDoc = await conTimeout(
+        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).get(),
+        20000, 'La carga de la operación');
+      const data = opDoc.data() || {};
+      let ings, merm, rec, evs;
+      if(data._datos){
+        // Formato nuevo: todo en un documento
+        ings = data._datos.ingredientes || [];
+        merm = data._datos.mermas || [];
+        rec = (data._datos.recetas || []).map(r=>({...r, opId}));
+        evs = (data._datos.eventos || []).map(e=>({...e, opId}));
+      } else {
+        // Formato viejo: subcolecciones (compatibilidad)
+        const [ingsSnap, mermasSnap, recetasSnap, eventosSnap] = await conTimeout(Promise.all([
+          db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('ingredientes').get(),
+          db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('mermas').get(),
+          db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('recetas').get(),
+          db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('eventos').get(),
+        ]), 30000, 'La carga de la operación');
+        ings=[]; ingsSnap.forEach(d=>ings.push(d.data()));
+        merm=[]; mermasSnap.forEach(d=>merm.push(d.data()));
+        rec=[]; recetasSnap.forEach(d=>rec.push(d.data()));
+        evs=[]; eventosSnap.forEach(d=>evs.push(d.data()));
+      }
       // Éxito: recién ahora cambiamos estado
       currentOpId = opId;
       demoData.ingredientes = ings;
@@ -2055,7 +2084,7 @@ async function abrirOperacion(opId){
     } catch(err){
       hideLoading();
       showToast('No pude cargar la operación: '+err.message+'. Se mantiene la anterior.', 'error');
-      return; // NO cambiar de operación si falló la carga
+      return;
     }
   } else {
     currentOpId = opId;
