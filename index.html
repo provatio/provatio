@@ -5054,7 +5054,7 @@ function renderClientes(){
       </div>
     </td>
     <td><span class="badge badge-op">${op.tipo==='catering'?'Catering':'Restaurante'}</span></td>
-    <td>${demoData.recetas.filter(r=>r.opId===op.id).length} recetas</td>
+    <td>${(()=>{ const enMem = demoData.recetas.filter(r=>r.opId===op.id).length; if(enMem>0) return enMem+' recetas'; const docRecs = op._datos && op._datos.recetas ? op._datos.recetas.length : (op._meta&&op._meta.totalRecetas||0); return docRecs+' recetas'; })()}</td>
     <td><span class="sem sem-v"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> Activo</span></td>
     <td style="display:flex;gap:6px">
       <button class="btn btn-secondary btn-sm" onclick="modalDatosCliente('${op.id}')">${ico('edit',13)} Datos</button>
