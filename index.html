@@ -46,7 +46,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-V]');
+      mostrar(msg + ' [versión 6-jul-2026-X]');
     }
   }, 25000);
 })();
@@ -969,7 +969,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-V</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-X</div></div>
     </div>
   </main>
 </div>
@@ -1125,12 +1125,22 @@ async function guardarEnFirestore(){
 
     // TODA la operación en UN solo documento (elimina el problema de volumen).
     // ~95 KB de datos entran holgados en el límite de 1 MB por documento.
+    const recetasOp = getRecetas();
     const opData = {
       ...(demoData.operaciones[currentOpId]||{}),
+      _meta: {
+        totalRecetas: recetasOp.length,
+        recetasConPrecio: recetasOp.filter(r=>r.precioVenta>0).length,
+        recetasSinPrecio: recetasOp.filter(r=>!r.precioVenta||r.precioVenta<=0).length,
+        recetasSinIngredientes: recetasOp.filter(r=>!r.ingredientes||r.ingredientes.length===0).length,
+        totalIngredientes: demoData.ingredientes.length,
+        totalMermas: demoData.mermas.length,
+        actualizadoEn: Date.now(),
+      },
       _datos: {
         ingredientes: demoData.ingredientes,
         mermas: demoData.mermas,
-        recetas: getRecetas(),
+        recetas: recetasOp,
         eventos: (demoData.eventos||[]).filter(e=>e.opId===currentOpId),
       }
     };
@@ -2147,8 +2157,28 @@ function renderDashboard(){
   else renderDashboardOperacion();
 }
 
-// Estadísticas de una operación (rentabilidad por receta, no por operación)
+// Estadísticas de una operación.
+// Si la operación está cargada en memoria (opId === currentOpId), calcula en vivo.
+// Si no, usa _meta guardado en Firestore para no mostrar 0 en el panel general.
 function opStats(opId){
+  const enMemoria = demoData.recetas.some(r=>r.opId===opId);
+
+  if(!enMemoria){
+    // Leer desde _meta del documento de la operación (guardado en cada guardarEnFirestore)
+    const opDoc = demoData.operaciones[opId] || {};
+    const meta = opDoc._meta || {};
+    return {
+      total: meta.totalRecetas || 0,
+      conPrecio: meta.recetasConPrecio || 0,
+      sinPrecio: meta.recetasSinPrecio || 0,
+      sinIngredientes: meta.recetasSinIngredientes || 0,
+      pctProm: null,   // sin calcular en vivo — no hay ingredientes cargados
+      mercProm: 0,
+      desdeMeta: true, // flag para mostrar indicador visual si se necesita
+    };
+  }
+
+  // Cálculo en vivo para la operación activa (en memoria)
   const recetas = demoData.recetas.filter(r=>r.opId===opId);
   const conPrecio = recetas.filter(r=>r.precioVenta>0);
   let sumPct = 0, sumMerc = 0, nMerc = 0;
@@ -2164,6 +2194,7 @@ function opStats(opId){
     sinIngredientes: recetas.filter(r=>!r.ingredientes||r.ingredientes.length===0).length,
     pctProm: conPrecio.length ? sumPct/conPrecio.length : null,
     mercProm: nMerc ? sumMerc/nMerc : 0,
+    desdeMeta: false,
   };
 }
 
@@ -2233,8 +2264,8 @@ function renderDashboardAdmin(){
               </td>
               <td><span class="badge badge-op">${op.tipo==='catering'?'Catering':'Restaurante'}</span></td>
               <td style="text-align:right">${s.total}${s.sinPrecio?` <span style="color:#B8860B;font-size:11px">(${s.sinPrecio} sin precio)</span>`:''}</td>
-              <td style="text-align:right">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : '<span style="color:var(--gris-3)">—</span>'}</td>
-              <td>${s.pctProm!==null ? semaforo(s.pctProm) : '<span style="color:var(--gris-3);font-size:12px">Sin datos</span>'}</td>
+              <td style="text-align:right">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : s.desdeMeta ? '<span style="color:var(--gris-3);font-size:11px" title="Abrí la operación para calcular">Abrir para ver</span>' : '<span style="color:var(--gris-3)">—</span>'}</td>
+              <td>${s.pctProm!==null ? semaforo(s.pctProm) : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>
               <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${op.id}')">Abrir →</button></td>
             </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gris-3);padding:32px">Sin operaciones. Creá la primera.</td></tr>'}
           </tbody>
@@ -4279,18 +4310,24 @@ function renderResultado(){
           </div>
           <div class="table-wrap" style="margin-bottom:16px">
             <table>
-              <thead><tr><th>Receta</th><th style="text-align:right">Precio venta</th><th style="text-align:right">Margen/porción</th><th style="text-align:right;width:140px">Unidades vendidas</th></tr></thead>
+              <thead><tr><th>Receta</th><th style="text-align:right">Precio venta</th><th style="text-align:right">Margen/porción</th><th style="text-align:right;width:110px">${getOp().tieneDelivery?'Ventas salón':'Unidades vendidas'}</th>${getOp().tieneDelivery?'<th style="text-align:right;width:110px;color:var(--dorado)">Ventas delivery</th>':''}</tr></thead>
               <tbody>
                 ${[...km.items].sort((a,b)=>{
                   const ord=['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
                   const ta=ord.indexOf(a.tipoPlato), tb=ord.indexOf(b.tipoPlato);
                   return (ta===-1?99:ta)-(tb===-1?99:tb) || a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'});
-                }).map(i=>`<tr>
+                }).map(i=>{
+                  const rec = demoData.recetas.find(r=>r.id===i.id);
+                  const tieneDelivery = getOp().tieneDelivery && rec && rec.delivery && rec.delivery.activa;
+                  const ventasMes = (getOp().ventasPorMes||{})[mesSel]||{};
+                  return `<tr>
                   <td><strong>${i.nombre}</strong></td>
                   <td style="text-align:right">$${fmt(i.pv)}</td>
                   <td style="text-align:right">$${fmt(i.mc)}</td>
-                  <td style="text-align:right"><input type="number" min="0" value="${i.unid||''}" placeholder="0" style="width:110px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)"></td>
-                </tr>`).join('')}
+                  <td style="text-align:right"><input type="number" min="0" value="${i.unid||''}" placeholder="0" style="width:90px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)"></td>
+                  ${getOp().tieneDelivery ? `<td style="text-align:right">${tieneDelivery ? `<input type="number" min="0" value="${ventasMes[i.id+'_dlv']||''}" placeholder="0" style="width:90px;text-align:right;border-color:var(--dorado)" onchange="updVentaReceta('${mesSel}','${i.id}_dlv',this.value)">` : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>` : ''}
+                </tr>`;
+                }).join('')}
               </tbody>
             </table>
           </div>
