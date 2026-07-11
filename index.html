@@ -2164,17 +2164,23 @@ function opStats(opId){
   const enMemoria = demoData.recetas.some(r=>r.opId===opId);
 
   if(!enMemoria){
-    // Leer desde _meta del documento de la operación (guardado en cada guardarEnFirestore)
+    // La operación no está activa pero su documento completo ya fue traído por
+    // cargarDesdeFirestore al inicio — leer _datos.recetas directamente desde ahí.
     const opDoc = demoData.operaciones[opId] || {};
+    const recetasDoc = (opDoc._datos && opDoc._datos.recetas) ? opDoc._datos.recetas : [];
+    const conPrecio  = recetasDoc.filter(r=>r.precioVenta>0).length;
+    const sinPrecio  = recetasDoc.filter(r=>!r.precioVenta||r.precioVenta<=0).length;
+    const sinIngs    = recetasDoc.filter(r=>!r.ingredientes||r.ingredientes.length===0).length;
+    // Si tiene _meta ya calculado (versiones nuevas), usarlo; si no, solo conteos
     const meta = opDoc._meta || {};
     return {
-      total: meta.totalRecetas || 0,
-      conPrecio: meta.recetasConPrecio || 0,
-      sinPrecio: meta.recetasSinPrecio || 0,
-      sinIngredientes: meta.recetasSinIngredientes || 0,
-      pctProm: null,   // sin calcular en vivo — no hay ingredientes cargados
+      total: recetasDoc.length || meta.totalRecetas || 0,
+      conPrecio: conPrecio || meta.recetasConPrecio || 0,
+      sinPrecio: sinPrecio || meta.recetasSinPrecio || 0,
+      sinIngredientes: sinIngs || meta.recetasSinIngredientes || 0,
+      pctProm: null,
       mercProm: 0,
-      desdeMeta: true, // flag para mostrar indicador visual si se necesita
+      desdeMeta: true,
     };
   }
 
