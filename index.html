@@ -46,7 +46,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-T]');
+      mostrar(msg + ' [versión 6-jul-2026-U]');
     }
   }, 25000);
 })();
@@ -969,7 +969,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-T</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-U</div></div>
     </div>
   </main>
 </div>
@@ -4534,30 +4534,13 @@ const CLASES_MENU = {
 function clasificarMenu(mes){
   const op = getOp();
   const ventas = (op.ventasPorMes||{})[mes] || {};
-  const items = [];
-  demoData.recetas.filter(r=>r.opId===op.id && r.precioVenta>0).forEach(r=>{
-    const {merc} = calcReceta(r, r.porciones||1);
-    // Línea de salón
-    items.push({id:r.id, nombre:r.nombre, canal:'salón', tipoPlato:r.tipoPlato||'Sin tipo',
-      pv:r.precioVenta, costo:merc, mc:r.precioVenta-merc, unid:(+ventas[r.id]||0)});
-    // Línea de delivery si la variante está activa
-    const d = r.delivery;
-    if(op.tieneDelivery && d && d.activa){
-      let mercD = merc;
-      if(d.ingredientes && d.ingredientes.length){
-        mercD = 0;
-        d.ingredientes.forEach(ing=>{
-          if(ing.esCondimento){ mercD += 150*0.6; return; }
-          const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false);
-          if(c && !c.error) mercD += c.costo_porcion;
-        });
-      }
-      const pvD = +d.precioVenta || r.precioVenta;
-      const costoD = mercD + (+d.packaging||0) + pvD*(+d.comision||0)/100;
-      items.push({id:r.id+'_dlv', nombre:r.nombre+' (delivery)', canal:'delivery', tipoPlato:r.tipoPlato||'Sin tipo',
-        pv:pvD, costo:costoD, mc:pvD-costoD, unid:(+ventas[r.id+'_dlv']||0)});
-    }
-  });
+  const items = demoData.recetas
+    .filter(r=>r.opId===op.id && r.precioVenta>0)
+    .map(r=>{
+      const {merc} = calcReceta(r, r.porciones||1);
+      const unid = +ventas[r.id] || 0;
+      return {id:r.id, nombre:r.nombre, tipoPlato:r.tipoPlato||'Sin tipo', pv:r.precioVenta, costo:merc, mc:r.precioVenta-merc, unid};
+    });
   const conVenta = items.filter(i=>i.unid>0);
   if(conVenta.length < 2) return {items, matriz:[], listo:false};
   const totalUnid = conVenta.reduce((s,i)=>s+i.unid,0);
