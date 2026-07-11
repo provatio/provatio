@@ -46,7 +46,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-R]');
+      mostrar(msg + ' [versión 6-jul-2026-S]');
     }
   }, 25000);
 })();
@@ -969,7 +969,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-R</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-S</div></div>
     </div>
   </main>
 </div>
@@ -3459,7 +3459,112 @@ function renderEditorReceta(){
         </table>
       </div>
     </div>
+
+    ${(op.tieneDelivery && !esNivelCocina()) ? renderVarianteDelivery(r, merc) : ''}
   `);
+}
+
+// ── VARIANTE DELIVERY: mismo plato, otro canal, otra realidad ──
+function renderVarianteDelivery(r, mercSalon){
+  const d = r.delivery || {};
+  const activa = !!d.activa;
+  // costo mercadería del delivery: si tiene ingredientes propios usa esos, si no hereda salón
+  let mercDelivery = mercSalon;
+  if(activa && d.ingredientes && d.ingredientes.length){
+    mercDelivery = 0;
+    d.ingredientes.forEach(ing=>{
+      if(ing.esCondimento){ mercDelivery += 150*0.6; return; }
+      const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false);
+      if(c && !c.error) mercDelivery += c.costo_porcion;
+    });
+  }
+  const packaging = +d.packaging||0;
+  const comisionPct = +d.comision||0;
+  const precioDelivery = +d.precioVenta || r.precioVenta || 0;
+  // La radiografía: comisión + packaging comen el margen
+  const comisionMonto = precioDelivery * comisionPct/100;
+  const costoTotalDelivery = mercDelivery + packaging + comisionMonto;
+  const margenDelivery = precioDelivery - costoTotalDelivery;
+  const pctDelivery = precioDelivery>0 ? costoTotalDelivery/precioDelivery*100 : null;
+
+  return `
+    <div class="card" style="border:1.5px solid ${activa?'var(--dorado)':'var(--crema-2)'}">
+      <div class="card-header" style="background:${activa?'var(--dorado-c)':'transparent'}">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">
+          <input type="checkbox" ${activa?'checked':''} style="width:17px;height:17px;cursor:pointer"
+            onchange="toggleVarianteDelivery(this.checked)">
+          <span class="card-title">Versión delivery</span>
+        </label>
+        ${activa && pctDelivery!==null ? `<span style="font-size:13px;font-weight:700;color:${pctDelivery>60?'var(--bordo)':pctDelivery>45?'#8B6914':'var(--oliva)'}">${fmtD(pctDelivery)}% de costo real</span>` : ''}
+      </div>
+      ${activa ? `
+      <div class="card-body">
+        <div style="font-size:12px;color:var(--gris-2);margin-bottom:14px">Dejá los campos vacíos para que hereden del salón. Cambiá solo lo que sea distinto en delivery — la guarnición, el gramaje, o el precio.</div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+          <div>
+            <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gris-2)">Precio venta delivery</label>
+            <input type="number" value="${d.precioVenta||''}" placeholder="Igual que salón: $${fmt(r.precioVenta||0)}" min="0"
+              style="width:100%;margin-top:4px" onchange="updDelivery('precioVenta',+this.value)">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gris-2)">Comisión app (%)</label>
+            <input type="number" value="${d.comision||''}" placeholder="0" min="0" max="100" step="0.5"
+              style="width:100%;margin-top:4px" onchange="updDelivery('comision',+this.value)">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gris-2)">Packaging ($/plato)</label>
+            <input type="number" value="${d.packaging||''}" placeholder="0" min="0"
+              style="width:100%;margin-top:4px" onchange="updDelivery('packaging',+this.value)">
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:600;color:var(--gris-1)">Ingredientes propios del delivery (opcional)</span>
+          <button class="btn btn-secondary btn-sm" onclick="agregarIngDelivery()">+ Ingrediente delivery</button>
+        </div>
+        ${(d.ingredientes&&d.ingredientes.length) ? `
+        <div class="table-wrap" style="margin-bottom:14px">
+          <table>
+            <thead><tr><th>Ingrediente</th><th>Técnica</th><th style="text-align:right">Neto (g)</th><th style="text-align:right">Costo/p</th><th></th></tr></thead>
+            <tbody>
+              ${d.ingredientes.map((ing,idx)=>{
+                if(ing.esCondimento) return `<tr style="background:var(--oliva-c)"><td colspan="3" style="color:var(--oliva);font-style:italic;font-size:13px">Condimentos básicos</td><td style="text-align:right;color:var(--oliva)">$${fmt(150*0.6)}</td><td><button class="btn btn-icon btn-sm" onclick="quitarIngDelivery(${idx})">✕</button></td></tr>`;
+                const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false);
+                const ingObj = getIngrediente(ing.ingId);
+                const tecnicas = ingObj ? [...new Set(demoData.mermas.filter(m=>m.ingrediente===ingObj.nombre).map(m=>m.tecnica))] : [];
+                return `<tr>
+                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px"><option value="">— elegí —</option>${demoData.ingredientes.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i.nombre}</option>`).join('')}</select></td>
+                  <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${tecnicas.length?'<option value="">— técnica —</option>'+tecnicas.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join(''):'<option>Elegí ingrediente</option>'}</select></td>
+                  <td><input type="number" value="${ing.neto||''}" placeholder="g" style="width:75px;text-align:right" onchange="updIngDelivery(${idx},'neto',+this.value)"></td>
+                  <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
+                  <td><button class="btn btn-icon btn-sm" onclick="quitarIngDelivery(${idx})">✕</button></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>` : `<div style="font-size:12px;color:var(--gris-3);background:var(--crema);border-radius:8px;padding:10px 12px;margin-bottom:14px">Sin ingredientes propios: el delivery usa la misma receta que el salón ($${fmt(mercSalon)} de mercadería). Agregá ingredientes solo si cambia (ej: tortilla en vez de fritas).</div>`}
+
+        <div style="background:var(--crema);border-radius:10px;padding:14px 16px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gris-1);margin-bottom:10px">La radiografía del delivery</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>Precio de venta</span><strong>$${fmt(precioDelivery)}</strong></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--bordo)"><span>Mercadería</span><span>−$${fmt(mercDelivery)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--bordo)"><span>Packaging</span><span>−$${fmt(packaging)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--bordo)"><span>Comisión app (${fmtD(comisionPct)}%)</span><span>−$${fmt(comisionMonto)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;border-top:1px solid var(--crema-2);padding-top:8px;margin-top:4px;color:${margenDelivery>=0?'var(--oliva)':'var(--bordo)'}">
+            <span>Margen real en delivery</span><span>${margenDelivery>=0?'+':'−'}$${fmt(Math.abs(margenDelivery))}</span>
+          </div>
+          ${(() => {
+            const margenSalon = (r.precioVenta||0) - mercSalon;
+            if(r.precioVenta>0 && margenSalon>0 && margenDelivery<margenSalon){
+              const dif = margenSalon-margenDelivery;
+              return `<div style="font-size:12px;color:var(--gris-2);margin-top:10px;border-top:1px dashed var(--crema-2);padding-top:8px">En salón este plato te deja <strong>$${fmt(margenSalon)}</strong>. En delivery, <strong style="color:${margenDelivery>=0?'var(--oliva)':'var(--bordo)'}">${margenDelivery>=0?'$'+fmt(margenDelivery):'−$'+fmt(Math.abs(margenDelivery))}</strong> — ${fmt(dif)} pesos menos por plato. ${margenDelivery<0?'<strong style="color:var(--bordo)">Estás perdiendo plata en cada pedido.</strong>':'Ahí está lo que se lleva el canal.'}</div>`;
+            }
+            return '';
+          })()}
+        </div>
+      </div>` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">Activá la versión delivery para ver cuánto te deja realmente este plato cuando lo vendés por una app — con su comisión y su packaging descontados.</div>`}
+    </div>`;
 }
 
 function updIngReceta(idx,field,val){
@@ -3482,6 +3587,41 @@ function quitarIngReceta(idx){
 }
 function agregarIngReceta(){ recetaEditando.ingredientes.push({ingId:'',tecnica:'',neto:0}); renderEditorReceta(); }
 function agregarCondReceta(){ recetaEditando.ingredientes.push({esCondimento:true}); renderEditorReceta(); }
+
+// ── VARIANTE DELIVERY: handlers ──
+function toggleVarianteDelivery(activa){
+  if(!recetaEditando.delivery) recetaEditando.delivery = {};
+  recetaEditando.delivery.activa = activa;
+  renderEditorReceta();
+}
+function updDelivery(campo, val){
+  if(!recetaEditando.delivery) recetaEditando.delivery = {activa:true};
+  recetaEditando.delivery[campo] = val;
+  renderEditorReceta();
+}
+function agregarIngDelivery(){
+  if(!recetaEditando.delivery) recetaEditando.delivery = {activa:true};
+  if(!recetaEditando.delivery.ingredientes) recetaEditando.delivery.ingredientes = [];
+  recetaEditando.delivery.ingredientes.push({ingId:'',tecnica:'',neto:0});
+  renderEditorReceta();
+}
+function updIngDelivery(idx, campo, val){
+  const ing = recetaEditando.delivery.ingredientes[idx];
+  ing[campo] = val;
+  if(campo==='ingId'){
+    ing.tecnica='';
+    const io = getIngrediente(val);
+    if(io){
+      const tecs = [...new Set(demoData.mermas.filter(m=>m.ingrediente===io.nombre).map(m=>m.tecnica))];
+      if(tecs.length===1) ing.tecnica=tecs[0];
+    }
+  }
+  renderEditorReceta();
+}
+function quitarIngDelivery(idx){
+  recetaEditando.delivery.ingredientes.splice(idx,1);
+  renderEditorReceta();
+}
 
 function guardarReceta(){
   if(!recetaEditando.nombre){ showToast('Poné un nombre a la receta','error'); return; }
