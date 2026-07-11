@@ -46,7 +46,7 @@
       if(faltan.length) msg += 'No cargaron: ' + faltan.join(' · ') + '. ';
       if(window.__provErrores.length) msg += 'Errores: ' + window.__provErrores.length + ' (arriba).';
       if(!faltan.length && !window.__provErrores.length) msg += 'Sin errores capturados — posible versión vieja en caché.';
-      mostrar(msg + ' [versión 6-jul-2026-U]');
+      mostrar(msg + ' [versión 6-jul-2026-V]');
     }
   }, 25000);
 })();
@@ -969,7 +969,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-U</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-V</div></div>
     </div>
   </main>
 </div>
@@ -4118,7 +4118,7 @@ function renderResultado(){
   const eqAjustado = (margenPctProm && margenPctProm>0) ? Math.max(0, (totalFijos - margenEventos)/margenPctProm) : null;
 
   // Ingeniería de menú (Kasavana & Smith) para el mes seleccionado
-  const km = clasificarMenu(mesSel);
+  const km = expandirMatrizConDelivery(clasificarMenu(mesSel), mesSel);
 
   // Snapshot para el informe descargable
   window._saludCalc = {totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, matriz: km.matriz, kmListo: km.listo};
@@ -4554,6 +4554,50 @@ function clasificarMenu(mes){
     return {...i, pop, clase, contribucion: i.mc*i.unid, fc: i.costo/i.pv*100};
   });
   return {items, matriz, listo:true, popThreshold, mcProm, totalUnid};
+}
+
+// Expande la matriz con líneas delivery — AISLADA, con guardas, no toca la carga
+function expandirMatrizConDelivery(km, mes){
+  try {
+    const op = getOp();
+    if(!op || !op.tieneDelivery || !km || !km.listo) return km;
+    const ventas = (op.ventasPorMes||{})[mes] || {};
+    const extra = [];
+    (demoData.recetas||[]).filter(r=>r.opId===op.id && r.precioVenta>0 && r.delivery && r.delivery.activa).forEach(r=>{
+      const unidD = +ventas[r.id+'_dlv'] || 0;
+      if(unidD<=0) return; // solo si tiene ventas delivery cargadas a mano
+      const d = r.delivery;
+      const {merc} = calcReceta(r, r.porciones||1);
+      let mercD = merc;
+      if(d.ingredientes && d.ingredientes.length){
+        mercD = 0;
+        d.ingredientes.forEach(ing=>{
+          if(ing.esCondimento){ mercD += 150*0.6; return; }
+          const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false);
+          if(c && !c.error) mercD += c.costo_porcion;
+        });
+      }
+      const pvD = +d.precioVenta || r.precioVenta;
+      const costoD = mercD + (+d.packaging||0) + pvD*(+d.comision||0)/100;
+      extra.push({id:r.id+'_dlv', nombre:r.nombre+' (delivery)', tipoPlato:r.tipoPlato||'Sin tipo',
+        pv:pvD, costo:costoD, mc:pvD-costoD, unid:unidD});
+    });
+    if(!extra.length) return km;
+    // recalcular umbrales con el set completo
+    const todos = km.matriz.concat(extra);
+    const totalUnid = todos.reduce((s,i)=>s+i.unid,0);
+    const popThreshold = (1/todos.length)*0.7;
+    const mcProm = todos.reduce((s,i)=>s+i.mc*i.unid,0)/totalUnid;
+    const matriz = todos.map(i=>{
+      const pop = i.unid/totalUnid;
+      const clase = (pop>=popThreshold) ? (i.mc>=mcProm?'estrella':'caballito') : (i.mc>=mcProm?'puzzle':'perro');
+      return {...i, pop, clase, contribucion:i.mc*i.unid, fc:i.costo/i.pv*100};
+    });
+    return {...km, matriz, popThreshold, mcProm, totalUnid};
+  } catch(e){
+    console.warn('Delivery en matriz falló, se muestra solo salón:', e);
+    return km; // ante cualquier error, devolver la matriz original intacta
+  }
 }
 
 function chartMatriz(matriz, popThreshold, mcProm){
