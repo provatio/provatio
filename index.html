@@ -1564,11 +1564,30 @@ function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadRe
 function calcReceta(receta, porciones){
   let merc = 0;
   const items = (receta.ingredientes||[]).map(ing=>{
+    // Item tipo receta elaborada (sub-receta / elaboración propia)
+    if(ing.recetaId){
+      const recBase = getRecetas().find(x=>x.id===ing.recetaId);
+      const rendG   = recBase?.rendimientoG || 0;
+      if(recBase && rendG > 0){
+        const {merc: mercBase} = calcReceta(recBase, recBase.porciones||1);
+        const costoXg  = mercBase / rendG;
+        const costoItem = costoXg * (ing.neto||0);
+        merc += costoItem;
+        return {...ing, calc:{costo_porcion: costoItem, costoXg, rendG, ok:true}};
+      }
+      return {...ing, calc:{error:'Sin rendimiento cargado'}};
+    }
+    // Item tipo condimento o ingrediente normal
     const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, ing.esCondimento);
     if(c&&!c.error) merc += c.costo_porcion;
     return {...ing, calc:c};
   });
   return {merc, items, porciones};
+}
+
+function agregarRecetaEnReceta(){
+  recetaEditando.ingredientes.push({recetaId:'', neto:0});
+  renderEditorReceta();
 }
 
 function semaforo(pct){
@@ -2009,7 +2028,7 @@ function buildSidebar(rol){
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
-    {icon:'trenddown', label:'Real vs Teórico', vista:'desvios'},
+    {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
     {icon:'tag', label:'Subproductos', vista:'subproductos'},
@@ -3412,6 +3431,41 @@ function renderEditorReceta(){
         <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
       </tr>`;
     }
+
+    // ── ITEM TIPO RECETA (sub-receta / elaboración propia) ──────────────────
+    if(ing.recetaId){
+      const recBase = getRecetas().find(x=>x.id===ing.recetaId);
+      const rendG   = recBase?.rendimientoG || 0;
+      const gramosUsados = ing.neto || 0;
+      let costoItem = null, costoTotal = null, costoXg = null;
+      if(recBase && rendG > 0){
+        const {merc: mercBase} = calcReceta(recBase, recBase.porciones||1);
+        costoXg   = mercBase / rendG;
+        costoItem = costoXg * gramosUsados;
+        costoTotal = costoItem * porciones;
+        merc += costoItem;
+      }
+      const recetasDisp = getRecetas().filter(x=>x.id!==r.id)
+        .sort((a,b)=>a.nombre.localeCompare(b.nombre));
+      return `<tr style="background:var(--azul-c,#EBF3FF)">
+        <td>
+          <select onchange="updIngReceta(${idx},'recetaId',this.value)" style="min-width:180px">
+            <option value="">— elegí receta —</option>
+            ${recetasDisp.map(x=>`<option value="${x.id}"${x.id===ing.recetaId?' selected':''}>${x.nombre}${x.rendimientoG?' ('+x.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
+          </select>
+        </td>
+        <td style="font-size:11px;color:var(--azul);white-space:nowrap">
+          ${recBase ? (rendG>0 ? `$${fmt(costoXg)}/g` : `<span style="color:var(--bordo)">⚠ Cargá rendimiento</span>`) : '—'}
+        </td>
+        <td><input type="number" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',+this.value)"></td>
+        <td style="text-align:right;color:var(--gris-2)">—</td>
+        <td style="text-align:right;color:var(--gris-2)">—</td>
+        <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:''}</td>
+        <td style="text-align:right">${costoTotal!==null?`<span class="calc">$${fmt(costoTotal)}</span>`:''}</td>
+        <td style="text-align:right;color:var(--gris-2)">—</td>
+        <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
+      </tr>`;
+    }
     const ingObj = getIngrediente(ing.ingId);
     const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, false);
     if(c&&!c.error) merc += c.costo_porcion;
@@ -3467,6 +3521,12 @@ function renderEditorReceta(){
         <input type="number" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
           onchange="recetaEditando.porciones=+this.value;renderEditorReceta()">
       </div>
+      <div class="metric">
+        <div class="metric-label">Rendimiento total (g / ml)</div>
+        <input type="number" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+          title="Cuántos gramos o ml rinde esta preparación en total. Necesario para usarla como insumo en otras recetas."
+          onchange="recetaEditando.rendimientoG=+this.value;renderEditorReceta()">
+      </div>
       <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
       <div class="metric"><div class="metric-label">% sobre precio venta</div>
         <div class="metric-value" style="color:${pct===null?'var(--gris-2)':pct>35?'var(--bordo)':pct>25?'#8B6914':'var(--oliva)'}">
@@ -3482,6 +3542,7 @@ function renderEditorReceta(){
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
+          <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" onclick="agregarRecetaEnReceta()">+ Receta elaborada</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -6401,9 +6462,9 @@ function renderDesvios(){
 
   const desvioTotal = totalReal > 0 ? ((totalReal-totalTeorico)/totalTeorico*100) : null;
 
-  setContent('Costo real vs teórico', `
+  setContent('Informe de ventas', `
     <div class="tabs">
-      <div class="tab active" onclick="switchTabDesvios('analisis',this)">${ico('chart',13)} Análisis de desvíos</div>
+      <div class="tab active" onclick="switchTabDesvios('analisis',this)">${ico('chart',13)} Análisis de ventas</div>
       <div class="tab" onclick="switchTabDesvios('carga-manual',this)">${ico('edit',13)} Carga manual</div>
       <div class="tab" onclick="switchTabDesvios('carga-excel',this)">${ico('chart',13)} Importar desde Excel</div>
     </div>
@@ -6450,7 +6511,7 @@ function renderDesvios(){
 
       ${hayTeorico ? `
       <div class="card">
-        <div class="card-header"><span class="card-title">Desvíos por ingrediente</span></div>
+        <div class="card-header"><span class="card-title">Consumo real vs teórico por ingrediente</span></div>
         <div class="table-wrap">
           <table>
             <thead><tr>
