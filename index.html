@@ -938,6 +938,18 @@ input:focus, select:focus, textarea:focus {
         <p>provatio.io</p>
       </div>
     </div>
+    <div id="op-indicador" style="display:none;margin:0 16px 6px;padding:8px 12px;background:rgba(200,169,110,0.12);border-left:3px solid #C8A96E;border-radius:0 6px 6px 0">
+      <div style="font-size:10px;color:#C8A96E;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Operación activa</div>
+      <div id="op-indicador-nombre" style="font-size:13px;font-weight:700;color:#F5F0E8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+      <div id="op-indicador-tipo" style="font-size:11px;color:#999;margin-top:1px"></div>
+    </div>
+    <div id="dk-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 8px;padding:8px 12px;background:#111;border:1.5px solid #C8A96E;border-radius:8px">
+      <span style="font-size:18px">🌑</span>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#C8A96E;letter-spacing:.5px">DARK KITCHEN</div>
+        <div style="font-size:10px;color:#888">Modo 100% delivery</div>
+      </div>
+    </div>
     <nav class="sidebar-nav" id="sidebar-nav">
       <!-- Se genera dinámicamente según rol -->
     </nav>
@@ -1293,6 +1305,10 @@ function getOp(){ return demoData.operaciones[currentOpId] || Object.values(demo
 
 // Nivel de acceso: 'cocina' ve solo lo operativo, sin precios de venta ni números del negocio
 function esNivelCocina(){ return currentUser && currentUser.rol==='cliente' && currentUser.nivel==='cocina'; }
+function esDarkKitchen(){
+  const op = getOp();
+  return op && (op.tipo==='darkKitchen' || op.tipo==='Dark Kitchen');
+}
 
 // ── DATOS DEMO EN MEMORIA ──
 let demoData = {
@@ -2013,17 +2029,41 @@ function initApp(user){
 
 function buildSidebar(rol){
   const nav = document.getElementById('sidebar-nav');
-  const items = rol==='admin' ? [
+
+  // ── Items según rol y tipo de operación ────────────────────────────────
+  const isDK = esDarkKitchen();
+  const enOperacion = !!currentOpId; // admin dentro de una operación
+
+  // Admin: siempre ve Panel general y Clientes; el resto se adapta al tipo de op
+  const itemsAdmin = enOperacion && isDK ? [
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     {icon:'users', label:'Clientes', vista:'clientes'},
-    {section:'Operación'},
+    {section:'🌑 '+( getOp()?.nombre||'Dark Kitchen')},
+    {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
+    {icon:'flame', label:'Mermas', vista:'mermas'},
+    {icon:'chef', label:'Recetas', vista:'recetas'},
+    {section:'Análisis'},
+    {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
+    {icon:'coin', label:'Salud del negocio', vista:'resultado'},
+    {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
+    {section:'Herramientas'},
+    {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
+    {icon:'tag', label:'Subproductos', vista:'subproductos'},
+    {section:'Próximamente'},
+    {icon:'store', label:'Proveedores', vista:'proveedores', soon:true},
+  ] : [
+    {section:'Principal'},
+    {icon:'chart', label:'Panel general', vista:'dashboard'},
+    {icon:'users', label:'Clientes', vista:'clientes'},
+    {section: enOperacion ? getOp()?.nombre||'Operación' : 'Operación'},
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {section:'Presupuesto'},
     {icon:'calendar', label:'Planificación semanal', vista:'semanal'},
     {icon:'target', label:'Evento / Presupuesto', vista:'evento'},
+    {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
     {section:'Análisis'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
@@ -2036,7 +2076,9 @@ function buildSidebar(rol){
     {section:'Próximamente'},
     {icon:'store', label:'Proveedores', vista:'proveedores', soon:true},
     {icon:'chart', label:'Comparador de precios', vista:'comparador', soon:true},
-  ] : (esNivelCocina() ? [
+  ];
+
+  const items = rol==='admin' ? itemsAdmin : (esNivelCocina() ? [
     {section:'Mi operación'},
     {icon:'chart', label:'Resumen', vista:'dashboard'},
     {icon:'clipboard', label:'Mis ingredientes', vista:'ingredientes'},
@@ -2046,6 +2088,17 @@ function buildSidebar(rol){
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
     {section:'Compras'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
+  ] : esDarkKitchen() ? [
+    {section:'Operación'},
+    {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
+    {icon:'flame', label:'Mermas', vista:'mermas'},
+    {icon:'chef', label:'Recetas', vista:'recetas'},
+    {section:'Análisis'},
+    {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
+    {icon:'coin', label:'Salud del negocio', vista:'resultado'},
+    {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
+    {section:'Herramientas'},
+    {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
   ] : [
     {section:'Mi operación'},
     {icon:'chart', label:'Resumen', vista:'dashboard'},
@@ -2055,6 +2108,7 @@ function buildSidebar(rol){
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
     {icon:'target', label:'Presupuesto evento', vista:'evento'},
+    {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
     {section:'Compras y análisis'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
@@ -2069,6 +2123,29 @@ function buildSidebar(rol){
       ${item.soon?'<span class="nav-badge">Pronto</span>':''}
     </div>`;
   }).join('');
+
+  // Badge Dark Kitchen debajo del nav
+  const dkBadge = document.getElementById('dk-badge');
+  if(dkBadge) dkBadge.style.display = esDarkKitchen() ? 'flex' : 'none';
+
+  // Indicador de operación activa
+  const opInd = document.getElementById('op-indicador');
+  const opNombre = document.getElementById('op-indicador-nombre');
+  const opTipo = document.getElementById('op-indicador-tipo');
+  if(opInd && enOperacion && getOp()){
+    const op = getOp();
+    const tipoLabel = op.tipo==='darkKitchen'||op.tipo==='Dark Kitchen' ? '🌑 Dark Kitchen'
+      : op.tipo==='catering'||op.tipo==='Catering' ? '📦 Catering'
+      : op.tipo==='hotel'||op.tipo==='Hotel' ? '🏨 Hotel'
+      : op.tipo==='pasteleria'||op.tipo==='Pastelería' ? '🥐 Pastelería'
+      : op.tipo==='viandas'||op.tipo==='Viandas' ? '🍱 Viandas'
+      : '🍽 Restaurante';
+    opInd.style.display = 'block';
+    if(opNombre) opNombre.textContent = op.nombre || 'Sin nombre';
+    if(opTipo) opTipo.textContent = tipoLabel;
+  } else if(opInd){
+    opInd.style.display = 'none';
+  }
 }
 
 // ── NAVEGACIÓN ──
@@ -2118,13 +2195,19 @@ async function abrirOperacion(opId){
   } else {
     currentOpId = opId;
   }
+  // Reconstruir sidebar para reflejar tipo de operación
+  buildSidebar(currentUser?.rol||'cliente');
   navigate('operacion');
 }
 
 function navigate(vista, params={}){
-  // Cerrar sidebar en mobile al navegar
-  if(window.innerWidth <= 768) closeSidebar();
-  // Nivel cocina: sin acceso a números del negocio
+  if(esDarkKitchen() && currentUser?.rol!=='admin' && ['semanal','evento','buffet','compras'].includes(vista)){
+    setContent('Vista no disponible', `<div class="alert alert-warn" style="margin-top:20px">
+      Esta vista no aplica para operaciones Dark Kitchen.
+      <div style="margin-top:8px;font-size:13px;color:var(--gris-2)">Las dark kitchens operan 100% en delivery. Usá Recetas, Rentabilidad e Informe de ventas para gestionar tu operación.</div>
+    </div>`);
+    return;
+  }
   if(esNivelCocina() && ['rentabilidad','resultado','evento','desvios'].includes(vista)){
     vista = 'dashboard';
   }
@@ -2145,6 +2228,7 @@ function navigate(vista, params={}){
     recetas: renderRecetas,
     semanal: renderSemanal,
     evento: renderEvento,
+    buffet: renderBuffet,
     rentabilidad: renderRentabilidad,
     compras: renderCompras,
     soon: renderSoon,
@@ -2287,7 +2371,7 @@ function renderDashboardAdmin(){
                 <strong>${op.nombre}</strong>
                 <div style="font-size:11px;color:var(--gris-2);margin-top:2px">${op.responsable || '<span style="color:#B8860B">Sin contacto — cargalo en Clientes</span>'}${op.telefono ? ' · '+op.telefono : ''}</div>
               </td>
-              <td><span class="badge badge-op">${op.tipo==='catering'?'Catering':'Restaurante'}</span></td>
+              <td><span class="badge badge-op">${op.tipo==='catering'||op.tipo==='Catering'?'Catering':op.tipo==='hotel'||op.tipo==='Hotel'?'Hotel':op.tipo==='darkKitchen'||op.tipo==='Dark Kitchen'?'🌑 Dark Kitchen':op.tipo||'Restaurante'}</span></td>
               <td style="text-align:right">${s.total}${s.sinPrecio?` <span style="color:#B8860B;font-size:11px">(${s.sinPrecio} sin precio)</span>`:''}</td>
               <td style="text-align:right">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : s.desdeMeta ? '<span style="color:var(--gris-3);font-size:11px" title="Abrí la operación para calcular">Abrir para ver</span>' : '<span style="color:var(--gris-3)">—</span>'}</td>
               <td>${s.pctProm!==null ? semaforo(s.pctProm) : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>
@@ -3558,7 +3642,7 @@ function renderEditorReceta(){
       </div>
     </div>
 
-    ${(op.tieneDelivery && !esNivelCocina()) ? renderVarianteDelivery(r, merc) : ''}
+    ${((op.tieneDelivery || esDarkKitchen()) && !esNivelCocina()) ? renderVarianteDelivery(r, merc) : ''}
   `);
 }
 
@@ -3765,6 +3849,30 @@ let eventoData = {
   bebidas: [],
   gastosExtra: [],
 };
+let eventoEditandoId = null; // null = nuevo evento, string = editando existente
+
+function editarEvento(id){
+  const ev = getEventos().find(e=>e.id===id);
+  if(!ev) return;
+  eventoEditandoId = id;
+  eventoData = {
+    nombre: ev.nombre,
+    fecha: ev.fecha,
+    segmentos: JSON.parse(JSON.stringify(ev.segmentos||[nuevoSegmento('Estándar')])),
+    bebidas: JSON.parse(JSON.stringify(ev.bebidas||[])),
+    gastosExtra: JSON.parse(JSON.stringify(ev.gastosExtra||[])),
+  };
+  // Scroll al tope
+  window.scrollTo(0,0);
+  renderEvento();
+  showToast('Evento cargado para edición','info');
+}
+
+function cancelarEdicionEvento(){
+  eventoEditandoId = null;
+  eventoData = { nombre:'', fecha: new Date().toISOString().slice(0,7), segmentos:[nuevoSegmento('Estándar')], bebidas:[], gastosExtra:[] };
+  renderEvento();
+}
 
 function getEventos(){ if(!demoData.eventos) demoData.eventos = []; return demoData.eventos.filter(e=>e.opId===currentOpId); }
 
@@ -3780,12 +3888,31 @@ function addSegmento(){ eventoData.segmentos.push(nuevoSegmento('')); renderEven
 function delSegmento(id){ if(eventoData.segmentos.length<=1){showToast('El evento necesita al menos un segmento','error');return;} eventoData.segmentos=eventoData.segmentos.filter(s=>s.id!==id); renderEvento(); }
 function updSegmento(id, campo, val){ const s=eventoData.segmentos.find(x=>x.id===id); if(s){s[campo]=val; renderEvento();} }
 function toggleSegmento(id){ const s=eventoData.segmentos.find(x=>x.id===id); if(s){s.abierto=!s.abierto; renderEvento();} }
-function updCursoSegmento(segId, curso, recetaId){ const s=eventoData.segmentos.find(x=>x.id===segId); if(s){if(recetaId){s.cursos[curso]={recetaId};}else{delete s.cursos[curso];} renderEvento();} }
 function toggleCurso(segId, curso){
   const s=eventoData.segmentos.find(x=>x.id===segId);
   if(!s) return;
+  // cursos[curso] es ahora un array de items {id, recetaId, gxp}
   if(s.cursos[curso]!==undefined){ delete s.cursos[curso]; }
-  else { s.cursos[curso]={recetaId:''}; }
+  else { s.cursos[curso]=[]; }
+  renderEvento();
+}
+function addPlatoCurso(segId, curso){
+  const s=eventoData.segmentos.find(x=>x.id===segId);
+  if(!s) return;
+  if(!s.cursos[curso]) s.cursos[curso]=[];
+  s.cursos[curso].push({id:uid(), recetaId:'', gxp:0});
+  renderEvento();
+}
+function updPlatoCurso(segId, curso, itemId, campo, val){
+  const s=eventoData.segmentos.find(x=>x.id===segId);
+  if(!s||!s.cursos[curso]) return;
+  const item=s.cursos[curso].find(x=>x.id===itemId);
+  if(item){ item[campo]=val; renderEvento(); }
+}
+function delPlatoCurso(segId, curso, itemId){
+  const s=eventoData.segmentos.find(x=>x.id===segId);
+  if(!s||!s.cursos[curso]) return;
+  s.cursos[curso]=s.cursos[curso].filter(x=>x.id!==itemId);
   renderEvento();
 }
 
@@ -3796,16 +3923,21 @@ function updBebidaEvento(id, campo, val){ const b=eventoData.bebidas.find(x=>x.i
 
 // Calcular costo y precio de un segmento
 function calcSegmento(seg){
-  let costoMercPorPersona = 0;
-  Object.entries(seg.cursos).forEach(([curso, dato])=>{
-    if(!dato.recetaId) return;
-    const receta = getRecetas().find(r=>r.id===dato.recetaId);
-    if(!receta) return;
-    const {merc} = calcReceta(receta, 1);
-    costoMercPorPersona += merc;
-  });
   const personas = +seg.personas || 0;
-  const costoTotal = costoMercPorPersona * personas;
+  let costoTotal = 0;
+  Object.entries(seg.cursos).forEach(([curso, items])=>{
+    if(!Array.isArray(items)) return;
+    items.forEach(item=>{
+      if(!item.recetaId) return;
+      const receta = getRecetas().find(r=>r.id===item.recetaId);
+      if(!receta) return;
+      const {merc} = calcReceta(receta, 1);
+      // Usa cantidad específica del plato; si no se cargó, usa el total del segmento
+      const cant = +item.cantidad > 0 ? +item.cantidad : personas;
+      costoTotal += merc * cant;
+    });
+  });
+  const costoMercPorPersona = personas > 0 ? costoTotal / personas : 0;
   const ingresos = (+seg.precioCabeza || 0) * personas;
   return { costoMercPorPersona, costoTotal, ingresos, personas };
 }
@@ -3830,22 +3962,32 @@ function guardarEventoActual(){
   const extras = eventoData.gastosExtra.reduce((s,g)=>s+(+g.monto||0),0);
   const margen = (totalIngresos+ingresosBebidasTotal) - totalCosto - extras;
 
-  const ev = {
-    id: uid(), opId: currentOpId,
+  const evData = {
+    id: eventoEditandoId || uid(), opId: currentOpId,
     nombre: eventoData.nombre.trim(),
     fecha: eventoData.fecha || new Date().toISOString().slice(0,7),
     segmentos: JSON.parse(JSON.stringify(eventoData.segmentos)),
     bebidas: JSON.parse(JSON.stringify(eventoData.bebidas)),
     gastosExtra: eventoData.gastosExtra.map(g=>({concepto:g.concepto, monto:+g.monto||0})),
     totalPersonas, ingresos: totalIngresos+ingresosBebidasTotal,
-    costoMerc: totalCosto, extras, margen, estado:'presupuestado',
+    costoMerc: totalCosto, extras, margen,
+    estado: eventoEditandoId ? (getEventos().find(e=>e.id===eventoEditandoId)?.estado||'presupuestado') : 'presupuestado',
   };
   if(!demoData.eventos) demoData.eventos=[];
-  demoData.eventos.push(ev);
+  if(eventoEditandoId){
+    // Reemplazar el evento existente
+    const idx = demoData.eventos.findIndex(e=>e.id===eventoEditandoId);
+    if(idx>=0) demoData.eventos[idx] = evData;
+    else demoData.eventos.push(evData);
+    showToast('Evento actualizado','success');
+  } else {
+    demoData.eventos.push(evData);
+    showToast('Evento guardado','success');
+  }
   guardarEnFirestore();
   // Reset
+  eventoEditandoId = null;
   eventoData = { nombre:'', fecha: new Date().toISOString().slice(0,7), segmentos:[nuevoSegmento('Estándar')], bebidas:[], gastosExtra:[] };
-  showToast('Evento guardado','success');
   renderEvento();
 }
 
@@ -3898,22 +4040,55 @@ function renderEvento(){
 
     const cursosHtml = CURSOS_EVENTO.map(curso=>{
       const activo = seg.cursos[curso]!==undefined;
-      const dato = seg.cursos[curso]||{};
-      const recetaElegida = dato.recetaId ? recetas.find(r=>r.id===dato.recetaId) : null;
-      const costoReceta = recetaElegida ? calcReceta(recetaElegida,1).merc : null;
+      const items  = Array.isArray(seg.cursos[curso]) ? seg.cursos[curso] : [];
+      const costoTotalCurso = items.reduce((sum,item)=>{
+        if(!item.recetaId) return sum;
+        const rec = recetas.find(r=>r.id===item.recetaId);
+        return sum + (rec ? calcReceta(rec,1).merc : 0);
+      }, 0);
 
-      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--crema-2)">
-        <label style="display:flex;align-items:center;gap:6px;min-width:130px;font-size:13px;cursor:pointer">
-          <input type="checkbox" ${activo?'checked':''} onchange="toggleCurso('${seg.id}','${curso}')">
-          <strong>${curso}</strong>
-        </label>
-        ${activo ? `
-          <select onchange="updCursoSegmento('${seg.id}','${curso}',this.value)" style="flex:1;min-width:200px;font-size:13px">
+      const personas = +seg.personas || 0;
+      const platosHtml = items.map(item=>{
+        const rec = item.recetaId ? recetas.find(r=>r.id===item.recetaId) : null;
+        const costoPorPersona = rec ? calcReceta(rec,1).merc : null;
+        const cantItem = +item.cantidad || 0;
+        const costoItem = (costoPorPersona!==null && cantItem>0) ? costoPorPersona*cantItem : null;
+        return `<div style="display:grid;grid-template-columns:1fr 120px 110px 90px auto;align-items:center;gap:8px;margin:6px 0 6px 24px;padding:6px 10px;background:var(--crema);border-radius:8px">
+          <select onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','recetaId',this.value)"
+            style="font-size:13px;width:100%">
             <option value="">— elegí receta —</option>
-            ${recetas.map(r=>`<option value="${r.id}"${r.id===dato.recetaId?' selected':''}>${r.nombre}</option>`).join('')}
+            ${recetas.map(r=>`<option value="${r.id}"${r.id===item.recetaId?' selected':''}>${r.nombre}</option>`).join('')}
           </select>
-          ${costoReceta!==null ? `<span style="font-size:12px;color:var(--gris-2);white-space:nowrap">$${fmt(costoReceta)}/p</span>` : ''}
-        ` : `<span style="font-size:12px;color:var(--gris-3);font-style:italic">No incluido</span>`}
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Comensales</span>
+            <input type="number" value="${item.cantidad||''}" placeholder="${personas||'?'}" min="0"
+              style="width:100%;text-align:center;font-size:14px;font-weight:700;border:none;border-bottom:1.5px solid var(--dorado);background:transparent;padding:2px 0"
+              onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','cantidad',+this.value)">
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Costo/p</span>
+            <span style="font-size:13px;font-weight:600;color:var(--gris-1)">${costoPorPersona!==null?'$'+fmt(costoPorPersona):'—'}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Subtotal</span>
+            <span style="font-size:13px;font-weight:700;color:var(--bordo)">${costoItem!==null?'$'+fmt(costoItem):'—'}</span>
+          </div>
+          <button class="btn btn-icon btn-sm" style="color:var(--bordo)" onclick="delPlatoCurso('${seg.id}','${curso}','${item.id}')">✕</button>
+        </div>`;
+      }).join('');
+
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--crema-2)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <label style="display:flex;align-items:center;gap:6px;min-width:130px;font-size:13px;cursor:pointer">
+            <input type="checkbox" ${activo?'checked':''} onchange="toggleCurso('${seg.id}','${curso}')">
+            <strong>${curso}</strong>
+          </label>
+          ${activo
+            ? `<span style="font-size:12px;color:var(--gris-2)">${items.length} plato${items.length!==1?'s':''} · $${fmt(costoTotalCurso)}/p total</span>
+               <button class="btn btn-secondary btn-sm" style="margin-left:auto;font-size:11px" onclick="addPlatoCurso('${seg.id}','${curso}')">+ Plato</button>`
+            : `<span style="font-size:12px;color:var(--gris-3);font-style:italic">No incluido</span>`}
+        </div>
+        ${activo ? platosHtml : ''}
       </div>`;
     }).join('');
 
@@ -4045,12 +4220,18 @@ function renderEvento(){
       ${pctCosto!==null ? semaforo(pctCosto) : ''}
       ${totalPersonas>0 && eventoData.nombre.trim() ? `
         <div style="display:flex;gap:8px;margin-top:12px">
-          <button class="btn btn-primary" style="flex:1" onclick="guardarEventoActual()">${ico('save',13)} Guardar evento</button>
+          <button class="btn btn-primary" style="flex:1" onclick="guardarEventoActual()">${ico('save',13)} ${eventoEditandoId ? 'Actualizar evento' : 'Guardar evento'}</button>
           <button class="btn btn-secondary" onclick="imprimirPresupuesto()">${ico('print',13)} PDF</button>
         </div>` : ''}
     </div>`;
 
   setContent('Evento / Presupuesto', `
+
+    ${eventoEditandoId ? `
+    <div class="alert alert-warn" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span>${ico('edit',14)} <strong>Modo edición:</strong> estás modificando "${eventoData.nombre||'evento sin nombre'}"</span>
+      <button class="btn btn-secondary btn-sm" onclick="cancelarEdicionEvento()">✕ Cancelar edición</button>
+    </div>` : ''}
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-header"><span class="card-title">Datos del evento</span></div>
@@ -4105,7 +4286,11 @@ function renderEvento(){
 
     ${eventosGuardados.length ? `
     <div class="card">
-      <div class="card-header"><span class="card-title">Eventos guardados</span></div>
+      <div class="card-header">
+        <span class="card-title">Eventos guardados</span>
+        <input type="text" id="ev-buscar" placeholder="Buscar por nombre..." oninput="renderEvento()"
+          style="border:1.5px solid var(--crema-2);border-radius:8px;padding:6px 12px;font-size:13px;width:220px">
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
@@ -4116,16 +4301,24 @@ function renderEvento(){
             <th>Estado</th><th></th>
           </tr></thead>
           <tbody>
-            ${eventosGuardados.map(e=>`<tr>
-              <td>${e.fecha||'—'}</td>
-              <td><strong>${e.nombre}</strong></td>
-              <td style="text-align:right">${fmt(e.totalPersonas||e.porciones||0)}</td>
-              <td style="text-align:right">$${fmt(e.ingresos)}</td>
-              <td style="text-align:right;font-weight:700;color:${e.margen>=0?'#1B7A34':'#C02626'}">${e.margen>=0?'+':'−'}$${fmt(Math.abs(e.margen))}</td>
-              <td><button class="btn btn-sm ${e.estado==='confirmado'?'btn-primary':'btn-secondary'}"
-                onclick="toggleEstadoEvento('${e.id}')">${e.estado==='confirmado'?'Confirmado':'Presupuestado'}</button></td>
-              <td><button class="btn btn-danger btn-sm" onclick="delEvento('${e.id}')">${ico('trash',13)}</button></td>
-            </tr>`).join('')}
+            ${(()=>{
+              const q = (document.getElementById('ev-buscar')?.value||'').toLowerCase().trim();
+              const filtrados = q ? eventosGuardados.filter(e=>e.nombre.toLowerCase().includes(q)) : eventosGuardados;
+              if(!filtrados.length) return '<tr><td colspan="7" style="text-align:center;color:var(--gris-3);padding:20px">Sin resultados</td></tr>';
+              return filtrados.map(e=>`<tr style="${eventoEditandoId===e.id?'background:var(--crema);outline:2px solid var(--dorado)':''}">
+                <td>${e.fecha||'—'}</td>
+                <td><strong>${e.nombre}</strong></td>
+                <td style="text-align:right">${fmt(e.totalPersonas||e.porciones||0)}</td>
+                <td style="text-align:right">$${fmt(e.ingresos)}</td>
+                <td style="text-align:right;font-weight:700;color:${e.margen>=0?'#1B7A34':'#C02626'}">${e.margen>=0?'+':'−'}$${fmt(Math.abs(e.margen))}</td>
+                <td><button class="btn btn-sm ${e.estado==='confirmado'?'btn-primary':'btn-secondary'}"
+                  onclick="toggleEstadoEvento('${e.id}')">${e.estado==='confirmado'?'Confirmado':'Presupuestado'}</button></td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn btn-secondary btn-sm" onclick="editarEvento('${e.id}')" title="Editar este evento">${ico('edit',13)}</button>
+                  <button class="btn btn-danger btn-sm" onclick="delEvento('${e.id}')">${ico('trash',13)}</button>
+                </td>
+              </tr>`).join('');
+            })()}
           </tbody>
         </table>
       </div>
@@ -4137,6 +4330,328 @@ function renderEvento(){
 }
 
 function imprimirPresupuesto(){ window.print(); }
+
+
+// ── BUFFET ───────────────────────────────────────────────────────────────────
+
+const TIPOS_BUFFET = ['Desayuno','Almuerzo','Merienda','Barra permanente','Coffee break','Cena buffet','Otro'];
+
+function nuevoServicioBuffet(){
+  return {
+    id: uid(), nombre:'', tipo:'Desayuno',
+    fecha: new Date().toISOString().slice(0,7),
+    comensales: 0, frecuencia:'diario',
+    franjas: [], estado:'borrador', abierto:true,
+  };
+}
+function nuevaFranjaBuffet(nombre=''){
+  return { id:uid(), nombre, items:[], abierto:true };
+}
+function nuevoItemBuffet(){
+  return { id:uid(), nombre:'', recetaId:'', modalidad:'kg', cantidad:0 };
+}
+
+function getBuffets(){ if(!demoData.buffets) demoData.buffets=[]; return demoData.buffets.filter(b=>b.opId===currentOpId); }
+
+// ── Helpers de cálculo ──────────────────────────────────────────────────────
+function calcItemBuffet(item, comensales){
+  if(!item.recetaId) return null;
+  const receta = getRecetas().find(r=>r.id===item.recetaId);
+  if(!receta) return null;
+  const {merc} = calcReceta(receta, 1);
+  const rendG = receta.rendimientoG || 0;
+
+  if(item.modalidad==='kg'){
+    // cantidad = kg totales a producir
+    const kgTotal = +item.cantidad || 0;
+    const costoXg = rendG>0 ? merc/rendG : null;
+    const costoTotal = costoXg!==null ? costoXg*kgTotal*1000 : merc * (kgTotal/(receta.porciones||1));
+    const costoPorPersona = comensales>0 ? costoTotal/comensales : null;
+    return { costoTotal, costoPorPersona, kgTotal, costoXg, modalidad:'kg' };
+  } else {
+    // cantidad = gramos por persona
+    const gpp = +item.cantidad || 0;
+    const costoXg = rendG>0 ? merc/rendG : null;
+    const costoTotal = costoXg!==null ? costoXg*gpp*comensales : merc*comensales;
+    const costoPorPersona = costoXg!==null ? costoXg*gpp : null;
+    return { costoTotal, costoPorPersona, gpp, costoXg, modalidad:'gpp' };
+  }
+}
+
+function calcServicioBuffet(srv){
+  let costoTotalServicio = 0;
+  (srv.franjas||[]).forEach(franja=>{
+    (franja.items||[]).forEach(item=>{
+      const c = calcItemBuffet(item, srv.comensales||0);
+      if(c) costoTotalServicio += c.costoTotal||0;
+    });
+  });
+  const comensales = +srv.comensales || 0;
+  const costoPorPersona = comensales>0 ? costoTotalServicio/comensales : 0;
+  // Proyección mensual según frecuencia
+  const multFrecuencia = srv.frecuencia==='diario'?26 : srv.frecuencia==='semanal'?4 : srv.frecuencia==='quincenal'?2 : 1;
+  const costoMensual = costoTotalServicio * multFrecuencia;
+  return { costoTotalServicio, costoPorPersona, costoMensual, comensales, multFrecuencia };
+}
+
+// ── CRUD ────────────────────────────────────────────────────────────────────
+let buffetActual = null; // servicio en edición
+
+function nuevoBuffet(){ buffetActual = nuevoServicioBuffet(); renderBuffet(); }
+function editarBuffet(id){ const b=getBuffets().find(x=>x.id===id); if(b){buffetActual=JSON.parse(JSON.stringify(b)); renderBuffet(); window.scrollTo(0,0);} }
+function cancelarBuffet(){ buffetActual=null; renderBuffet(); }
+
+function guardarBuffet(){
+  if(!buffetActual.nombre.trim()){showToast('Poné un nombre al servicio','error');return;}
+  if(!demoData.buffets) demoData.buffets=[];
+  const idx = demoData.buffets.findIndex(b=>b.id===buffetActual.id);
+  const datos = {...buffetActual, opId:currentOpId};
+  if(idx>=0) demoData.buffets[idx]=datos;
+  else demoData.buffets.push(datos);
+  guardarEnFirestore();
+  showToast(idx>=0?'Buffet actualizado':'Buffet guardado','success');
+  buffetActual=null;
+  renderBuffet();
+}
+
+function toggleEstadoBuffet(id){
+  const b=getBuffets().find(x=>x.id===id);
+  if(!b) return;
+  b.estado = b.estado==='confirmado'?'borrador':'confirmado';
+  guardarEnFirestore(); renderBuffet();
+}
+
+function delBuffet(id){
+  if(!confirm('¿Eliminar este servicio de buffet?')) return;
+  demoData.buffets=demoData.buffets.filter(b=>b.id!==id);
+  guardarEnFirestore(); renderBuffet();
+}
+
+// Franjas
+function addFranja(){ buffetActual.franjas.push(nuevaFranjaBuffet()); renderBuffet(); }
+function delFranja(fId){ buffetActual.franjas=buffetActual.franjas.filter(f=>f.id!==fId); renderBuffet(); }
+function updFranja(fId,campo,val){ const f=buffetActual.franjas.find(x=>x.id===fId); if(f){f[campo]=val; renderBuffet();} }
+function toggleFranja(fId){ const f=buffetActual.franjas.find(x=>x.id===fId); if(f){f.abierto=!f.abierto; renderBuffet();} }
+
+// Items
+function addItem(fId){ const f=buffetActual.franjas.find(x=>x.id===fId); if(f){f.items.push(nuevoItemBuffet()); renderBuffet();} }
+function delItem(fId,iId){ const f=buffetActual.franjas.find(x=>x.id===fId); if(f){f.items=f.items.filter(i=>i.id!==iId); renderBuffet();} }
+function updItem(fId,iId,campo,val){ const f=buffetActual.franjas.find(x=>x.id===fId); if(!f) return; const it=f.items.find(i=>i.id===iId); if(it){it[campo]=val; renderBuffet();} }
+
+// ── RENDER ──────────────────────────────────────────────────────────────────
+function renderBuffet(){
+  const recetas = getRecetas().sort((a,b)=>a.nombre.localeCompare(b.nombre));
+  const buffets  = getBuffets().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+
+  // ── Editor ──────────────────────────────────────────────────────────────
+  let editorHtml = '';
+  if(buffetActual){
+    const srv = buffetActual;
+    const calc = calcServicioBuffet(srv);
+
+    const franjasHtml = (srv.franjas||[]).map(franja=>{
+      const costoFranja = (franja.items||[]).reduce((s,item)=>{
+        const c=calcItemBuffet(item, srv.comensales||0); return s+(c?.costoTotal||0);
+      },0);
+
+      const itemsHtml = (franja.items||[]).map(item=>{
+        const c = calcItemBuffet(item, srv.comensales||0);
+        const recetaEleg = item.recetaId ? recetas.find(r=>r.id===item.recetaId) : null;
+        const tieneRendimiento = recetaEleg?.rendimientoG > 0;
+        return `<div style="display:grid;grid-template-columns:1fr 140px 120px 90px 90px auto;align-items:center;gap:8px;
+                  padding:8px 12px;margin:4px 0 4px 20px;background:var(--crema);border-radius:8px">
+          <select onchange="updItem('${franja.id}','${item.id}','recetaId',this.value)" style="font-size:13px">
+            <option value="">— elegí receta —</option>
+            ${recetas.map(r=>`<option value="${r.id}"${r.id===item.recetaId?' selected':''}>${r.nombre}${r.rendimientoG?' ('+r.rendimientoG+'g)':''}</option>`).join('')}
+          </select>
+          <select onchange="updItem('${franja.id}','${item.id}','modalidad',this.value)" style="font-size:13px">
+            <option value="kg"${item.modalidad==='kg'?' selected':''}>Kg totales</option>
+            <option value="gpp"${item.modalidad==='gpp'?' selected':''}>g por persona</option>
+          </select>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase">${item.modalidad==='kg'?'Kg a producir':'g por persona'}</span>
+            <input type="number" value="${item.cantidad||''}" placeholder="0" min="0"
+              style="width:100%;text-align:center;font-size:14px;font-weight:700;border:none;border-bottom:1.5px solid var(--dorado);background:transparent;padding:2px 0"
+              onchange="updItem('${franja.id}','${item.id}','cantidad',+this.value)">
+          </div>
+          <div style="text-align:right;font-size:12px;color:var(--gris-2)">
+            ${c ? (c.costoPorPersona!==null?'$'+fmt(c.costoPorPersona)+'/p':'—') : '—'}
+            ${!tieneRendimiento && recetaEleg ? '<br><span style="color:var(--bordo);font-size:10px">⚠ sin rendimiento</span>' : ''}
+          </div>
+          <div style="text-align:right;font-size:13px;font-weight:700;color:var(--bordo)">
+            ${c ? '$'+fmt(c.costoTotal) : '—'}
+          </div>
+          <button class="btn btn-icon btn-sm" style="color:var(--bordo)" onclick="delItem('${franja.id}','${item.id}')">✕</button>
+        </div>`;
+      }).join('');
+
+      return `<div style="border:1.5px solid var(--crema-2);border-radius:10px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--crema);border-radius:8px 8px ${franja.abierto?'0 0':'8px 8px'}"
+          onclick="toggleFranja('${franja.id}')">
+          <span style="font-size:16px">${franja.abierto?'▾':'▸'}</span>
+          <input type="text" value="${franja.nombre}" placeholder="Nombre de la franja (ej: Barra de café, Mesa fría...)"
+            onclick="event.stopPropagation()"
+            onchange="updFranja('${franja.id}','nombre',this.value)"
+            style="border:none;background:transparent;font-size:14px;font-weight:700;flex:1">
+          <span style="font-size:12px;color:var(--gris-2)">${franja.items.length} ítems · $${fmt(costoFranja)}</span>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();addItem('${franja.id}')">+ Ítem</button>
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();delFranja('${franja.id}')">${ico('trash',12)}</button>
+        </div>
+        ${franja.abierto ? `
+        <div style="padding:10px 14px">
+          <div style="display:grid;grid-template-columns:1fr 140px 120px 90px 90px auto;gap:8px;padding:0 12px;margin-bottom:4px">
+            <span style="font-size:10px;color:var(--gris-2);font-weight:700;text-transform:uppercase">Receta</span>
+            <span style="font-size:10px;color:var(--gris-2);font-weight:700;text-transform:uppercase">Modalidad</span>
+            <span style="font-size:10px;color:var(--gris-2);font-weight:700;text-transform:uppercase;text-align:center">Cantidad</span>
+            <span style="font-size:10px;color:var(--gris-2);font-weight:700;text-transform:uppercase;text-align:right">Costo/p</span>
+            <span style="font-size:10px;color:var(--gris-2);font-weight:700;text-transform:uppercase;text-align:right">Total</span>
+            <span></span>
+          </div>
+          ${itemsHtml || `<div style="font-size:13px;color:var(--gris-3);padding:12px;text-align:center">Agregá ítems a esta franja</div>`}
+        </div>` : ''}
+      </div>`;
+    }).join('');
+
+    editorHtml = `
+      ${buffets.find(b=>b.id===srv.id) ? `
+      <div class="alert alert-warn" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <span>${ico('edit',14)} <strong>Editando:</strong> "${srv.nombre||'sin nombre'}"</span>
+        <button class="btn btn-secondary btn-sm" onclick="cancelarBuffet()">✕ Cancelar</button>
+      </div>` : ''}
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><span class="card-title">Datos del servicio</span></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:12px;align-items:end">
+            <div class="form-group" style="margin:0">
+              <label>Nombre del servicio</label>
+              <input type="text" value="${srv.nombre}" placeholder="Ej: Desayuno buffet · Julio 2026"
+                onchange="buffetActual.nombre=this.value" style="width:100%">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Tipo</label>
+              <select onchange="buffetActual.tipo=this.value;renderBuffet()" style="width:100%">
+                ${TIPOS_BUFFET.map(t=>`<option${t===srv.tipo?' selected':''}>${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Mes</label>
+              <input type="month" value="${srv.fecha}" onchange="buffetActual.fecha=this.value"
+                style="width:100%;padding:8px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Comensales / servicio</label>
+              <input type="number" value="${srv.comensales||''}" placeholder="0" min="0"
+                style="font-size:18px;font-weight:700;border:none;border-bottom:2px solid var(--dorado);background:transparent;width:100%;padding:4px 0"
+                onchange="buffetActual.comensales=+this.value;renderBuffet()">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Frecuencia</label>
+              <select onchange="buffetActual.frecuencia=this.value;renderBuffet()" style="width:100%">
+                <option value="puntual"${srv.frecuencia==='puntual'?' selected':''}>Puntual</option>
+                <option value="quincenal"${srv.frecuencia==='quincenal'?' selected':''}>Quincenal</option>
+                <option value="semanal"${srv.frecuencia==='semanal'?' selected':''}>Semanal</option>
+                <option value="diario"${srv.frecuencia==='diario'?' selected':''}>Diario (×26)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <h3 style="margin:0;font-size:15px;font-weight:700">Franjas del servicio</h3>
+        <button class="btn btn-primary btn-sm" onclick="addFranja()">+ Franja</button>
+      </div>
+      ${franjasHtml || `<div class="card"><div class="card-body" style="text-align:center;color:var(--gris-3)">
+        Agregá franjas para organizar el buffet: Barra de café, Mesa fría, Almuerzo, Merienda, etc.
+      </div></div>`}
+
+      ${calc.costoTotalServicio>0 ? `
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><span class="card-title">Resumen del servicio</span></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+            <div class="metric"><div class="metric-label">Comensales</div><div class="metric-value">${fmt(calc.comensales)}</div></div>
+            <div class="metric"><div class="metric-label">Costo por servicio</div><div class="metric-value" style="color:var(--bordo)">$${fmt(calc.costoTotalServicio)}</div></div>
+            <div class="metric"><div class="metric-label">Costo por persona</div><div class="metric-value" style="color:var(--bordo)">$${fmt(calc.costoPorPersona)}</div></div>
+            <div class="metric"><div class="metric-label">Proyección mensual</div><div class="metric-value" style="color:var(--bordo)">$${fmt(calc.costoMensual)}</div>
+              <div style="font-size:11px;color:var(--gris-2)">${srv.frecuencia==='diario'?'×26 días':srv.frecuencia==='semanal'?'×4 semanas':srv.frecuencia==='quincenal'?'×2':''}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" style="flex:1" onclick="guardarBuffet()">${ico('save',13)} Guardar servicio</button>
+            <button class="btn btn-secondary" onclick="cancelarBuffet()">Cancelar</button>
+          </div>
+        </div>
+      </div>` : `
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" onclick="guardarBuffet()">${ico('save',13)} Guardar servicio</button>
+        <button class="btn btn-secondary" onclick="cancelarBuffet()">Cancelar</button>
+      </div>`}
+    `;
+  }
+
+  // ── Lista de buffets guardados ───────────────────────────────────────────
+  const listaHtml = buffets.length ? `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Servicios guardados</span>
+        <input type="text" id="buf-buscar" placeholder="Buscar..." oninput="renderBuffet()"
+          style="border:1.5px solid var(--crema-2);border-radius:8px;padding:6px 12px;font-size:13px;width:200px">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Mes</th><th>Servicio</th><th>Tipo</th>
+            <th style="text-align:right">Comensales</th>
+            <th style="text-align:right">Costo/servicio</th>
+            <th style="text-align:right">Costo/persona</th>
+            <th style="text-align:right">Proyec. mensual</th>
+            <th>Estado</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${(()=>{
+              const q=(document.getElementById('buf-buscar')?.value||'').toLowerCase();
+              const filtrados = q ? buffets.filter(b=>b.nombre.toLowerCase().includes(q)||b.tipo.toLowerCase().includes(q)) : buffets;
+              if(!filtrados.length) return '<tr><td colspan="9" style="text-align:center;color:var(--gris-3);padding:20px">Sin resultados</td></tr>';
+              return filtrados.map(b=>{
+                const c=calcServicioBuffet(b);
+                return `<tr style="${buffetActual?.id===b.id?'background:var(--crema);outline:2px solid var(--dorado)':''}">
+                  <td>${b.fecha||'—'}</td>
+                  <td><strong>${b.nombre}</strong></td>
+                  <td><span class="badge badge-op">${b.tipo}</span></td>
+                  <td style="text-align:right">${fmt(c.comensales)}</td>
+                  <td style="text-align:right">$${fmt(c.costoTotalServicio)}</td>
+                  <td style="text-align:right">$${fmt(c.costoPorPersona)}</td>
+                  <td style="text-align:right">$${fmt(c.costoMensual)}</td>
+                  <td><button class="btn btn-sm ${b.estado==='confirmado'?'btn-primary':'btn-secondary'}"
+                    onclick="toggleEstadoBuffet('${b.id}')">${b.estado==='confirmado'?'Confirmado':'Borrador'}</button></td>
+                  <td style="display:flex;gap:6px">
+                    <button class="btn btn-secondary btn-sm" onclick="editarBuffet('${b.id}')">${ico('edit',13)}</button>
+                    <button class="btn btn-danger btn-sm" onclick="delBuffet('${b.id}')">${ico('trash',13)}</button>
+                  </td>
+                </tr>`;
+              }).join('');
+            })()}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
+        Los servicios <strong>Confirmados</strong> suman su costo mensual proyectado en Salud del negocio.
+      </div>
+    </div>` : '';
+
+  setContent('Buffet', `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div class="alert alert-info" style="flex:1;margin:0">${ico('bulb',14)}
+        Costeá servicios de buffet por kg producidos o por gramaje por persona. El costo mensual proyectado se suma a Salud del negocio.
+      </div>
+      ${!buffetActual ? `<button class="btn btn-primary" style="margin-left:12px;white-space:nowrap" onclick="nuevoBuffet()">+ Nuevo servicio</button>` : ''}
+    </div>
+    ${editorHtml}
+    ${!buffetActual ? listaHtml || '<div class="empty"><div class="empty-icon">'+ico('grid',40)+'</div><h3>Sin servicios de buffet</h3><p>Creá tu primer servicio para empezar a costear</p><button class="btn btn-primary" onclick="nuevoBuffet()">+ Nuevo servicio</button></div>' : ''}
+  `);
+}
 
 // ── PLANIFICACIÓN SEMANAL ──
 let semanaData = {
@@ -4331,15 +4846,19 @@ function renderResultado(){
   const eventosConf = eventosMes.filter(e=>e.estado==='confirmado');
   const evIngresos = eventosConf.reduce((s,e)=>s+(e.ingresos||0),0);
   const margenEventos = eventosConf.reduce((s,e)=>s+(e.margen||0),0);
-  const resultadoEst = margenPctProm!==null ? ventasEst*margenPctProm + margenEventos - totalFijos : null;
+  // Buffets confirmados del mes
+  const buffetsMes = getBuffets().filter(b=>b.fecha===mesSel && b.estado==='confirmado');
+  const costoBuffets = buffetsMes.reduce((s,b)=>s+calcServicioBuffet(b).costoMensual,0);
+  const nBuffets = buffetsMes.length;
+  const resultadoEst = margenPctProm!==null ? ventasEst*margenPctProm + margenEventos - totalFijos - costoBuffets : null;
   // Equilibrio ajustado: los eventos cubren parte de los fijos
-  const eqAjustado = (margenPctProm && margenPctProm>0) ? Math.max(0, (totalFijos - margenEventos)/margenPctProm) : null;
+  const eqAjustado = (margenPctProm && margenPctProm>0) ? Math.max(0, (totalFijos - margenEventos + costoBuffets)/margenPctProm) : null;
 
   // Ingeniería de menú (Kasavana & Smith) para el mes seleccionado
   const km = expandirMatrizConDelivery(clasificarMenu(mesSel), mesSel);
 
   // Snapshot para el informe descargable
-  window._saludCalc = {totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, matriz: km.matriz, kmListo: km.listo};
+  window._saludCalc = {totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, costoBuffets, nBuffets, matriz: km.matriz, kmListo: km.listo};
 
   const accionesInforme = (recetasConPrecio.length && totalFijos>0)
     ? `<button class="btn btn-secondary btn-sm" onclick="descargarInforme()">${ico('download',13)} Descargar informe</button>`
@@ -4465,6 +4984,11 @@ function renderResultado(){
                 <div style="color:#8B6914;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Margen por eventos</div>
                 <div style="font-size:18px;font-weight:700;color:#8B6914">${margenEventos>=0?'+':'−'}$${fmt(Math.abs(margenEventos))}</div>
               </div>` : ''}
+              ${costoBuffets>0 ? `
+              <div style="background:#FFF0E0;border-radius:10px;padding:14px">
+                <div style="color:#8B5E00;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Costo buffets (${nBuffets} servicio${nBuffets>1?'s':''})</div>
+                <div style="font-size:18px;font-weight:700;color:#8B5E00">−$${fmt(costoBuffets)}</div>
+              </div>` : ''}
               <div style="background:var(--crema);border-radius:10px;padding:14px">
                 <div style="color:var(--gris-2);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Gastos fijos</div>
                 <div style="font-size:18px;font-weight:700">−$${fmt(totalFijos)}</div>
@@ -4523,6 +5047,7 @@ function renderResultado(){
               const tipos = [...new Set(km.matriz.map(i=>i.tipoPlato))];
               const fTipo = window._matrizTipo || 'todos';
               const orden = window._matrizOrden || 'contribucion';
+              const vistaGraf = window._vistaGraf || 'matriz';
               let vis = fTipo==='todos' ? [...km.matriz] : km.matriz.filter(i=>i.tipoPlato===fTipo);
               const ordFn = {
                 contribucion:(a,b)=>b.contribucion-a.contribucion,
@@ -4533,8 +5058,27 @@ function renderResultado(){
                 unidades:(a,b)=>b.unid-a.unid,
               };
               vis.sort(ordFn[orden]||ordFn.contribucion);
-              const chart = chartMatriz(vis, km.popThreshold, km.mcProm);
+
+              // Generar el gráfico según la vista activa
+              let grafHtml = '';
+              if(vistaGraf==='matriz')      grafHtml = chartMatriz(vis, km.popThreshold, km.mcProm);
+              else if(vistaGraf==='contrib') grafHtml = chartContribucion(vis);
+              else if(vistaGraf==='fc')      grafHtml = chartFoodCost(vis);
+              else if(vistaGraf==='dona')    grafHtml = chartDona(vis);
+
+              const tabStyle = (v) => `cursor:pointer;padding:8px 16px;font-size:13px;font-weight:${vistaGraf===v?'700':'400'};
+                border-bottom:${vistaGraf===v?'2.5px solid var(--dorado)':'2px solid transparent'};
+                color:${vistaGraf===v?'var(--negro)':'var(--gris-2)'};background:none;border-top:none;border-left:none;border-right:none;`;
+
               return `
+              <div style="display:flex;gap:0;border-bottom:1px solid var(--crema-2);margin-bottom:16px">
+                <button style="${tabStyle('matriz')}" onclick="window._vistaGraf='matriz';renderResultado()">⬡ Matriz</button>
+                <button style="${tabStyle('contrib')}" onclick="window._vistaGraf='contrib';renderResultado()">📊 Contribución</button>
+                <button style="${tabStyle('fc')}" onclick="window._vistaGraf='fc';renderResultado()">🎯 Food cost</button>
+                <button style="${tabStyle('dona')}" onclick="window._vistaGraf='dona';renderResultado()">🍩 Por clase</button>
+              </div>
+
+              ${vistaGraf==='matriz' ? `
               <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
                 <div style="display:flex;align-items:center;gap:6px">
                   <label style="font-size:12px;color:var(--gris-2)">Tipo:</label>
@@ -4555,8 +5099,9 @@ function renderResultado(){
                   </select>
                 </div>
                 <span style="font-size:11px;color:var(--gris-3)">${vis.length} plato${vis.length!==1?'s':''} en pantalla</span>
-              </div>
-              <div id="chart-matriz" style="overflow-x:auto;margin-bottom:16px">${chart}</div>
+              </div>` : ''}
+
+              <div id="chart-matriz" style="overflow-x:auto;margin-bottom:16px">${grafHtml}</div>
               <div class="table-wrap">
                 <table>
                   <thead><tr><th>Receta</th><th>Tipo</th><th>Clase</th><th style="text-align:right">Precio</th><th style="text-align:right">Food cost</th><th style="text-align:right">Unid.</th><th style="text-align:right">Contribución del mes</th><th>Qué hacer</th></tr></thead>
@@ -4824,50 +5369,182 @@ function expandirMatrizConDelivery(km, mes){
   }
 }
 
+
+// ── GRÁFICOS DE INGENIERÍA DE MENÚ ───────────────────────────────────────────
+
+// Vista 1: Matriz de cuadrantes rediseñada
 function chartMatriz(matriz, popThreshold, mcProm){
   if(!matriz.length) return '';
-  const W=680,H=440,mL=68,mR=24,mT=34,mB=54;
+  const W=720, H=480, mL=72, mR=30, mT=44, mB=60;
   const pw=W-mL-mR, ph=H-mT-mB;
-  // Escala logarítmica en popularidad (separa la nube de baja participación)
+
   const pops = matriz.map(i=>i.pop).filter(p=>p>0);
-  const minPop = Math.min(...pops, popThreshold)*0.7;
-  const maxPop = Math.max(...pops, popThreshold)*1.15;
+  const minPop = Math.min(...pops, popThreshold)*0.65;
+  const maxPop = Math.max(...pops, popThreshold)*1.2;
   const lg = v => Math.log10(Math.max(v, minPop));
   const lgMin = lg(minPop), lgMax = lg(maxPop);
   const X = v => mL + (lg(v)-lgMin)/(lgMax-lgMin)*pw;
-  const maxMC = Math.max(...matriz.map(i=>i.mc), mcProm)*1.12;
-  const Y = v => mT + ph - v/maxMC*ph;
-  // Tamaño del punto ∝ contribución del mes
+  const maxMC = Math.max(...matriz.map(i=>i.mc), mcProm)*1.15;
+  const Y = v => mT + ph - Math.max(0, v/maxMC)*ph;
   const maxContrib = Math.max(...matriz.map(i=>i.contribucion), 1);
-  const R = c => 4 + Math.sqrt(c/maxContrib)*11;
+  const R = c => 5 + Math.sqrt(c/maxContrib)*13;
 
-  const zonas = `
-    <text x="${(X(popThreshold)+mL)/2}" y="${mT+15}" font-family="Arial" font-size="11" font-weight="bold" fill="#C8A96E" opacity="0.5" text-anchor="middle">PUZZLE</text>
-    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+15}" font-family="Arial" font-size="11" font-weight="bold" fill="#2D5016" opacity="0.5" text-anchor="middle">ESTRELLA</text>
-    <text x="${(X(popThreshold)+mL)/2}" y="${mT+ph-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#8B1A1A" opacity="0.5" text-anchor="middle">PERRO</text>
-    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+ph-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#B8860B" opacity="0.5" text-anchor="middle">CABALLITO</text>`;
+  // Fondos de cuadrantes
+  const qBg = `
+    <rect x="${mL}" y="${mT}" width="${X(popThreshold)-mL}" height="${Y(mcProm)-mT}" fill="#FFF8EE" rx="2"/>
+    <rect x="${X(popThreshold)}" y="${mT}" width="${mL+pw-X(popThreshold)}" height="${Y(mcProm)-mT}" fill="#F0F7EC" rx="2"/>
+    <rect x="${mL}" y="${Y(mcProm)}" width="${X(popThreshold)-mL}" height="${mT+ph-Y(mcProm)}" fill="#FDF0F0" rx="2"/>
+    <rect x="${X(popThreshold)}" y="${Y(mcProm)}" width="${mL+pw-X(popThreshold)}" height="${mT+ph-Y(mcProm)}" fill="#FFFBF0" rx="2"/>`;
 
+  // Etiquetas de cuadrante
+  const qLabels = `
+    <text x="${(mL+X(popThreshold))/2}" y="${mT+20}" font-family="Arial" font-size="12" font-weight="700" fill="#C8A96E" opacity="0.7" text-anchor="middle">PUZZLE</text>
+    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+20}" font-family="Arial" font-size="12" font-weight="700" fill="#2D5016" opacity="0.7" text-anchor="middle">ESTRELLA ⭐</text>
+    <text x="${(mL+X(popThreshold))/2}" y="${mT+ph-10}" font-family="Arial" font-size="12" font-weight="700" fill="#8B1A1A" opacity="0.7" text-anchor="middle">PERRO</text>
+    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+ph-10}" font-family="Arial" font-size="12" font-weight="700" fill="#B8860B" opacity="0.7" text-anchor="middle">CABALLITO</text>`;
+
+  // Ejes y líneas de corte
   const ejes = `
-    <line x1="${mL}" y1="${mT}" x2="${mL}" y2="${mT+ph}" stroke="#D8D2C8" stroke-width="1.5"/>
-    <line x1="${mL}" y1="${mT+ph}" x2="${mL+pw}" y2="${mT+ph}" stroke="#D8D2C8" stroke-width="1.5"/>
-    <line x1="${X(popThreshold)}" y1="${mT}" x2="${X(popThreshold)}" y2="${mT+ph}" stroke="#8A8A80" stroke-width="1" stroke-dasharray="5,4"/>
-    <line x1="${mL}" y1="${Y(mcProm)}" x2="${mL+pw}" y2="${Y(mcProm)}" stroke="#8A8A80" stroke-width="1" stroke-dasharray="5,4"/>
-    <text x="${mL+pw/2}" y="${H-8}" font-family="Arial" font-size="11" fill="#5A5A52" text-anchor="middle">Popularidad — escala logarítmica (% de las ventas)</text>
-    <text x="16" y="${mT+ph/2}" font-family="Arial" font-size="11" fill="#5A5A52" text-anchor="middle" transform="rotate(-90 16 ${mT+ph/2})">Margen de contribución por porción ($)</text>
-    <text x="${X(popThreshold)}" y="${mT-6}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="middle">${fmtD(popThreshold*100)}%</text>
-    <text x="${mL-6}" y="${Y(mcProm)+4}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="end">${fmtCorto(mcProm)}</text>`;
+    <line x1="${mL}" y1="${mT}" x2="${mL}" y2="${mT+ph}" stroke="#CCC" stroke-width="1.5"/>
+    <line x1="${mL}" y1="${mT+ph}" x2="${mL+pw}" y2="${mT+ph}" stroke="#CCC" stroke-width="1.5"/>
+    <line x1="${X(popThreshold)}" y1="${mT}" x2="${X(popThreshold)}" y2="${mT+ph}" stroke="#999" stroke-width="1.2" stroke-dasharray="6,4"/>
+    <line x1="${mL}" y1="${Y(mcProm)}" x2="${mL+pw}" y2="${Y(mcProm)}" stroke="#999" stroke-width="1.2" stroke-dasharray="6,4"/>
+    <text x="${mL+pw/2}" y="${H-12}" font-family="Arial" font-size="11" fill="#777" text-anchor="middle">Popularidad (% de ventas) — escala logarítmica</text>
+    <text x="14" y="${mT+ph/2}" font-family="Arial" font-size="11" fill="#777" text-anchor="middle" transform="rotate(-90 14 ${mT+ph/2})">Margen de contribución / porción ($)</text>
+    <text x="${X(popThreshold)}" y="${mT-10}" font-family="Arial" font-size="10" fill="#888" text-anchor="middle">${fmtD(popThreshold*100)}%</text>
+    <text x="${mL-8}" y="${Y(mcProm)+4}" font-family="Arial" font-size="10" fill="#888" text-anchor="end">$${fmtCorto(mcProm)}</text>`;
 
-  // puntos sin etiqueta, con transparencia y <title> para hover
-  const puntos = matriz.filter(i=>i.pop>0).map(i=>{
-    const c = CLASES_MENU[i.clase].col;
-    return `<circle cx="${X(i.pop)}" cy="${Y(i.mc)}" r="${R(i.contribucion).toFixed(1)}" fill="${c}" opacity="0.55" stroke="${c}" stroke-width="1"><title>${i.nombre} · ${CLASES_MENU[i.clase].nombre} · ${i.unid} u · margen $${fmt(i.mc)} · contrib $${fmt(i.contribucion)}</title></circle>`;
+  // Puntos — top 8 por contribución llevan etiqueta
+  const sorted = [...matriz].filter(i=>i.pop>0).sort((a,b)=>b.contribucion-a.contribucion);
+  const conEtiqueta = new Set(sorted.slice(0,8).map(i=>i.id));
+
+  const puntos = sorted.map(i=>{
+    const c   = CLASES_MENU[i.clase].col;
+    const cx  = X(i.pop), cy = Y(i.mc), r = R(i.contribucion);
+    const lbl = conEtiqueta.has(i.id)
+      ? `<text x="${cx}" y="${cy-r-4}" font-family="Arial" font-size="9.5" fill="${c}" text-anchor="middle" font-weight="600">${i.nombre.length>18?i.nombre.slice(0,17)+'…':i.nombre}</text>`
+      : '';
+    return `<g>
+      <circle cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="${c}" opacity="0.25" stroke="${c}" stroke-width="1.5"/>
+      <circle cx="${cx}" cy="${cy}" r="${(r*0.45).toFixed(1)}" fill="${c}" opacity="0.9"/>
+      <title>${i.nombre} · ${CLASES_MENU[i.clase].nombre} · ${i.unid} u · $${fmt(i.mc)}/p · contrib $${fmt(i.contribucion)}</title>
+      ${lbl}
+    </g>`;
   }).join('');
 
-  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
-    ${zonas}${ejes}${puntos}
-    <text x="${mL}" y="${H-8}" font-family="Arial" font-size="9.5" fill="#B8B0A4">Tamaño del punto = plata que aporta al mes · pasá el mouse para ver cada plato</text>
+  const leyenda = Object.entries(CLASES_MENU).map(([k,v],idx)=>
+    `<circle cx="${mL+idx*130+10}" cy="${H-8}" r="5" fill="${v.col}"/>
+     <text x="${mL+idx*130+20}" y="${H-4}" font-family="Arial" font-size="10" fill="#555">${v.nombre}</text>`
+  ).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FAFAF8;border-radius:10px">
+    ${qBg}${qLabels}${ejes}${puntos}${leyenda}
   </svg>`;
 }
+
+// Vista 2: Ranking por contribución — barras horizontales
+function chartContribucion(matriz){
+  if(!matriz.length) return '';
+  const top = [...matriz].sort((a,b)=>b.contribucion-a.contribucion).slice(0,20);
+  const maxC = top[0].contribucion;
+  const H = 36 + top.length*36, W = 680, barW = 380, lblW = 200;
+  const bars = top.map((i,idx)=>{
+    const c   = CLASES_MENU[i.clase].col;
+    const bw  = Math.max(4, (i.contribucion/maxC)*barW);
+    const y   = 20 + idx*36;
+    const nom = i.nombre.length>28 ? i.nombre.slice(0,27)+'…' : i.nombre;
+    return `<g>
+      <text x="${lblW-8}" y="${y+14}" font-family="Arial" font-size="12" fill="#333" text-anchor="end">${nom}</text>
+      <rect x="${lblW}" y="${y+2}" width="${bw}" height="22" fill="${c}" opacity="0.8" rx="4"/>
+      <text x="${lblW+bw+6}" y="${y+14}" font-family="Arial" font-size="11" fill="${c}" font-weight="700">$${fmtCorto(i.contribucion)}</text>
+      <text x="${lblW+bw+6}" y="${y+25}" font-family="Arial" font-size="9" fill="#999">${i.unid} u</text>
+    </g>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FAFAF8;border-radius:10px">
+    <text x="0" y="14" font-family="Arial" font-size="11" fill="#888">Contribución total al mes (top ${top.length})</text>
+    ${bars}
+  </svg>`;
+}
+
+// Vista 3: Food cost por plato — barras con semáforo
+function chartFoodCost(matriz){
+  if(!matriz.length) return '';
+  const sorted = [...matriz].sort((a,b)=>b.fc-a.fc).slice(0,20);
+  const H = 36 + sorted.length*36, W = 680, barW = 340, lblW = 220;
+  const bars = sorted.map((i,idx)=>{
+    const pct = Math.min(i.fc, 100);
+    const bw  = (pct/100)*barW;
+    const col = pct > 40 ? '#8B1A1A' : pct > 30 ? '#B8860B' : '#2D5016';
+    const y   = 20 + idx*36;
+    const nom = i.nombre.length>30 ? i.nombre.slice(0,29)+'…' : i.nombre;
+    return `<g>
+      <text x="${lblW-8}" y="${y+14}" font-family="Arial" font-size="12" fill="#333" text-anchor="end">${nom}</text>
+      <rect x="${lblW}" y="${y+4}" width="${barW}" height="18" fill="#EEE" rx="4"/>
+      <rect x="${lblW}" y="${y+4}" width="${bw}" height="18" fill="${col}" opacity="0.85" rx="4"/>
+      <text x="${lblW+bw+6}" y="${y+16}" font-family="Arial" font-size="11" fill="${col}" font-weight="700">${fmtD(i.fc)}%</text>
+    </g>`;
+  }).join('');
+  // Líneas de corte 30% y 40%
+  const x30 = lblW + (30/100)*barW;
+  const x40 = lblW + (40/100)*barW;
+  const lineas = `
+    <line x1="${x30}" y1="18" x2="${x30}" y2="${H-4}" stroke="#2D5016" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+    <line x1="${x40}" y1="18" x2="${x40}" y2="${H-4}" stroke="#8B1A1A" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+    <text x="${x30}" y="14" font-family="Arial" font-size="9" fill="#2D5016" text-anchor="middle">30%</text>
+    <text x="${x40}" y="14" font-family="Arial" font-size="9" fill="#8B1A1A" text-anchor="middle">40%</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FAFAF8;border-radius:10px">
+    <text x="0" y="14" font-family="Arial" font-size="11" fill="#888">% Food cost por plato (mayor a menor)</text>
+    ${lineas}${bars}
+  </svg>`;
+}
+
+// Vista 4: Distribución por clase — dona + resumen
+function chartDona(matriz){
+  if(!matriz.length) return '';
+  const clases = ['estrella','caballito','puzzle','perro'];
+  const totContrib = matriz.reduce((s,i)=>s+i.contribucion,0);
+  const grupos = clases.map(k=>({
+    k, ...CLASES_MENU[k],
+    count: matriz.filter(i=>i.clase===k).length,
+    contrib: matriz.filter(i=>i.clase===k).reduce((s,i)=>s+i.contribucion,0),
+  }));
+  const W=680, H=260, cx=130, cy=120, ro=100, ri=54;
+  let ang = -Math.PI/2;
+  const slices = grupos.map(g=>{
+    const pct = totContrib>0 ? g.contrib/totContrib : 0;
+    const sweep = pct * 2 * Math.PI;
+    const x1=cx+ro*Math.cos(ang), y1=cy+ro*Math.sin(ang);
+    ang += sweep;
+    const x2=cx+ro*Math.cos(ang), y2=cy+ro*Math.sin(ang);
+    const xi1=cx+ri*Math.cos(ang-sweep), yi1=cy+ri*Math.sin(ang-sweep);
+    const xi2=cx+ri*Math.cos(ang), yi2=cy+ri*Math.sin(ang);
+    const lg = sweep > Math.PI ? 1 : 0;
+    if(sweep < 0.01) return '';
+    return `<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${ro},${ro} 0 ${lg},1 ${x2.toFixed(1)},${y2.toFixed(1)} L${xi2.toFixed(1)},${yi2.toFixed(1)} A${ri},${ri} 0 ${lg},0 ${xi1.toFixed(1)},${yi1.toFixed(1)} Z" fill="${g.col}" opacity="0.85"/>`;
+  }).join('');
+
+  // Total en el centro
+  const centro = `
+    <text x="${cx}" y="${cy-6}" font-family="Arial" font-size="11" fill="#555" text-anchor="middle">Total</text>
+    <text x="${cx}" y="${cy+10}" font-family="Arial" font-size="14" font-weight="700" fill="#333" text-anchor="middle">$${fmtCorto(totContrib)}</text>`;
+
+  // Cards de resumen a la derecha
+  const cards = grupos.map((g,idx)=>{
+    const pct = totContrib>0 ? (g.contrib/totContrib*100) : 0;
+    const y = 20 + idx*56;
+    return `<g>
+      <rect x="280" y="${y}" width="380" height="46" fill="${g.col}" opacity="0.08" rx="8"/>
+      <circle cx="300" cy="${y+23}" r="8" fill="${g.col}" opacity="0.9"/>
+      <text x="318" y="${y+16}" font-family="Arial" font-size="13" font-weight="700" fill="${g.col}">${g.nombre}</text>
+      <text x="318" y="${y+32}" font-family="Arial" font-size="11" fill="#555">${g.count} plato${g.count!==1?'s':''} · $${fmtCorto(g.contrib)} · ${fmtD(pct)}% del total</text>
+    </g>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FAFAF8;border-radius:10px">
+    ${slices}${centro}${cards}
+  </svg>`;
+}
+
 
 function updVentaReceta(mes, recetaId, unidades){
   const op = getOp();
@@ -5234,7 +5911,7 @@ function renderClientes(){
         ${op.responsable ? op.responsable : '<span style="color:#B8860B">Sin datos de contacto</span>'}${op.telefono ? ' · '+op.telefono : ''}${op.direccion ? ' · '+op.direccion : ''}
       </div>
     </td>
-    <td><span class="badge badge-op">${op.tipo==='catering'?'Catering':'Restaurante'}</span></td>
+    <td><span class="badge badge-op">${op.tipo==='catering'||op.tipo==='Catering'?'Catering':op.tipo==='hotel'||op.tipo==='Hotel'?'Hotel':op.tipo==='darkKitchen'||op.tipo==='Dark Kitchen'?'🌑 Dark Kitchen':op.tipo||'Restaurante'}</span></td>
     <td>${(()=>{ const enMem = demoData.recetas.filter(r=>r.opId===op.id).length; if(enMem>0) return enMem+' recetas'; const docRecs = op._datos && op._datos.recetas ? op._datos.recetas.length : (op._meta&&op._meta.totalRecetas||0); return docRecs+' recetas'; })()}</td>
     <td><span class="sem sem-v"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> Activo</span></td>
     <td style="display:flex;gap:6px">
@@ -5345,6 +6022,7 @@ function modalNuevaOperacion(){
           <option value="catering">Catering / Viandas industriales</option>
           <option value="restaurante">Restaurante</option>
           <option value="hotel">Hotel</option>
+          <option value="darkKitchen">Dark Kitchen</option>
           <option value="comedor">Comedor empresarial</option>
           <option value="otro">Otro</option>
         </select>
@@ -7209,7 +7887,7 @@ function getOnboardingContent(paso){
             <div>
               <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Tipo</label>
               <select id="ob-tipo" style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
-                ${['Restaurante','Catering','Viandas','Pastelería','Hotel','Comedor','Otro'].map(t=>`<option${getOp().tipo===t?' selected':''}>${t}</option>`).join('')}
+                ${['Restaurante','Catering','Viandas','Pastelería','Hotel','Comedor','Dark Kitchen','Otro'].map(t=>`<option${getOp().tipo===t?' selected':''}>${t}</option>`).join('')}
               </select>
             </div>
   
