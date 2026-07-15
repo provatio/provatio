@@ -943,6 +943,13 @@ input:focus, select:focus, textarea:focus {
       <div id="op-indicador-nombre" style="font-size:13px;font-weight:700;color:#F5F0E8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
       <div id="op-indicador-tipo" style="font-size:11px;color:#999;margin-top:1px"></div>
     </div>
+    <div id="cp-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 6px;padding:8px 12px;background:#1A3A1A;border:1.5px solid #2D5016;border-radius:8px">
+      <span style="font-size:18px">🏭</span>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#6ABF6A;letter-spacing:.5px;text-transform:uppercase">Centro de Producción</div>
+        <div style="font-size:10px;color:#888">Provee insumos a los locales</div>
+      </div>
+    </div>
     <div id="dk-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 8px;padding:8px 12px;background:#111;border:1.5px solid #C8A96E;border-radius:8px">
       <span style="font-size:18px">🌑</span>
       <div>
@@ -1309,6 +1316,13 @@ function esDarkKitchen(){
   const op = getOp();
   return op && (op.tipo==='darkKitchen' || op.tipo==='Dark Kitchen');
 }
+function esCentroProduccion(){
+  const op = getOp();
+  return op && (op.tipo==='centroProduccion' || op.tipo==='Centro de Producción');
+}
+function esCadena(){
+  return currentUser && currentUser.rol==='cadena';
+}
 
 // ── DATOS DEMO EN MEMORIA ──
 let demoData = {
@@ -1580,6 +1594,16 @@ function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadRe
 function calcReceta(receta, porciones){
   let merc = 0;
   const items = (receta.ingredientes||[]).map(ing=>{
+    // Item tipo insumo del Centro de Producción
+    if(ing.productoCP !== undefined){
+      const prod = getProductosCP().find(p=>p.id===ing.productoCP);
+      if(prod && prod.costoXkg > 0){
+        const costoItem = prod.costoXkg * (+ing.neto||0) / 1000;
+        merc += costoItem;
+        return {...ing, calc:{costo_porcion: costoItem, costoXkg: prod.costoXkg, ok:true, esCP:true}};
+      }
+      return {...ing, calc:{error:'Sin costo en CP'}};
+    }
     // Item tipo receta elaborada (sub-receta / elaboración propia)
     if(ing.recetaId){
       const recBase = getRecetas().find(x=>x.id===ing.recetaId);
@@ -1593,6 +1617,39 @@ function calcReceta(receta, porciones){
       }
       return {...ing, calc:{error:'Sin rendimiento cargado'}};
     }
+    // ── ITEM TIPO INSUMO CP ─────────────────────────────────────────────────
+    if(ing.productoCP !== undefined){
+      const productos = getProductosCP();
+      const prod = ing.productoCP ? productos.find(p=>p.id===ing.productoCP) : null;
+      const costoXkg = prod ? prod.costoXkg : 0;
+      const gramosUsados = +ing.neto || 0;
+      const costoItem = costoXkg > 0 && gramosUsados > 0 ? costoXkg * gramosUsados / 1000 : null;
+      const costoTotal = costoItem !== null ? costoItem * porciones : null;
+      if(costoItem) merc += costoItem;
+
+      return `<tr style="background:#F0F7F0">
+        <td>
+          <select onchange="updIngReceta(${idx},'productoCP',this.value)" style="min-width:200px;font-size:13px">
+            <option value="">— elegí producto del CP —</option>
+            ${productos.map(p=>`<option value="${p.id}"${p.id===ing.productoCP?' selected':''}>
+              🏭 ${p.nombre} ${p.costoXkg>0?'($'+fmt(p.costoXkg)+'/kg)':'⚠ sin costo'}
+            </option>`).join('')}
+          </select>
+        </td>
+        <td style="font-size:11px;color:var(--oliva);white-space:nowrap">
+          ${prod && prod.costoXkg>0 ? `$${fmt(prod.costoXkg)}/kg` : '<span style="color:var(--bordo)">⚠ Sin costo en CP</span>'}
+        </td>
+        <td><input type="number" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right"
+          onchange="updIngReceta(${idx},'neto',+this.value)"></td>
+        <td style="text-align:right;color:var(--gris-2)">—</td>
+        <td style="text-align:right;color:var(--gris-2)">—</td>
+        <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:''}</td>
+        <td style="text-align:right">${costoTotal!==null?`<span class="calc">$${fmt(costoTotal)}</span>`:''}</td>
+        <td style="text-align:right;color:var(--gris-2)">—</td>
+        <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
+      </tr>`;
+    }
+
     // Item tipo condimento o ingrediente normal
     const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, ing.esCondimento);
     if(c&&!c.error) merc += c.costo_porcion;
@@ -1603,6 +1660,10 @@ function calcReceta(receta, porciones){
 
 function agregarRecetaEnReceta(){
   recetaEditando.ingredientes.push({recetaId:'', neto:0});
+  renderEditorReceta();
+}
+function agregarProductoCP(){
+  recetaEditando.ingredientes.push({productoCP:'', neto:0});
   renderEditorReceta();
 }
 
@@ -2032,14 +2093,30 @@ function buildSidebar(rol){
 
   // ── Items según rol y tipo de operación ────────────────────────────────
   const isDK = esDarkKitchen();
-  const enOperacion = !!currentOpId; // admin dentro de una operación
+  const isCP = esCentroProduccion();
+  const enOperacion = !!currentOpId;
+  const opActiva = currentOpId ? demoData.operaciones[currentOpId] : null;
+  const estaVinculadaACP = opActiva && opActiva.grupoId && demoData.operaciones[opActiva.grupoId];
+  const cpDelLocal = estaVinculadaACP ? demoData.operaciones[opActiva.grupoId] : null;
 
-  // Admin: siempre ve Panel general y Clientes; el resto se adapta al tipo de op
-  const itemsAdmin = enOperacion && isDK ? [
+  // Sección cadena: SOLO cuando estás en el CP
+  const seccionCadena = isCP ? [
+    {section:'Cadena'},
+    {icon:'chart', label:'Vista ejecutiva', vista:'dashboardCadena'},
+    {icon:'store', label:'Centro de Producción', vista:'centroProduccion'},
+  ] : [];
+
+  const itemsAdmin = !enOperacion ? [
+    // Sin operación activa — solo PRINCIPAL
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     {icon:'users', label:'Clientes', vista:'clientes'},
-    {section:'🌑 '+( getOp()?.nombre||'Dark Kitchen')},
+  ] : isDK ? [
+    // Dark Kitchen activa
+    {section:'Principal'},
+    {icon:'chart', label:'Panel general', vista:'dashboard'},
+    {icon:'users', label:'Clientes', vista:'clientes'},
+    {section:'🌑 '+(getOp()?.nombre||'Dark Kitchen')},
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
@@ -2054,23 +2131,32 @@ function buildSidebar(rol){
     {section:'Próximamente'},
     {icon:'store', label:'Proveedores', vista:'proveedores', soon:true},
   ] : [
+    // Operación normal activa
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     {icon:'users', label:'Clientes', vista:'clientes'},
-    {section: enOperacion ? getOp()?.nombre||'Operación' : 'Operación'},
+    ...seccionCadena,
+    {section: (()=>{
+      const op = getOp();
+      if(!op) return 'Operación';
+      if(estaVinculadaACP && cpDelLocal) return op.nombre + ' · ' + cpDelLocal.nombre;
+      return op.nombre;
+    })()},
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {icon:'tag', label:'Subproductos', vista:'subproductos'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
-    {section:'Presupuesto'},
-    {icon:'calendar', label:'Planificación semanal', vista:'semanal'},
-    {icon:'target', label:'Evento / Presupuesto', vista:'evento'},
-    {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
+    ...(!isCP ? [
+      {section:'Presupuesto'},
+      {icon:'calendar', label:'Planificación semanal', vista:'semanal'},
+      {icon:'target', label:'Evento / Presupuesto', vista:'evento'},
+      {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
+    ] : []),
     {section:'Análisis'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
-    {icon:'cart', label:'Lista de compras', vista:'compras'},
+    ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
@@ -2129,6 +2215,10 @@ function buildSidebar(rol){
     </div>`;
   }).join('');
 
+  // Badge Centro de Producción
+  const cpBadge = document.getElementById('cp-badge');
+  if(cpBadge) cpBadge.style.display = esCentroProduccion() ? 'flex' : 'none';
+
   // Badge Dark Kitchen debajo del nav
   const dkBadge = document.getElementById('dk-badge');
   if(dkBadge) dkBadge.style.display = esDarkKitchen() ? 'flex' : 'none';
@@ -2140,14 +2230,21 @@ function buildSidebar(rol){
   if(opInd && enOperacion && getOp()){
     const op = getOp();
     const tipoLabel = op.tipo==='darkKitchen'||op.tipo==='Dark Kitchen' ? '🌑 Dark Kitchen'
+      : op.tipo==='Centro de Producción'||op.tipo==='centroProduccion' ? '🏭 Centro de Producción'
       : op.tipo==='catering'||op.tipo==='Catering' ? '📦 Catering'
       : op.tipo==='hotel'||op.tipo==='Hotel' ? '🏨 Hotel'
       : op.tipo==='pasteleria'||op.tipo==='Pastelería' ? '🥐 Pastelería'
       : op.tipo==='viandas'||op.tipo==='Viandas' ? '🍱 Viandas'
       : '🍽 Restaurante';
+    // Si es local vinculado a un CP, mostrar la cadena
+    const cpVinc = op.grupoId && demoData.operaciones[op.grupoId];
+    const subtipo = cpVinc ? tipoLabel + ' · ' + cpVinc.nombre : tipoLabel;
+    const badgeInfo = tipoBadgeColor(op.tipo);
     opInd.style.display = 'block';
-    if(opNombre) opNombre.textContent = op.nombre || 'Sin nombre';
-    if(opTipo) opTipo.textContent = tipoLabel;
+    opInd.style.borderColor = badgeInfo.bg;
+    opInd.style.background = badgeInfo.bg + '18'; // 10% opacity
+    if(opNombre){ opNombre.textContent = op.nombre || 'Sin nombre'; opNombre.style.color = '#F5F0E8'; }
+    if(opTipo){ opTipo.textContent = subtipo; opTipo.style.color = badgeInfo.bg === '#1A1A18' ? '#C8A96E' : badgeInfo.bg; }
   } else if(opInd){
     opInd.style.display = 'none';
   }
@@ -2224,7 +2321,7 @@ function navigate(vista, params={}){
   if(navEl) navEl.classList.add('active');
   
   const vistas = {
-    dashboard: renderDashboard,
+    dashboard: ()=>{ currentOpId=null; buildSidebar(currentUser?.rol||'admin'); renderDashboard(); },
     operacion: renderDashboardOperacion,
     resultado: renderResultado,
     clientes: renderClientes,
@@ -2234,6 +2331,8 @@ function navigate(vista, params={}){
     semanal: renderSemanal,
     evento: renderEvento,
     buffet: renderBuffet,
+    centroProduccion: renderCP,
+    dashboardCadena: renderDashboardCadena,
     rentabilidad: renderRentabilidad,
     compras: renderCompras,
     soon: renderSoon,
@@ -2376,7 +2475,7 @@ function renderDashboardAdmin(){
                 <strong>${op.nombre}</strong>
                 <div style="font-size:11px;color:var(--gris-2);margin-top:2px">${op.responsable || '<span style="color:#B8860B">Sin contacto — cargalo en Clientes</span>'}${op.telefono ? ' · '+op.telefono : ''}</div>
               </td>
-              <td><span class="badge badge-op">${op.tipo==='catering'||op.tipo==='Catering'?'Catering':op.tipo==='hotel'||op.tipo==='Hotel'?'Hotel':op.tipo==='darkKitchen'||op.tipo==='Dark Kitchen'?'🌑 Dark Kitchen':op.tipo||'Restaurante'}</span></td>
+              <td>${tipoBadgeHtml(op.tipo)}</td>
               <td style="text-align:right">${s.total}${s.sinPrecio?` <span style="color:#B8860B;font-size:11px">(${s.sinPrecio} sin precio)</span>`:''}</td>
               <td style="text-align:right">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : s.desdeMeta ? '<span style="color:var(--gris-3);font-size:11px" title="Abrí la operación para calcular">Abrir para ver</span>' : '<span style="color:var(--gris-3)">—</span>'}</td>
               <td>${s.pctProm!==null ? semaforo(s.pctProm) : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>
@@ -2434,6 +2533,66 @@ function renderDashboardAdmin(){
 function renderDashboardOperacion(){
   const op = getOp();
   if(!op){ renderDashboardAdmin(); return; }
+
+  // Dashboard especial para Centro de Producción
+  if(esCentroProduccion()){
+    const productos = getProductosCP();
+    const elaborados    = productos.filter(p=>p.tipoProd==='elaborado').length;
+    const porcionados   = productos.filter(p=>p.tipoProd==='porcionado').length;
+    const redistribuidos= productos.filter(p=>p.tipoProd==='redistribuido').length;
+    const locales = getLocalesCadena();
+    const totalRecetasCadena = locales.reduce((s,loc)=>{
+      return s + ((loc._datos&&loc._datos.recetas)||[]).length;
+    },0);
+
+    setContent(op.nombre, `
+      <div style="margin-bottom:14px">
+        <button class="btn btn-secondary btn-sm" onclick="navigate('dashboard')">← Volver al panel general</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
+        <div class="metric"><div class="metric-label">Productos del CP</div><div class="metric-value">${productos.length}</div></div>
+        <div class="metric"><div class="metric-label">Elaborados propios</div><div class="metric-value">${elaborados}</div></div>
+        <div class="metric"><div class="metric-label">Porcionados</div><div class="metric-value">${porcionados}</div></div>
+        <div class="metric"><div class="metric-label">Redistribuidos</div><div class="metric-value">${redistribuidos}</div></div>
+        <div class="metric"><div class="metric-label">Locales en la cadena</div><div class="metric-value">${locales.length}</div></div>
+        <div class="metric"><div class="metric-label">Recetas totales cadena</div><div class="metric-value">${totalRecetasCadena}</div></div>
+      </div>
+
+      <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="navigate('dashboardCadena')">${ico('chart',14)} Vista ejecutiva de la cadena</button>
+        <button class="btn btn-secondary" onclick="navigate('centroProduccion')">${ico('store',14)} Gestionar productos del CP</button>
+      </div>
+
+      ${locales.length ? `
+      <div class="card">
+        <div class="card-header"><span class="card-title">Locales vinculados</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Local</th><th>Tipo</th><th style="text-align:right">Recetas</th><th></th></tr></thead>
+            <tbody>
+              ${locales.map(loc=>{
+                const recs = (loc._datos&&loc._datos.recetas)||[];
+                const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
+                return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
+                  <td><strong>${loc.nombre}</strong></td>
+                  <td><span class="badge badge-op">${loc.tipo||'Restaurante'}</span></td>
+                  <td style="text-align:right">${recs.length}</td>
+                  <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>` : `
+      <div class="empty">
+        <h3>Sin locales vinculados</h3>
+        <p>Andá a Clientes y usá el botón "Cadena" para vincular locales a este Centro de Producción.</p>
+        <button class="btn btn-secondary" onclick="navigate('clientes')">Ir a Clientes</button>
+      </div>`}
+    `);
+    return;
+  }
+
   const esAdmin = currentUser && currentUser.rol === 'admin';
   const cocina = esNivelCocina();
   const s = opStats(op.id);
@@ -3590,7 +3749,7 @@ function renderEditorReceta(){
       <button class="btn btn-secondary" onclick="recetaEditando=null;limpiarBorradorEditor();renderRecetas()">← Volver</button>
       <input type="text" id="rec-nombre" value="${r.nombre}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
-        <span style="font-size:11px;font-weight:700;color:var(--gris-1)">$ PRECIO VENTA</span>
+        <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCentroProduccion() ? "$ PRECIO TRANSFERENCIA" : "$ PRECIO VENTA"}</span>
         <input type="number" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
           style="width:110px;border:none;background:transparent;font-size:14px;font-weight:700;color:var(--negro);text-align:right"
           onchange="recetaEditando.precioVenta=+this.value;renderEditorReceta()">
@@ -3617,7 +3776,7 @@ function renderEditorReceta(){
           onchange="recetaEditando.rendimientoG=+this.value;renderEditorReceta()">
       </div>
       <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
-      <div class="metric"><div class="metric-label">% sobre precio venta</div>
+      <div class="metric"><div class="metric-label">${esCentroProduccion() ? "% sobre precio transferencia" : "% sobre precio venta"}</div>
         <div class="metric-value" style="color:${pct===null?'var(--gris-2)':pct>35?'var(--bordo)':pct>25?'#8B6914':'var(--oliva)'}">
           ${pct===null?'— Sin precio':fmtD(pct)+'%'}
         </div>
@@ -3632,6 +3791,7 @@ function renderEditorReceta(){
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
           <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" onclick="agregarRecetaEnReceta()">+ Receta elaborada</button>
+          ${getProductosCP().length ? `<button class="btn btn-secondary btn-sm" style="border-color:var(--oliva);color:var(--oliva)" onclick="agregarProductoCP()">🏭 + Insumo CP</button>` : ''}
         </div>
       </div>
       <div class="table-wrap">
@@ -4336,6 +4496,372 @@ function renderEvento(){
 
 function imprimirPresupuesto(){ window.print(); }
 
+
+
+// ── MÓDULO CADENA / MULTI-LOCAL ───────────────────────────────────────────────
+//
+// Arquitectura:
+// - Centro de Producción (CP): operación especial que provee ingredientes
+//   y recetas elaboradas a los locales de la cadena
+// - Local: operación normal que puede usar insumos del CP como ingredientes
+// - Vista ejecutiva: dashboard consolidado de todos los locales
+//
+// Tres tipos de productos del CP:
+//   1. ELABORADO: receta propia del CP (ravioles, panificación) → costo/kg calculado
+//   2. PORCIONADO: ingrediente comprado + merma de porcionado (ojo de bife, lomo)
+//   3. REDISTRIBUIDO: ingrediente comprado que el CP reparte sin transformación
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Obtener el Centro de Producción vinculado al admin
+function getCentroProduccion(){
+  const ops = Object.values(demoData.operaciones||{});
+  return ops.find(op => op.tipo==='Centro de Producción' || op.tipo==='centroProduccion') || null;
+}
+
+// Obtener locales de la cadena (solo los vinculados al CP activo)
+function getLocalesCadena(){
+  const cp = getCentroProduccion();
+  if(!cp) return [];
+  const cpId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===cp)?.[0];
+  if(!cpId) return [];
+  const ops = Object.values(demoData.operaciones||{});
+  return ops.filter(op =>
+    (op.tipo!=='Centro de Producción' && op.tipo!=='centroProduccion') &&
+    op.grupoId === cpId
+  );
+}
+
+// Obtener productos del CP para los locales.
+// Combina dos fuentes:
+//   1. Recetas del CP con rendimientoG — su precio de transferencia = precioVenta/rendimientoG
+//   2. Productos manuales legacy (porcionados, redistribuidos)
+function getProductosCP(){
+  const cp = getCentroProduccion();
+  if(!cp) return [];
+
+  const recetasCP = (cp._datos && cp._datos.recetas) || [];
+  const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
+
+  // Recetas elaboradas del CP con rendimiento definido
+  const desdeRecetas = recetasCP
+    .filter(r => r.rendimientoG > 0)
+    .map(r => {
+      const costoProd = calcularCostoRecetaCP(r, cp);
+      const costoXkg  = r.rendimientoG > 0 ? costoProd / r.rendimientoG * 1000 : 0;
+      // Precio de transferencia: precioVenta si está cargado, sino costo de producción
+      const precioTransfXkg = r.precioVenta > 0
+        ? r.precioVenta / r.rendimientoG * 1000
+        : costoXkg;
+      return {
+        id: 'cp-rec-' + r.id,
+        nombre: r.nombre + (r.precioVenta > 0 ? '' : ' (sin precio transf.)'),
+        tipoProd: 'elaborado',
+        recetaId: r.id,
+        costoXkg: precioTransfXkg,   // lo que le cobra al local
+        costoProduccionXkg: costoXkg, // lo que le cuesta al CP
+        tienePrecioTransferencia: r.precioVenta > 0,
+        margenXkg: precioTransfXkg - costoXkg,
+      };
+    });
+
+  // Productos manuales (porcionados, redistribuidos)
+  const legacy = (cp._productos || []).map(p => {
+    let costoXkg = 0;
+    if(p.tipoProd === 'porcionado'){
+      const ing = ingsCP.find(i => i.id === p.ingId);
+      if(ing && ing.precio > 0){
+        costoXkg = ing.precio / (1 - (p.mermaPorcionado||0)/100);
+      }
+    } else if(p.tipoProd === 'redistribuido'){
+      costoXkg = p.precioXkg || 0;
+    }
+    return { ...p, costoXkg, tienePrecioTransferencia: true };
+  });
+
+  return [...desdeRecetas, ...legacy];
+}
+
+// Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
+function calcularCostoRecetaCP(receta, cp){
+  const ings = (cp._datos && cp._datos.ingredientes) || [];
+  const mermas = (cp._datos && cp._datos.mermas) || [];
+  let total = 0;
+  (receta.ingredientes||[]).forEach(item => {
+    const ing = ings.find(i => i.id === item.ingId);
+    if(!ing || !ing.precio) return;
+    const merma = mermas.find(m => m.id === item.tecnica);
+    const mermaPct = merma ? (merma.pct||0) : 0;
+    const neto = item.neto || 0;
+    const bruto = neto / (1 - mermaPct/100);
+    total += (bruto/1000) * ing.precio;
+  });
+  return total;
+}
+
+// ── CRUD de productos del CP ─────────────────────────────────────────────────
+
+function nuevoProductoCP(){
+  return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg' };
+}
+
+function addProductoCP(){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  if(!cp._productos) cp._productos = [];
+  cp._productos.push(nuevoProductoCP());
+  guardarEnFirestore();
+  renderCP();
+}
+
+function delProductoCP(id){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  cp._productos = (cp._productos||[]).filter(p => p.id !== id);
+  guardarEnFirestore();
+  renderCP();
+}
+
+function updProductoCP(id, campo, val){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  const p = (cp._productos||[]).find(x => x.id === id);
+  if(p){ p[campo] = val; guardarEnFirestore(); renderCP(); }
+}
+
+// ── RENDER CENTRO DE PRODUCCIÓN ──────────────────────────────────────────────
+
+function renderCP(){
+  const cp = getCentroProduccion();
+  if(!cp){
+    setContent('Centro de Producción', `
+      <div class="alert alert-warn">
+        No hay ninguna operación de tipo <strong>Centro de Producción</strong> creada todavía.
+        Creá una operación y elegí el tipo "Centro de Producción" para activar este módulo.
+      </div>`);
+    return;
+  }
+
+  const productos = getProductosCP();
+  const recetasCP = (cp._datos && cp._datos.recetas) || [];
+  const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
+
+  const filas = productos.map(p => {
+    const tipoBadge = p.tipoProd==='elaborado'   ? '<span class="badge badge-op">Elaborado</span>'
+                    : p.tipoProd==='porcionado'  ? '<span class="badge badge-sc">Porcionado</span>'
+                    : '<span style="background:#E8F4F8;color:#1A5276;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">Redistribuido</span>';
+
+    const precioTransf = p.costoXkg > 0 ? `$${fmt(p.costoXkg)}/kg` : '<span style="color:var(--gris-3)">Sin precio</span>';
+    const costoProd = p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg` : '—';
+    const margen = p.margenXkg !== undefined && p.costoXkg > 0
+      ? `<span style="color:${p.margenXkg>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(p.margenXkg))}/kg</span>`
+      : '—';
+    const costoDisplay = precioTransf;
+
+    const selector = p.tipoProd==='elaborado'
+      ? `<select onchange="updProductoCP('${p.id}','recetaId',this.value)" style="font-size:12px;width:100%">
+           <option value="">— elegí receta del CP —</option>
+           ${recetasCP.map(r=>`<option value="${r.id}"${r.id===p.recetaId?' selected':''}>${r.nombre}${r.rendimientoG?' ('+r.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
+         </select>`
+      : p.tipoProd==='porcionado'
+      ? `<div style="display:flex;gap:8px;align-items:center">
+           <select onchange="updProductoCP('${p.id}','ingId',this.value)" style="font-size:12px;flex:1">
+             <option value="">— ingrediente base —</option>
+             ${ingsCP.map(i=>`<option value="${i.id}"${i.id===p.ingId?' selected':''}>${i.nombre}</option>`).join('')}
+           </select>
+           <input type="number" value="${p.mermaPorcionado||0}" placeholder="% merma" style="width:80px;font-size:12px"
+             onchange="updProductoCP('${p.id}','mermaPorcionado',+this.value)">
+           <span style="font-size:11px;color:var(--gris-2)">% merma</span>
+         </div>`
+      : `<input type="number" value="${p.precioXkg||0}" placeholder="Precio por kg" style="font-size:12px;width:140px"
+           onchange="updProductoCP('${p.id}','precioXkg',+this.value)">
+         <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg</span>`;
+
+    return `<tr>
+      <td><input type="text" value="${p.nombre}" placeholder="Nombre del producto"
+        style="border:none;background:transparent;font-weight:600;width:100%"
+        onchange="updProductoCP('${p.id}','nombre',this.value)"></td>
+      <td>
+        <select onchange="updProductoCP('${p.id}','tipoProd',this.value)" style="font-size:12px">
+          <option value="elaborado"${p.tipoProd==='elaborado'?' selected':''}>Elaborado propio</option>
+          <option value="porcionado"${p.tipoProd==='porcionado'?' selected':''}>Porcionado</option>
+          <option value="redistribuido"${p.tipoProd==='redistribuido'?' selected':''}>Redistribuido</option>
+        </select>
+      </td>
+      <td>${selector}</td>
+      <td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}</td>
+      <td style="text-align:right;font-weight:700;color:var(--negro)">${precioTransf}</td>
+      <td style="text-align:right">${margen}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="delProductoCP('${p.id}')">${ico('trash',13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  setContent('Centro de Producción', `
+    <div class="alert alert-info" style="margin-bottom:20px">
+      ${ico('bulb',14)} Los productos del Centro de Producción se usan como insumos en los locales de la cadena.
+      Su costo se calcula automáticamente y se propaga a todas las recetas que los usen.
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header">
+        <span class="card-title">🏭 ${cp.nombre || 'Centro de Producción'}</span>
+        <button class="btn btn-primary btn-sm" onclick="addProductoCP()">+ Producto</button>
+      </div>
+      ${productos.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Producto</th>
+            <th style="width:130px">Tipo</th>
+            <th>Origen / Configuración</th>
+            <th style="text-align:right;width:120px">Costo prod.</th>
+            <th style="text-align:right;width:130px">Precio transf.</th>
+            <th style="text-align:right;width:100px">Margen/kg</th>
+            <th style="width:50px"></th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>` : `
+      <div class="card-body" style="text-align:center;color:var(--gris-3)">
+        Agregá los productos que el Centro de Producción provee a los locales.
+        <br><br>
+        <button class="btn btn-primary" onclick="addProductoCP()">+ Primer producto</button>
+      </div>`}
+    </div>
+
+    ${getLocalesCadena().length ? `
+    <div class="card">
+      <div class="card-header"><span class="card-title">Locales que reciben insumos</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Local</th><th>Tipo</th><th style="text-align:right">Recetas</th><th></th></tr></thead>
+          <tbody>
+            ${getLocalesCadena().map(loc => {
+              const recs = (loc._datos && loc._datos.recetas) || [];
+              const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
+              return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
+                <td><strong>${loc.nombre}</strong><br><span style="font-size:11px;color:var(--gris-2)">Click para abrir</span></td>
+                <td><span class="badge badge-op">${loc.tipo||'Restaurante'}</span></td>
+                <td style="text-align:right">${recs.length}</td>
+                <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>` : ''}
+  `);
+}
+
+// ── DASHBOARD EJECUTIVO CONSOLIDADO ──────────────────────────────────────────
+
+function renderDashboardCadena(){
+  const locales = getLocalesCadena();
+  const cp      = getCentroProduccion();
+
+  if(!locales.length){
+    setContent('Vista ejecutiva', `
+      <div class="alert alert-warn">
+        No hay locales cargados todavía. Creá al menos dos operaciones para ver el consolidado.
+      </div>`);
+    return;
+  }
+
+  // Calcular métricas por local
+  const metricas = locales.map(loc => {
+    const recetas = (loc._datos && loc._datos.recetas) || [];
+    const conPrecio = recetas.filter(r => r.precioVenta > 0);
+    let sumPct = 0;
+    let totalMerc = 0;
+    recetas.forEach(r => {
+      const merc = calcularCostoRecetaCP(r, loc);
+      totalMerc += merc;
+      if(r.precioVenta > 0) sumPct += merc / r.precioVenta * 100;
+    });
+    const pctProm = conPrecio.length > 0 ? sumPct / conPrecio.length : null;
+    const alertas = recetas.filter(r => {
+      if(!r.precioVenta || r.precioVenta <= 0) return false;
+      const merc = calcularCostoRecetaCP(r, loc);
+      return merc / r.precioVenta * 100 > 35;
+    }).length;
+
+    return { loc, recetas, conPrecio: conPrecio.length, pctProm, alertas };
+  });
+
+  // Semáforo consolidado
+  const semaforos = metricas.map(m => m.pctProm);
+  const promGeneral = semaforos.filter(Boolean).length
+    ? semaforos.filter(Boolean).reduce((a,b)=>a+b,0) / semaforos.filter(Boolean).length
+    : null;
+
+  const filasLocales = metricas.map(({loc, recetas, conPrecio, pctProm, alertas}) => {
+    const col = pctProm === null ? 'var(--gris-3)'
+              : pctProm < 30 ? '#2D7A2D'
+              : pctProm < 38 ? '#B8860B'
+              : 'var(--bordo)';
+    const estado = pctProm === null ? '—'
+                 : pctProm < 30 ? '● OK'
+                 : pctProm < 38 ? '● Atención'
+                 : '● Crítico';
+    return `<tr style="cursor:pointer" onclick="abrirOperacion('${loc.id||Object.keys(demoData.operaciones).find(k=>demoData.operaciones[k]===loc)}')">
+      <td><strong>${loc.nombre}</strong><br><span style="font-size:11px;color:var(--gris-2)">${loc.tipo||'Restaurante'}</span></td>
+      <td style="text-align:right">${recetas.length}</td>
+      <td style="text-align:right">${conPrecio}</td>
+      <td style="text-align:right;font-weight:700;color:${col}">${pctProm !== null ? fmtD(pctProm)+'%' : '—'}</td>
+      <td style="color:${col};font-weight:600;font-size:12px">${estado}</td>
+      <td style="text-align:right;color:${alertas>0?'var(--bordo)':'var(--gris-3)'}">${alertas > 0 ? `⚠ ${alertas}` : '✓'}</td>
+    </tr>`;
+  }).join('');
+
+  setContent('Vista ejecutiva — Cadena', `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
+      <div class="metric">
+        <div class="metric-label">Locales activos</div>
+        <div class="metric-value">${locales.length}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Recetas totales</div>
+        <div class="metric-value">${metricas.reduce((s,m)=>s+m.recetas.length,0)}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Food cost promedio cadena</div>
+        <div class="metric-value" style="color:${promGeneral===null?'inherit':promGeneral<30?'#2D7A2D':promGeneral<38?'#B8860B':'var(--bordo)'}">
+          ${promGeneral !== null ? fmtD(promGeneral)+'%' : '—'}
+        </div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Locales con alertas</div>
+        <div class="metric-value" style="color:${metricas.filter(m=>m.alertas>0).length>0?'var(--bordo)':'#2D7A2D'}">
+          ${metricas.filter(m=>m.alertas>0).length}
+        </div>
+      </div>
+      ${cp ? `<div class="metric">
+        <div class="metric-label">Productos del CP</div>
+        <div class="metric-value">${(cp._productos||[]).length}</div>
+      </div>` : ''}
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Estado por local</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Local</th>
+            <th style="text-align:right">Recetas</th>
+            <th style="text-align:right">Con precio</th>
+            <th style="text-align:right">Food cost prom.</th>
+            <th>Estado</th>
+            <th style="text-align:right">Alertas</th>
+          </tr></thead>
+          <tbody>${filasLocales}</tbody>
+        </table>
+      </div>
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
+        Hacé click en cualquier local para abrir su operación completa.
+      </div>
+    </div>
+  `);
+}
 
 // ── BUFFET ───────────────────────────────────────────────────────────────────
 
@@ -5868,6 +6394,32 @@ async function cargarUsuariosFirebase(){
   }
 }
 
+
+// Badge de tipo de operación con colores
+function tipoBadgeColor(tipo){
+  const t = tipo||'';
+  if(t==='Centro de Producción'||t==='centroProduccion')
+    return {bg:'#2D5016', color:'#FFFFFF', label:'🏭 Centro de Producción'};
+  if(t==='darkKitchen'||t==='Dark Kitchen')
+    return {bg:'#1A1A18', color:'#C8A96E', label:'🌑 Dark Kitchen'};
+  if(t==='hotel'||t==='Hotel')
+    return {bg:'#1B3A5C', color:'#FFFFFF', label:'🏨 Hotel'};
+  if(t==='catering'||t==='Catering')
+    return {bg:'#B8540A', color:'#FFFFFF', label:'📦 Catering'};
+  if(t==='viandas'||t==='Viandas')
+    return {bg:'#7B3F2E', color:'#FFFFFF', label:'🍱 Viandas'};
+  if(t==='pasteleria'||t==='Pastelería')
+    return {bg:'#9B4B6E', color:'#FFFFFF', label:'🥐 Pastelería'};
+  if(t==='comedor'||t==='Comedor empresarial')
+    return {bg:'#3D5A7A', color:'#FFFFFF', label:'🏢 Comedor'};
+  // Restaurante y default — dorado
+  return {bg:'#C8A96E', color:'#1A1A18', label:'🍽 Restaurante'};
+}
+function tipoBadgeHtml(tipo){
+  const b = tipoBadgeColor(tipo);
+  return `<span style="background:${b.bg};color:${b.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap">${b.label}</span>`;
+}
+
 function renderClientes(){
   // Cargar usuarios de Firebase en segundo plano
   cargarUsuariosFirebase().then(usuarios => {
@@ -5908,35 +6460,126 @@ function renderClientes(){
     if(usersContainer) usersContainer.innerHTML = usersHtml;
   });
 
-  const ops = Object.values(demoData.operaciones);
-  const rows = ops.map(op=>`<tr>
-    <td>
-      <strong>${op.nombre}</strong>
-      <div style="font-size:11px;color:var(--gris-2);margin-top:2px">
-        ${op.responsable ? op.responsable : '<span style="color:#B8860B">Sin datos de contacto</span>'}${op.telefono ? ' · '+op.telefono : ''}${op.direccion ? ' · '+op.direccion : ''}
-      </div>
-    </td>
-    <td><span class="badge badge-op">${op.tipo==='catering'||op.tipo==='Catering'?'Catering':op.tipo==='hotel'||op.tipo==='Hotel'?'Hotel':op.tipo==='darkKitchen'||op.tipo==='Dark Kitchen'?'🌑 Dark Kitchen':op.tipo||'Restaurante'}</span></td>
-    <td>${(()=>{ const enMem = demoData.recetas.filter(r=>r.opId===op.id).length; if(enMem>0) return enMem+' recetas'; const docRecs = op._datos && op._datos.recetas ? op._datos.recetas.length : (op._meta&&op._meta.totalRecetas||0); return docRecs+' recetas'; })()}</td>
-    <td><span class="sem sem-v"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> Activo</span></td>
-    <td style="display:flex;gap:6px">
-      <button class="btn btn-secondary btn-sm" onclick="modalDatosCliente('${op.id}')">${ico('edit',13)} Datos</button>
-      <button class="btn btn-secondary btn-sm" onclick="abrirOperacion('${op.id}')">Ver operación</button>
-      <button class="btn btn-danger btn-sm" onclick="delOperacion('${op.id}')">${ico('trash',13)} Eliminar</button>
-    </td>
-  </tr>`).join('');
+  const allOps = Object.entries(demoData.operaciones);
+
+  // Función helper para badge de tipo
+  // tipoBadge → usar tipoBadgeHtml global
+
+  function recetasLabel(op){
+    const enMem = demoData.recetas.filter(r=>r.opId===op.id).length;
+    if(enMem>0) return enMem+' recetas';
+    const docRecs = op._datos&&op._datos.recetas ? op._datos.recetas.length : (op._meta&&op._meta.totalRecetas||0);
+    return docRecs+' recetas';
+  }
+
+  function filaOp(op, indent=false){
+    return `<tr style="${indent?'background:#FAFAF8':''}"">
+      <td>
+        ${indent?'<span style="color:var(--gris-3);margin-right:6px;font-size:13px">└</span>':''}
+        <strong>${op.nombre}</strong>
+        <div style="font-size:11px;color:var(--gris-2);margin-top:2px">
+          ${op.responsable?op.responsable:'<span style="color:#B8860B">Sin datos de contacto</span>'}${op.telefono?' · '+op.telefono:''}
+        </div>
+      </td>
+      <td>${tipoBadgeHtml(op.tipo)}</td>
+      <td>${recetasLabel(op)}</td>
+      <td><span class="sem sem-v"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> Activo</span></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="modalDatosCliente('${op.id}')">${ico('edit',13)} Datos</button>
+        <button class="btn btn-secondary btn-sm" onclick="modalVincularCadena('${op.id}')">${ico('link',13)} Cadena</button>
+        <button class="btn btn-secondary btn-sm" onclick="abrirOperacion('${op.id}')">Ver operación</button>
+        <button class="btn btn-danger btn-sm" onclick="delOperacion('${op.id}')">${ico('trash',13)} Eliminar</button>
+      </td>
+    </tr>`;
+  }
+
+  // Agrupar: primero CPs con sus locales, luego independientes
+  const cps = allOps.filter(([k,v])=>v.tipo==='Centro de Producción'||v.tipo==='centroProduccion');
+  const vinculadas = new Set(allOps.filter(([k,v])=>v.grupoId).map(([k])=>k));
+  const independientes = allOps.filter(([k,v])=>
+    v.tipo!=='Centro de Producción' && v.tipo!=='centroProduccion' && !v.grupoId
+  );
+
+  let rowsHtml = '';
+
+  // CPs primero con sus locales debajo
+  cps.forEach(([cpId, cp])=>{
+    rowsHtml += filaOp(cp, false);
+    // Locales vinculados a este CP (excluir el CP mismo)
+    allOps.filter(([k,v])=>v.grupoId===cpId && k!==cpId).forEach(([k,v])=>{
+      rowsHtml += filaOp(v, true);
+    });
+  });
+
+  // Separador si hay ambos grupos
+  if(cps.length > 0 && independientes.length > 0){
+    rowsHtml += `<tr><td colspan="5" style="padding:6px 0;background:var(--crema-2)">
+      <span style="font-size:11px;color:var(--gris-2);font-weight:600;padding-left:12px;text-transform:uppercase;letter-spacing:.05em">Operaciones independientes</span>
+    </td></tr>`;
+  }
+
+  // Independientes
+  independientes.forEach(([k,v])=>{ rowsHtml += filaOp(v, false); });
+
+  const rows = rowsHtml;
 
 // ── Modal de datos de contacto del cliente ──
+window.modalVincularCadena = function(opId){
+  const op = demoData.operaciones[opId];
+  if(!op) return;
+  const cps = Object.entries(demoData.operaciones||{})
+    .filter(([k,v]) => v.tipo==='Centro de Producción' || v.tipo==='centroProduccion');
+  if(!cps.length){
+    showToast('Primero creá una operación de tipo Centro de Producción','error');
+    return;
+  }
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Vincular a cadena — ${op.nombre}</span>
+      <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Centro de Producción / Casa Matriz</label>
+        <select id="vc-grupo">
+          <option value="">— Operación independiente —</option>
+          ${cps.map(([k,v])=>`<option value="${k}"${op.grupoId===k?' selected':''}>${v.nombre}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-primary" style="flex:1" onclick="guardarVinculoCadena('${opId}')">Guardar</button>
+        <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      </div>
+    </div>
+  `);
+};
+
+window.guardarVinculoCadena = function(opId){
+  const op = demoData.operaciones[opId];
+  if(!op) return;
+  op.grupoId = document.getElementById('vc-grupo').value || null;
+  guardarEnFirestore();
+  closeModal();
+  renderClientes();
+  showToast('Vínculo actualizado','success');
+};
+
 window.modalDatosCliente = function(opId){
   const op = demoData.operaciones[opId];
   if(!op) return;
   const esc = v => (v||'').replace(/"/g,'&quot;');
+  const tipos = ['Restaurante','Hotel','Catering','Viandas','Pastelería','Comedor empresarial','Dark Kitchen','Centro de Producción / Casa Matriz','Otro'];
   openModal(`
     <div class="modal-header">
       <span class="modal-title">Datos del cliente — ${op.nombre}</span>
       <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
     </div>
     <div class="modal-body">
+      <div class="form-group"><label>Tipo de operación</label>
+        <select id="dc-tipo">
+          ${tipos.map(t=>`<option value="${t}"${op.tipo===t||(!op.tipo&&t==='Restaurante')?' selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
       <div class="form-group"><label>Responsable / contacto</label>
         <input type="text" id="dc-resp" value="${esc(op.responsable)}" placeholder="Ej: Juan Pérez — Gerente de servicios"></div>
       <div class="form-group"><label>Teléfono</label>
@@ -5970,6 +6613,8 @@ window.modalDatosCliente = function(opId){
 window.guardarDatosCliente = function(opId){
   const op = demoData.operaciones[opId];
   if(!op) return;
+  const tipoNuevo = document.getElementById('dc-tipo').value;
+  op.tipo = tipoNuevo === 'Centro de Producción / Casa Matriz' ? 'Centro de Producción' : tipoNuevo;
   op.responsable = document.getElementById('dc-resp').value.trim();
   op.telefono = document.getElementById('dc-tel').value.trim();
   op.emailContacto = document.getElementById('dc-email').value.trim();
@@ -5978,6 +6623,8 @@ window.guardarDatosCliente = function(opId){
   op.notas = document.getElementById('dc-notas').value.trim();
   op.tieneDelivery = document.getElementById('dc-delivery').checked;
   closeModal();
+  // Refrescar sidebar para reflejar el nuevo tipo
+  buildSidebar(currentUser?.rol||'cliente');
   renderClientes();
   showToast('Datos de '+op.nombre+' guardados','success');
   guardarEnFirestore();
@@ -5986,7 +6633,7 @@ window.guardarDatosCliente = function(opId){
   setContent('Clientes', `
     <div class="card">
       <div class="card-header">
-        <span class="card-title">${ops.length} operación${ops.length!==1?'es':''} activa${ops.length!==1?'s':''}</span>
+        <span class="card-title">${allOps.length} operación${allOps.length!==1?'es':''} activa${allOps.length!==1?'s':''}</span>
         <button class="btn btn-primary btn-sm" onclick="modalNuevaOperacion()">+ Nueva operación</button>
       </div>
       <div class="table-wrap">
@@ -6024,12 +6671,20 @@ function modalNuevaOperacion(){
       <div class="form-group">
         <label>Tipo de operación</label>
         <select id="no-tipo">
-          <option value="catering">Catering / Viandas industriales</option>
           <option value="restaurante">Restaurante</option>
           <option value="hotel">Hotel</option>
+          <option value="catering">Catering / Viandas industriales</option>
           <option value="darkKitchen">Dark Kitchen</option>
           <option value="comedor">Comedor empresarial</option>
+          <option value="Centro de Producción">Centro de Producción / Casa Matriz</option>
           <option value="otro">Otro</option>
+        </select>
+      </div>
+      <div class="form-group" id="no-grupo-wrap">
+        <label>Pertenece a (Centro de Producción / Cadena)</label>
+        <select id="no-grupo">
+          <option value="">— Operación independiente —</option>
+          ${Object.entries(demoData.operaciones||{}).filter(([k,v])=>v.tipo==='Centro de Producción'||v.tipo==='centroProduccion').map(([k,v])=>`<option value="${k}">${v.nombre}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -6057,10 +6712,12 @@ async function guardarNuevaOperacion(){
   if(!nombre){ showToast('Escribí el nombre de la operación','error'); return; }
 
   const id = 'op-'+Date.now();
+  const grupoEl = document.getElementById('no-grupo');
   const nuevaOp = {
     id,
     nombre,
     tipo: document.getElementById('no-tipo').value,
+    grupoId: grupoEl ? grupoEl.value || null : null,
     umbralAlerta: +document.getElementById('no-umbral').value||3,
     tiposServicio: document.getElementById('no-servicios').value.split(',').map(s=>s.trim()).filter(Boolean),
     tiposPlato: document.getElementById('no-platos').value.split(',').map(s=>s.trim()).filter(Boolean),
@@ -7892,7 +8549,7 @@ function getOnboardingContent(paso){
             <div>
               <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Tipo</label>
               <select id="ob-tipo" style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
-                ${['Restaurante','Catering','Viandas','Pastelería','Hotel','Comedor','Dark Kitchen','Otro'].map(t=>`<option${getOp().tipo===t?' selected':''}>${t}</option>`).join('')}
+                ${['Restaurante','Catering','Viandas','Pastelería','Hotel','Comedor','Dark Kitchen','Centro de Producción','Otro'].map(t=>`<option${getOp().tipo===t?' selected':''}>${t}</option>`).join('')}
               </select>
             </div>
   
