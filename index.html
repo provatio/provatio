@@ -4637,6 +4637,668 @@ function updProductoCP(id, campo, val){
 }
 
 // ── RENDER CENTRO DE PRODUCCIÓN ──────────────────────────────────────────────
+// El CP funciona como cualquier operación — Ingredientes, Mermas, Recetas.
+// Sus recetas con rendimientoG y precioVenta son los "productos" que provee a los locales.
+// La tabla legacy de productos manuales se mantiene solo para porcionados y redistribuidos.
+
+function renderCP(){
+  const cp = getCentroProduccion();
+  if(!cp){
+    setContent('Centro de Producción', `
+      <div class="alert alert-warn">
+        No hay ninguna operación de tipo <strong>Centro de Producción</strong> creada todavía.
+        Creá una operación y elegí el tipo "Centro de Producción" para activar este módulo.
+      </div>`);
+    return;
+  }
+
+  const recetasCP  = (cp._datos && cp._datos.recetas) || [];
+  const ingsCP     = (cp._datos && cp._datos.ingredientes) || [];
+  const productosCP = getProductosCP(); // combina recetas + legacy
+
+  // Recetas listas para transferir (tienen rendimientoG)
+  const recetasListas = recetasCP.filter(r => r.rendimientoG > 0);
+  const recetasSinRendimiento = recetasCP.filter(r => !r.rendimientoG || r.rendimientoG <= 0);
+
+  // Productos legacy (porcionados y redistribuidos)
+  const legacyProds = (cp._productos||[]).filter(p => p.tipoProd !== 'elaborado');
+
+  // Tabla de recetas disponibles como insumos
+  const filasRecetas = recetasListas.map(r => {
+    const costoProd = calcularCostoRecetaCP(r, cp);
+    const costoXkg  = r.rendimientoG > 0 ? costoProd / r.rendimientoG * 1000 : 0;
+    const precioTransfXkg = r.precioVenta > 0 ? r.precioVenta / r.rendimientoG * 1000 : null;
+    const margenXkg = precioTransfXkg !== null ? precioTransfXkg - costoXkg : null;
+    return `<tr>
+      <td><strong>${r.nombre}</strong></td>
+      <td style="text-align:right">${r.rendimientoG ? fmt(r.rendimientoG)+'g' : '—'}</td>
+      <td style="text-align:right;color:var(--gris-2)">$${fmt(costoXkg)}/kg</td>
+      <td style="text-align:right;font-weight:700">
+        ${precioTransfXkg !== null
+          ? `$${fmt(precioTransfXkg)}/kg`
+          : `<span style="color:var(--bordo);font-size:12px">⚠ Sin precio transf.</span>`}
+      </td>
+      <td style="text-align:right">
+        ${margenXkg !== null
+          ? `<span style="color:${margenXkg>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(margenXkg))}/kg</span>`
+          : '—'}
+      </td>
+      <td>
+        <button class="btn btn-secondary btn-sm" onclick="abrirEditorRecetaCP('${r.id}')">
+          ${ico('edit',13)} Editar
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Recetas sin rendimiento — alerta
+  const alertaSinRendimiento = recetasSinRendimiento.length ? `
+    <div class="alert alert-warn" style="margin-bottom:12px">
+      ⚠ ${recetasSinRendimiento.length} receta${recetasSinRendimiento.length>1?'s':''} sin rendimiento cargado:
+      ${recetasSinRendimiento.map(r=>`<strong>${r.nombre}</strong>`).join(', ')} —
+      cargá el rendimiento en gramos para que los locales puedan usarlas como insumo.
+    </div>` : '';
+
+  // Tabla de porcionados y redistribuidos (legacy)
+  const filasLegacy = legacyProds.map(p => {
+    const costoXkg = p.tipoProd==='porcionado'
+      ? (()=>{
+          const ing = ingsCP.find(i=>i.id===p.ingId);
+          return ing && ing.precio > 0 ? ing.precio/(1-(p.mermaPorcionado||0)/100) : 0;
+        })()
+      : (p.precioXkg||0);
+    return `<tr>
+      <td>
+        <input type="text" value="${p.nombre}" placeholder="Nombre"
+          style="border:none;background:transparent;font-weight:600;width:100%"
+          onchange="updProductoCP('${p.id}','nombre',this.value)">
+      </td>
+      <td>
+        <span style="background:${p.tipoProd==='porcionado'?'#2D5016':'#1B3A5C'};color:#fff;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
+          ${p.tipoProd==='porcionado'?'🔪 Porcionado':'📦 Redistribuido'}
+        </span>
+      </td>
+      <td>
+        ${p.tipoProd==='porcionado'
+          ? `<div style="display:flex;gap:6px;align-items:center">
+               <select onchange="updProductoCP('${p.id}','ingId',this.value)" style="font-size:12px;flex:1">
+                 <option value="">— ingrediente base —</option>
+                 ${ingsCP.map(i=>`<option value="${i.id}"${i.id===p.ingId?' selected':''}>${i.nombre}</option>`).join('')}
+               </select>
+               <input type="number" value="${p.mermaPorcionado||0}" placeholder="% merma"
+                 style="width:70px;font-size:12px" onchange="updProductoCP('${p.id}','mermaPorcionado',+this.value)">
+               <span style="font-size:11px;color:var(--gris-2)">% merma</span>
+             </div>`
+          : `<input type="number" value="${p.precioXkg||0}" placeholder="$/kg"
+               style="font-size:12px;width:130px" onchange="updProductoCP('${p.id}','precioXkg',+this.value)">
+             <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg</span>`}
+      </td>
+      <td style="text-align:right;font-weight:700">$${fmt(costoXkg)}/kg</td>
+      <td><button class="btn btn-danger btn-sm" onclick="delProductoCP('${p.id}')">${ico('trash',13)}</button></td>
+    </tr>`;
+  }).join('');
+
+  setContent('Centro de Producción', `
+    ${alertaSinRendimiento}
+
+    <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="navigate('ingredientes')">
+        ${ico('clipboard',13)} Ingredientes del CP
+      </button>
+      <button class="btn btn-primary" onclick="navigate('mermas')">
+        ${ico('flame',13)} Mermas del CP
+      </button>
+      <button class="btn btn-primary" onclick="navigate('recetas')">
+        ${ico('chef',13)} Recetas del CP
+      </button>
+      <button class="btn btn-secondary" onclick="navigate('dashboardCadena')">
+        ${ico('chart',13)} Vista ejecutiva
+      </button>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">🏭 Productos disponibles para locales</span>
+        <span style="font-size:12px;color:var(--gris-2)">${recetasListas.length} recetas · ${legacyProds.length} otros</span>
+      </div>
+      ${recetasListas.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Receta elaborada</th>
+            <th style="text-align:right;width:100px">Rendimiento</th>
+            <th style="text-align:right;width:120px">Costo prod./kg</th>
+            <th style="text-align:right;width:130px">Precio transf./kg</th>
+            <th style="text-align:right;width:110px">Margen/kg</th>
+            <th style="width:80px"></th>
+          </tr></thead>
+          <tbody>${filasRecetas}</tbody>
+        </table>
+      </div>` : `
+      <div class="card-body" style="color:var(--gris-3);text-align:center">
+        Cargá recetas en el CP con el campo <strong>Rendimiento total (g/ml)</strong> para que aparezcan acá
+        y los locales puedan usarlas como insumos.
+        <br><br>
+        <button class="btn btn-primary" onclick="navigate('recetas')">Ir a Recetas</button>
+      </div>`}
+    </div>
+
+    ${legacyProds.length || true ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">Porcionados y redistribuidos</span>
+        <button class="btn btn-secondary btn-sm" onclick="addProductoCP()">+ Agregar</button>
+      </div>
+      ${legacyProds.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Producto</th><th>Tipo</th><th>Configuración</th>
+            <th style="text-align:right;width:130px">Precio/kg</th>
+            <th style="width:50px"></th>
+          </tr></thead>
+          <tbody>${filasLegacy}</tbody>
+        </table>
+      </div>` : `
+      <div class="card-body" style="color:var(--gris-3);text-align:center">
+        Agregá carnes porcionadas o productos redistribuidos que el CP manda a los locales.
+      </div>`}
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Locales de la cadena</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Local</th><th>Tipo</th><th style="text-align:right">Recetas</th><th></th></tr></thead>
+          <tbody>
+            ${getLocalesCadena().map(loc => {
+              const recs = (loc._datos && loc._datos.recetas) || [];
+              const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
+              return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
+                <td><strong>${loc.nombre}</strong></td>
+                <td>${tipoBadgeHtml(loc.tipo)}</td>
+                <td style="text-align:right">${recs.length}</td>
+                <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+}
+
+// Abrir editor de receta del CP directamente
+function abrirEditorRecetaCP(recetaId){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  const rec = ((cp._datos&&cp._datos.recetas)||[]).find(r=>r.id===recetaId);
+  if(!rec) return;
+  recetaEditando = JSON.parse(JSON.stringify(rec));
+  vistaActual = 'editorReceta';
+  renderEditorReceta();
+}
+
+
+// ── RENDER PRINCIPAL ─────────────────────────────────────────────────────────
+function renderEvento(){
+  const recetas = getRecetas().sort((a,b)=>a.nombre.localeCompare(b.nombre));
+  const eventosGuardados = getEventos().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+
+  // Totales generales
+  let totalPersonas=0, totalCosto=0, totalIngresos=0;
+  eventoData.segmentos.forEach(seg=>{
+    const c=calcSegmento(seg);
+    totalPersonas+=(+seg.personas||0);
+    totalCosto+=c.costoTotal;
+    totalIngresos+=c.ingresos;
+  });
+
+  // Bebidas totales
+  let ingresosBebidasTotal=0;
+  eventoData.bebidas.forEach(b=>{
+    ingresosBebidasTotal += b.modalidad==='barraLibre'
+      ? (+b.precioVenta||0)
+      : (+b.precioVenta||0)*totalPersonas;
+  });
+
+  const extrasTotal = eventoData.gastosExtra.reduce((s,g)=>s+(+g.monto||0),0);
+  const margenTotal = (totalIngresos+ingresosBebidasTotal) - totalCosto - extrasTotal;
+  const pctCosto = (totalIngresos+ingresosBebidasTotal)>0 ? totalCosto/(totalIngresos+ingresosBebidasTotal)*100 : null;
+
+  // ── HTML de segmentos ────────────────────────────────────────────────────
+  const segHtml = eventoData.segmentos.map(seg=>{
+    const c = calcSegmento(seg);
+    const margenSeg = c.ingresos - c.costoTotal;
+    const pctSeg = c.ingresos>0 ? c.costoTotal/c.ingresos*100 : null;
+
+    const cursosHtml = CURSOS_EVENTO.map(curso=>{
+      const activo = seg.cursos[curso]!==undefined;
+      const items  = Array.isArray(seg.cursos[curso]) ? seg.cursos[curso] : [];
+      const costoTotalCurso = items.reduce((sum,item)=>{
+        if(!item.recetaId) return sum;
+        const rec = recetas.find(r=>r.id===item.recetaId);
+        return sum + (rec ? calcReceta(rec,1).merc : 0);
+      }, 0);
+
+      const personas = +seg.personas || 0;
+      const platosHtml = items.map(item=>{
+        const rec = item.recetaId ? recetas.find(r=>r.id===item.recetaId) : null;
+        const costoPorPersona = rec ? calcReceta(rec,1).merc : null;
+        const cantItem = +item.cantidad || 0;
+        const costoItem = (costoPorPersona!==null && cantItem>0) ? costoPorPersona*cantItem : null;
+        return `<div style="display:grid;grid-template-columns:1fr 120px 110px 90px auto;align-items:center;gap:8px;margin:6px 0 6px 24px;padding:6px 10px;background:var(--crema);border-radius:8px">
+          <select onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','recetaId',this.value)"
+            style="font-size:13px;width:100%">
+            <option value="">— elegí receta —</option>
+            ${recetas.map(r=>`<option value="${r.id}"${r.id===item.recetaId?' selected':''}>${r.nombre}</option>`).join('')}
+          </select>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Comensales</span>
+            <input type="number" value="${item.cantidad||''}" placeholder="${personas||'?'}" min="0"
+              style="width:100%;text-align:center;font-size:14px;font-weight:700;border:none;border-bottom:1.5px solid var(--dorado);background:transparent;padding:2px 0"
+              onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','cantidad',+this.value)">
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Costo/p</span>
+            <span style="font-size:13px;font-weight:600;color:var(--gris-1)">${costoPorPersona!==null?'$'+fmt(costoPorPersona):'—'}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Subtotal</span>
+            <span style="font-size:13px;font-weight:700;color:var(--bordo)">${costoItem!==null?'$'+fmt(costoItem):'—'}</span>
+          </div>
+          <button class="btn btn-icon btn-sm" style="color:var(--bordo)" onclick="delPlatoCurso('${seg.id}','${curso}','${item.id}')">✕</button>
+        </div>`;
+      }).join('');
+
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--crema-2)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <label style="display:flex;align-items:center;gap:6px;min-width:130px;font-size:13px;cursor:pointer">
+            <input type="checkbox" ${activo?'checked':''} onchange="toggleCurso('${seg.id}','${curso}')">
+            <strong>${curso}</strong>
+          </label>
+          ${activo
+            ? `<span style="font-size:12px;color:var(--gris-2)">${items.length} plato${items.length!==1?'s':''} · $${fmt(costoTotalCurso)}/p total</span>
+               <button class="btn btn-secondary btn-sm" style="margin-left:auto;font-size:11px" onclick="addPlatoCurso('${seg.id}','${curso}')">+ Plato</button>`
+            : `<span style="font-size:12px;color:var(--gris-3);font-style:italic">No incluido</span>`}
+        </div>
+        ${activo ? platosHtml : ''}
+      </div>`;
+    }).join('');
+
+    return `<div class="card" style="margin-bottom:12px;border:1.5px solid ${seg.abierto?'var(--dorado)':'var(--crema-2)'}">
+      <div class="card-header" style="cursor:pointer" onclick="toggleSegmento('${seg.id}')">
+        <span class="card-title" style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px">${seg.abierto?'▾':'▸'}</span>
+          <input type="text" value="${seg.nombre}" placeholder="Nombre del segmento (ej: Vegano, Sin TACC...)"
+            onclick="event.stopPropagation()"
+            onchange="updSegmento('${seg.id}','nombre',this.value)"
+            style="border:none;background:transparent;font-size:15px;font-weight:700;color:var(--negro);min-width:200px">
+        </span>
+        <div style="display:flex;align-items:center;gap:16px">
+          ${c.personas>0 ? `<span style="font-size:13px;color:var(--gris-2)">${c.personas} pers. · Costo $${fmt(c.costoMercPorPersona)}/p · ${pctSeg!==null?fmtD(pctSeg)+'% food cost':''}</span>` : ''}
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();delSegmento('${seg.id}')">${ico('trash',12)}</button>
+        </div>
+      </div>
+      ${seg.abierto ? `
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px">Cantidad de personas</label>
+            <input type="number" value="${seg.personas||''}" placeholder="0" min="0"
+              style="font-size:20px;font-weight:700;border:none;border-bottom:2px solid var(--dorado);background:transparent;width:100%;padding:4px 0"
+              onchange="updSegmento('${seg.id}','personas',+this.value)">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px">Precio por cabeza cotizado ($)</label>
+            <input type="number" value="${seg.precioCabeza||''}" placeholder="0" min="0"
+              style="font-size:20px;font-weight:700;border:none;border-bottom:2px solid var(--dorado);background:transparent;width:100%;padding:4px 0"
+              onchange="updSegmento('${seg.id}','precioCabeza',+this.value)">
+          </div>
+        </div>
+        <div style="font-size:12px;font-weight:700;color:var(--gris-1);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Cursos</div>
+        ${cursosHtml}
+        ${c.costoTotal>0 ? `
+        <div style="margin-top:12px;padding:10px;background:var(--crema);border-radius:8px;font-size:13px;display:flex;gap:24px;flex-wrap:wrap">
+          <span>Costo mercadería: <strong>$${fmt(c.costoTotal)}</strong></span>
+          <span>Cotizado: <strong>$${fmt(c.ingresos)}</strong></span>
+          <span style="font-weight:700;color:${margenSeg>=0?'var(--oliva)':'var(--bordo)'}">Margen: ${margenSeg>=0?'+':'−'}$${fmt(Math.abs(margenSeg))}</span>
+        </div>` : ''}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  // ── HTML de bebidas ──────────────────────────────────────────────────────
+  const bebidasHtml = eventoData.bebidas.length ? `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Bebida</th><th>Modalidad</th>
+          <th style="text-align:right">Cantidad/p o total</th>
+          <th style="text-align:right">Precio venta ($)</th>
+          <th style="text-align:right">Ingreso total</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          ${eventoData.bebidas.map(b=>{
+            const ingreso = b.modalidad==='barraLibre'
+              ? (+b.precioVenta||0)
+              : (+b.precioVenta||0)*totalPersonas;
+            return `<tr>
+              <td><input type="text" value="${b.nombre}" placeholder="Ej: Vino, Coca-Cola, Agua..."
+                style="border:none;background:transparent;font-weight:600;width:100%"
+                onchange="updBebidaEvento('${b.id}','nombre',this.value)"></td>
+              <td>
+                <select onchange="updBebidaEvento('${b.id}','modalidad',this.value)" style="font-size:13px">
+                  <option value="persona"${b.modalidad==='persona'?' selected':''}>Por persona</option>
+                  <option value="barraLibre"${b.modalidad==='barraLibre'?' selected':''}>Barra libre (precio fijo)</option>
+                </select>
+              </td>
+              <td style="text-align:right">
+                ${b.modalidad==='barraLibre'
+                  ? '<span style="font-size:12px;color:var(--gris-2)">Precio único</span>'
+                  : `<input type="number" value="${b.cantidad||''}" placeholder="0"
+                      style="width:70px;text-align:right" onchange="updBebidaEvento('${b.id}','cantidad',+this.value)">`}
+              </td>
+              <td style="text-align:right">
+                <input type="number" value="${b.precioVenta||''}" placeholder="0"
+                  style="width:110px;text-align:right" onchange="updBebidaEvento('${b.id}','precioVenta',+this.value)">
+              </td>
+              <td style="text-align:right;font-weight:600">$${fmt(ingreso)}</td>
+              <td><button class="btn btn-danger btn-sm" onclick="delBebidaEvento('${b.id}')">${ico('trash',13)}</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">Agregá las bebidas con su precio para el evento — pueden ser por persona o barra libre.</div>`;
+
+  // ── HTML de gastos extra ─────────────────────────────────────────────────
+  const gastosHtml = eventoData.gastosExtra.length ? `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Concepto</th><th style="text-align:right;width:180px">Monto ($)</th><th style="width:60px"></th></tr></thead>
+        <tbody>
+          ${eventoData.gastosExtra.map(g=>`<tr>
+            <td><input type="text" list="ge-sugerencias" value="${(g.concepto||'').replace(/"/g,'&quot;')}" placeholder="Ej: Personal extra"
+              onchange="updGastoEvento('${g.id}','concepto',this.value)"
+              style="border:none;background:transparent;font-weight:600;width:100%"></td>
+            <td style="text-align:right"><input type="number" value="${g.monto||0}" onchange="updGastoEvento('${g.id}','monto',+this.value)" style="width:150px;text-align:right"></td>
+            <td><button class="btn btn-danger btn-sm" onclick="delGastoEvento('${g.id}')">${ico('trash',13)}</button></td>
+          </tr>`).join('')}
+          <tr style="background:var(--crema)">
+            <td style="font-weight:700">Total gastos extra</td>
+            <td style="text-align:right;font-weight:700">$${fmt(extrasTotal)}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+      <datalist id="ge-sugerencias">${GASTOS_EVENTO_SUGERIDOS.map(s=>`<option value="${s}">`).join('')}</datalist>
+    </div>` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">Personal extra, logística, alquiler de equipos y vajilla, imponderables.</div>`;
+
+  // ── RESUMEN TOTAL ────────────────────────────────────────────────────────
+  const resumenHtml = `
+    <div style="padding:16px;background:var(--crema);border-radius:12px;margin-bottom:0">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+        <div class="metric"><div class="metric-label">Total personas</div><div class="metric-value">${fmt(totalPersonas)}</div></div>
+        <div class="metric"><div class="metric-label">Segmentos</div><div class="metric-value">${eventoData.segmentos.length}</div></div>
+        <div class="metric"><div class="metric-label">Costo mercadería</div><div class="metric-value" style="color:var(--bordo)">$${fmt(totalCosto)}</div></div>
+        <div class="metric"><div class="metric-label">Gastos extra</div><div class="metric-value" style="color:var(--bordo)">$${fmt(extrasTotal)}</div></div>
+        <div class="metric"><div class="metric-label">Ingresos totales</div><div class="metric-value" style="color:var(--oliva)">$${fmt(totalIngresos+ingresosBebidasTotal)}</div></div>
+        <div class="metric">
+          <div class="metric-label">Margen neto</div>
+          <div class="metric-value" style="color:${margenTotal>=0?'var(--oliva)':'var(--bordo)'}">
+            ${margenTotal>=0?'+':'−'}$${fmt(Math.abs(margenTotal))}
+          </div>
+        </div>
+      </div>
+      ${pctCosto!==null ? semaforo(pctCosto) : ''}
+      ${totalPersonas>0 && eventoData.nombre.trim() ? `
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" style="flex:1" onclick="guardarEventoActual()">${ico('save',13)} ${eventoEditandoId ? 'Actualizar evento' : 'Guardar evento'}</button>
+          <button class="btn btn-secondary" onclick="imprimirPresupuesto()">${ico('print',13)} PDF</button>
+        </div>` : ''}
+    </div>`;
+
+  setContent('Evento / Presupuesto', `
+
+    ${eventoEditandoId ? `
+    <div class="alert alert-warn" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span>${ico('edit',14)} <strong>Modo edición:</strong> estás modificando "${eventoData.nombre||'evento sin nombre'}"</span>
+      <button class="btn btn-secondary btn-sm" onclick="cancelarEdicionEvento()">✕ Cancelar edición</button>
+    </div>` : ''}
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Datos del evento</span></div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+          <div class="form-group" style="margin:0">
+            <label>Nombre del evento</label>
+            <input type="text" value="${eventoData.nombre}" placeholder="Ej: Casamiento García · 200 pax"
+              onchange="eventoData.nombre=this.value" style="width:100%">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Fecha</label>
+            <input type="month" value="${eventoData.fecha}" onchange="eventoData.fecha=this.value"
+              style="width:100%;padding:8px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Resumen</label>
+            <div style="font-size:13px;color:var(--gris-2);padding-top:8px">
+              ${totalPersonas>0 ? `${totalPersonas} personas en ${eventoData.segmentos.length} segmento${eventoData.segmentos.length>1?'s':''}` : 'Completá los segmentos'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="margin:0;font-size:15px;font-weight:700">Segmentos de comensales</h3>
+      <button class="btn btn-primary btn-sm" onclick="addSegmento()">+ Agregar segmento</button>
+    </div>
+    ${segHtml}
+
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-header">
+        <span class="card-title">Bebidas</span>
+        <button class="btn btn-secondary btn-sm" onclick="addBebidaEvento()">+ Agregar bebida</button>
+      </div>
+      ${bebidasHtml}
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-header">
+        <span class="card-title">Gastos extra</span>
+        <button class="btn btn-secondary btn-sm" onclick="addGastoEvento()">+ Agregar gasto</button>
+      </div>
+      ${gastosHtml}
+    </div>
+
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-header"><span class="card-title">Resumen del evento</span></div>
+      <div class="card-body">${resumenHtml}</div>
+    </div>
+
+    ${eventosGuardados.length ? `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Eventos guardados</span>
+        <input type="text" id="ev-buscar" placeholder="Buscar por nombre..." oninput="renderEvento()"
+          style="border:1.5px solid var(--crema-2);border-radius:8px;padding:6px 12px;font-size:13px;width:220px">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Fecha</th><th>Evento</th>
+            <th style="text-align:right">Personas</th>
+            <th style="text-align:right">Ingresos</th>
+            <th style="text-align:right">Margen neto</th>
+            <th>Estado</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${(()=>{
+              const q = (document.getElementById('ev-buscar')?.value||'').toLowerCase().trim();
+              const filtrados = q ? eventosGuardados.filter(e=>e.nombre.toLowerCase().includes(q)) : eventosGuardados;
+              if(!filtrados.length) return '<tr><td colspan="7" style="text-align:center;color:var(--gris-3);padding:20px">Sin resultados</td></tr>';
+              return filtrados.map(e=>`<tr style="${eventoEditandoId===e.id?'background:var(--crema);outline:2px solid var(--dorado)':''}">
+                <td>${e.fecha||'—'}</td>
+                <td><strong>${e.nombre}</strong></td>
+                <td style="text-align:right">${fmt(e.totalPersonas||e.porciones||0)}</td>
+                <td style="text-align:right">$${fmt(e.ingresos)}</td>
+                <td style="text-align:right;font-weight:700;color:${e.margen>=0?'#1B7A34':'#C02626'}">${e.margen>=0?'+':'−'}$${fmt(Math.abs(e.margen))}</td>
+                <td><button class="btn btn-sm ${e.estado==='confirmado'?'btn-primary':'btn-secondary'}"
+                  onclick="toggleEstadoEvento('${e.id}')">${e.estado==='confirmado'?'Confirmado':'Presupuestado'}</button></td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn btn-secondary btn-sm" onclick="editarEvento('${e.id}')" title="Editar este evento">${ico('edit',13)}</button>
+                  <button class="btn btn-danger btn-sm" onclick="delEvento('${e.id}')">${ico('trash',13)}</button>
+                </td>
+              </tr>`).join('');
+            })()}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
+        Los eventos <strong>Confirmados</strong> se suman en Salud del negocio del mes correspondiente.
+      </div>
+    </div>` : ''}
+  `);
+}
+
+function imprimirPresupuesto(){ window.print(); }
+
+
+
+// ── MÓDULO CADENA / MULTI-LOCAL ───────────────────────────────────────────────
+//
+// Arquitectura:
+// - Centro de Producción (CP): operación especial que provee ingredientes
+//   y recetas elaboradas a los locales de la cadena
+// - Local: operación normal que puede usar insumos del CP como ingredientes
+// - Vista ejecutiva: dashboard consolidado de todos los locales
+//
+// Tres tipos de productos del CP:
+//   1. ELABORADO: receta propia del CP (ravioles, panificación) → costo/kg calculado
+//   2. PORCIONADO: ingrediente comprado + merma de porcionado (ojo de bife, lomo)
+//   3. REDISTRIBUIDO: ingrediente comprado que el CP reparte sin transformación
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Obtener el Centro de Producción vinculado al admin
+function getCentroProduccion(){
+  const ops = Object.values(demoData.operaciones||{});
+  return ops.find(op => op.tipo==='Centro de Producción' || op.tipo==='centroProduccion') || null;
+}
+
+// Obtener locales de la cadena (solo los vinculados al CP activo)
+function getLocalesCadena(){
+  const cp = getCentroProduccion();
+  if(!cp) return [];
+  const cpId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===cp)?.[0];
+  if(!cpId) return [];
+  const ops = Object.values(demoData.operaciones||{});
+  return ops.filter(op =>
+    (op.tipo!=='Centro de Producción' && op.tipo!=='centroProduccion') &&
+    op.grupoId === cpId
+  );
+}
+
+// Obtener productos del CP para los locales.
+// Combina dos fuentes:
+//   1. Recetas del CP con rendimientoG — su precio de transferencia = precioVenta/rendimientoG
+//   2. Productos manuales legacy (porcionados, redistribuidos)
+function getProductosCP(){
+  const cp = getCentroProduccion();
+  if(!cp) return [];
+
+  const recetasCP = (cp._datos && cp._datos.recetas) || [];
+  const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
+
+  // Recetas elaboradas del CP con rendimiento definido
+  const desdeRecetas = recetasCP
+    .filter(r => r.rendimientoG > 0)
+    .map(r => {
+      const costoProd = calcularCostoRecetaCP(r, cp);
+      const costoXkg  = r.rendimientoG > 0 ? costoProd / r.rendimientoG * 1000 : 0;
+      // Precio de transferencia: precioVenta si está cargado, sino costo de producción
+      const precioTransfXkg = r.precioVenta > 0
+        ? r.precioVenta / r.rendimientoG * 1000
+        : costoXkg;
+      return {
+        id: 'cp-rec-' + r.id,
+        nombre: r.nombre + (r.precioVenta > 0 ? '' : ' (sin precio transf.)'),
+        tipoProd: 'elaborado',
+        recetaId: r.id,
+        costoXkg: precioTransfXkg,   // lo que le cobra al local
+        costoProduccionXkg: costoXkg, // lo que le cuesta al CP
+        tienePrecioTransferencia: r.precioVenta > 0,
+        margenXkg: precioTransfXkg - costoXkg,
+      };
+    });
+
+  // Productos manuales (porcionados, redistribuidos)
+  const legacy = (cp._productos || []).map(p => {
+    let costoXkg = 0;
+    if(p.tipoProd === 'porcionado'){
+      const ing = ingsCP.find(i => i.id === p.ingId);
+      if(ing && ing.precio > 0){
+        costoXkg = ing.precio / (1 - (p.mermaPorcionado||0)/100);
+      }
+    } else if(p.tipoProd === 'redistribuido'){
+      costoXkg = p.precioXkg || 0;
+    }
+    return { ...p, costoXkg, tienePrecioTransferencia: true };
+  });
+
+  return [...desdeRecetas, ...legacy];
+}
+
+// Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
+function calcularCostoRecetaCP(receta, cp){
+  const ings = (cp._datos && cp._datos.ingredientes) || [];
+  const mermas = (cp._datos && cp._datos.mermas) || [];
+  let total = 0;
+  (receta.ingredientes||[]).forEach(item => {
+    const ing = ings.find(i => i.id === item.ingId);
+    if(!ing || !ing.precio) return;
+    const merma = mermas.find(m => m.id === item.tecnica);
+    const mermaPct = merma ? (merma.pct||0) : 0;
+    const neto = item.neto || 0;
+    const bruto = neto / (1 - mermaPct/100);
+    total += (bruto/1000) * ing.precio;
+  });
+  return total;
+}
+
+// ── CRUD de productos del CP ─────────────────────────────────────────────────
+
+function nuevoProductoCP(){
+  return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg' };
+}
+
+function addProductoCP(){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  if(!cp._productos) cp._productos = [];
+  cp._productos.push(nuevoProductoCP());
+  guardarEnFirestore();
+  renderCP();
+}
+
+function delProductoCP(id){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  cp._productos = (cp._productos||[]).filter(p => p.id !== id);
+  guardarEnFirestore();
+  renderCP();
+}
+
+function updProductoCP(id, campo, val){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  const p = (cp._productos||[]).find(x => x.id === id);
+  if(p){ p[campo] = val; guardarEnFirestore(); renderCP(); }
+}
+
+// ── RENDER CENTRO DE PRODUCCIÓN ──────────────────────────────────────────────
 
 function renderCP(){
   const cp = getCentroProduccion();
