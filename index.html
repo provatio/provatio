@@ -2773,7 +2773,7 @@ function renderIngredientes(){
   const acordeon = cats.filter(c=>grouped[c]&&grouped[c].length).map(cat=>{
     const items = grouped[cat];
     const isOpen = window._ingAcordeon[cat] !== false;
-    const key = cat.replace(/[^a-z0-9]/gi,'-');
+    const key = (cat||'sin-categoria').replace(/[^a-z0-9]/gi,'-');
     return `
       <div class="card" style="margin-bottom:8px">
         <div class="card-header" onclick="toggleIngCat('${cat}')" style="cursor:pointer;user-select:none">
