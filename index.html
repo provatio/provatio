@@ -2139,7 +2139,11 @@ function buildSidebar(rol){
     {section: (()=>{
       const op = getOp();
       if(!op) return 'Operación';
-      if(estaVinculadaACP && cpDelLocal) return op.nombre + ' · ' + cpDelLocal.nombre;
+      // Si es el CP mismo, solo mostrar el nombre
+      if(isCP) return op.nombre;
+      // Si es local vinculado, mostrar "local · cadena"
+      if(estaVinculadaACP && cpDelLocal && cpDelLocal.nombre !== op.nombre)
+        return op.nombre + ' · ' + cpDelLocal.nombre;
       return op.nombre;
     })()},
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
@@ -2238,7 +2242,10 @@ function buildSidebar(rol){
       : '🍽 Restaurante';
     // Si es local vinculado a un CP, mostrar la cadena
     const cpVinc = op.grupoId && demoData.operaciones[op.grupoId];
-    const subtipo = cpVinc ? tipoLabel + ' · ' + cpVinc.nombre : tipoLabel;
+    // Evitar mostrar "Los Inmortales · Los Inmortales" cuando el CP se abre a sí mismo
+    const subtipo = (cpVinc && cpVinc.nombre !== op.nombre) 
+      ? tipoLabel + ' · ' + cpVinc.nombre 
+      : tipoLabel;
     const badgeInfo = tipoBadgeColor(op.tipo);
     opInd.style.display = 'block';
     opInd.style.borderColor = badgeInfo.bg;
@@ -2575,7 +2582,7 @@ function renderDashboardOperacion(){
                 const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
                 return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
                   <td><strong>${loc.nombre}</strong></td>
-                  <td><span class="badge badge-op">${loc.tipo||'Restaurante'}</span></td>
+                  <td>${tipoBadgeHtml(loc.tipo)}</td>
                   <td style="text-align:right">${recs.length}</td>
                   <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
                 </tr>`;
@@ -4741,7 +4748,7 @@ function renderCP(){
               const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
               return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
                 <td><strong>${loc.nombre}</strong><br><span style="font-size:11px;color:var(--gris-2)">Click para abrir</span></td>
-                <td><span class="badge badge-op">${loc.tipo||'Restaurante'}</span></td>
+                <td>${tipoBadgeHtml(loc.tipo)}</td>
                 <td style="text-align:right">${recs.length}</td>
                 <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
               </tr>`;
@@ -4804,7 +4811,7 @@ function renderDashboardCadena(){
                  : pctProm < 38 ? '● Atención'
                  : '● Crítico';
     return `<tr style="cursor:pointer" onclick="abrirOperacion('${loc.id||Object.keys(demoData.operaciones).find(k=>demoData.operaciones[k]===loc)}')">
-      <td><strong>${loc.nombre}</strong><br><span style="font-size:11px;color:var(--gris-2)">${loc.tipo||'Restaurante'}</span></td>
+      <td><strong>${loc.nombre}</strong><br>${tipoBadgeHtml(loc.tipo)}</td>
       <td style="text-align:right">${recetas.length}</td>
       <td style="text-align:right">${conPrecio}</td>
       <td style="text-align:right;font-weight:700;color:${col}">${pctProm !== null ? fmtD(pctProm)+'%' : '—'}</td>
