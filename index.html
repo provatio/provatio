@@ -1673,35 +1673,77 @@ function calcReceta(receta, porciones){
       }
       return {...ing, calc:{error:'Sin rendimiento cargado'}};
     }
-    // ── ITEM TIPO INSUMO CP ─────────────────────────────────────────────────
+    // ── ITEM TIPO INSUMO CP — 3 modos ──────────────────────────────────────
     if(ing.productoCP !== undefined){
       const productos = getProductosCP();
       const prod = ing.productoCP ? productos.find(p=>p.id===ing.productoCP) : null;
+      const modo = ing.modoUso || (prod && prod.modoUso) || 'directo';
       const costoXkg = prod ? prod.costoXkg : 0;
       const gramosUsados = +ing.neto || 0;
-      const costoItem = costoXkg > 0 && gramosUsados > 0 ? costoXkg * gramosUsados / 1000 : null;
-      const costoTotal = costoItem !== null ? costoItem * porciones : null;
-      if(costoItem) merc += costoItem;
+      const nombreProd = prod ? prod.nombre : '— elegí producto —';
+
+      let costoItem = null, costoTotal = null, mermaPct = null, brutoG = null;
+
+      if(prod && costoXkg > 0 && gramosUsados > 0){
+        if(modo === 'directo'){
+          // Sin merma — costo directo
+          costoItem = costoXkg * gramosUsados / 1000;
+        } else if(modo === 'granel'){
+          // Merma local — usar técnica del item si existe
+          const mermaRec = ing.tecnica ? demoData.mermas.find(m=>m.id===ing.tecnica) : null;
+          mermaPct = mermaRec ? mermaRec.pct : 0;
+          brutoG = gramosUsados / (1 - mermaPct/100);
+          costoItem = costoXkg * brutoG / 1000;
+        } else if(modo === 'porcionado'){
+          // Costo por porción fija — merma NO multiplica costo
+          costoItem = costoXkg * gramosUsados / 1000;
+          // La merma es solo informativa
+          const mermaRec = ing.tecnica ? demoData.mermas.find(m=>m.id===ing.tecnica) : null;
+          mermaPct = mermaRec ? mermaRec.pct : null;
+        }
+        costoTotal = costoItem !== null ? costoItem * porciones : null;
+        if(costoItem) merc += costoItem;
+      }
+
+      const modoBadge = modo==='directo'
+        ? '<span style="background:#2D5016;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px">✅ Directo</span>'
+        : modo==='granel'
+        ? '<span style="background:#B8540A;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px">📦 Granel</span>'
+        : '<span style="background:#1B3A5C;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px">🔪 Porcionado</span>';
+
+      // Técnica — solo para granel y porcionado (informativa en porcionado)
+      const tecnicaCell = (modo==='granel' || modo==='porcionado')
+        ? `<select onchange="updIngReceta(${idx},'tecnica',this.value)" style="font-size:12px;min-width:120px">
+            <option value="">Sin técnica</option>
+            ${demoData.mermas.map(m=>`<option value="${m.id}"${m.id===ing.tecnica?' selected':''}>${m.tecnica||m.nombre} (${m.pct}%)</option>`).join('')}
+           </select>
+           ${modo==='porcionado'?'<span style="font-size:10px;color:var(--gris-2);display:block">solo informativa</span>':''}`
+        : '<span style="color:var(--gris-3);font-size:12px">—</span>';
 
       return `<tr style="background:#F0F7F0">
         <td>
-          <select onchange="updIngReceta(${idx},'productoCP',this.value)" style="min-width:200px;font-size:13px">
-            <option value="">— elegí producto del CP —</option>
-            ${productos.map(p=>`<option value="${p.id}"${p.id===ing.productoCP?' selected':''}>
-              🏭 ${p.nombre} ${p.costoXkg>0?'($'+fmt(p.costoXkg)+'/kg)':'⚠ sin costo'}
-            </option>`).join('')}
-          </select>
+          <span style="font-size:10px;color:var(--gris-2)">🏭</span>
+          <strong style="font-size:13px;margin-left:4px">${nombreProd}</strong>
+          <div style="margin-top:3px">${modoBadge}</div>
         </td>
-        <td style="font-size:11px;color:var(--oliva);white-space:nowrap">
-          ${prod && prod.costoXkg>0 ? `$${fmt(prod.costoXkg)}/kg` : '<span style="color:var(--bordo)">⚠ Sin costo en CP</span>'}
-        </td>
-        <td><input type="number" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right"
+        <td>${tecnicaCell}</td>
+        <td><input type="number" value="${gramosUsados||''}" placeholder="g" style="width:75px;text-align:right"
           onchange="updIngReceta(${idx},'neto',+this.value)"></td>
-        <td style="text-align:right;color:var(--gris-2)">—</td>
-        <td style="text-align:right;color:var(--gris-2)">—</td>
-        <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:''}</td>
-        <td style="text-align:right">${costoTotal!==null?`<span class="calc">$${fmt(costoTotal)}</span>`:''}</td>
-        <td style="text-align:right;color:var(--gris-2)">—</td>
+        <td style="text-align:right;font-size:12px">
+          ${modo==='granel' && mermaPct!==null ? fmtD(mermaPct)+'%' : '—'}
+        </td>
+        <td style="text-align:right;font-size:12px">
+          ${brutoG!==null ? fmtD(brutoG)+'g' : gramosUsados>0 ? gramosUsados+'g' : '—'}
+        </td>
+        <td style="text-align:right;font-size:12px;color:var(--gris-2)">
+          ${costoXkg>0?'$'+fmt(costoXkg)+'/kg':'—'}
+        </td>
+        <td style="text-align:right">
+          ${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:'—'}
+        </td>
+        <td style="text-align:right">
+          ${costoTotal!==null?`<span class="calc">$${fmt(costoTotal)}</span>`:'—'}
+        </td>
         <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
       </tr>`;
     }
@@ -1719,7 +1761,53 @@ function agregarRecetaEnReceta(){
   renderEditorReceta();
 }
 function agregarProductoCP(){
-  recetaEditando.ingredientes.push({productoCP:'', neto:0});
+  const productos = getProductosCP();
+  if(!productos.length){
+    showToast('El CP no tiene productos cargados todavía','error');
+    return;
+  }
+  // Abrir modal selector de producto CP
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">🏭 Agregar insumo del Centro de Producción</span>
+      <button class="btn btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Seleccioná el producto</label>
+        <select id="cp-prod-sel" style="width:100%;font-size:14px">
+          <option value="">— elegí un producto —</option>
+          ${productos.map(p=>{
+            const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
+            const costoLabel = p.costoXkg>0?'$'+fmt(p.costoXkg)+'/kg':'sin precio';
+            return `<option value="${p.id}">${p.nombre} — ${modoLabel} — ${costoLabel}</option>`;
+          }).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Cantidad (g o ml)</label>
+        <input type="number" id="cp-prod-neto" placeholder="ej: 200" min="0" style="width:100%">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarProductoCP()">Agregar</button>
+    </div>
+  `);
+}
+
+function confirmarProductoCP(){
+  const prodId = document.getElementById('cp-prod-sel').value;
+  const neto   = +document.getElementById('cp-prod-neto').value || 0;
+  if(!prodId){ showToast('Elegí un producto','error'); return; }
+  const prod = getProductosCP().find(p=>p.id===prodId);
+  if(!prod){ closeModal(); return; }
+  recetaEditando.ingredientes.push({
+    productoCP: prodId,
+    neto,
+    modoUso: prod.modoUso || 'directo',
+  });
+  closeModal();
   renderEditorReceta();
 }
 
@@ -2192,6 +2280,11 @@ function buildSidebar(rol){
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     {icon:'users', label:'Clientes', vista:'clientes'},
     ...seccionCadena,
+    ...(estaVinculadaACP && cpDelLocal ? [{
+      icon:'store',
+      label:'🏭 Ir al CP',
+      vista:'centroProduccion',
+    }] : []),
     {section: (()=>{
       const op = getOp();
       if(!op) return 'Operación';
@@ -4682,7 +4775,7 @@ function calcularCostoRecetaCP(receta, cp){
 // ── CRUD de productos del CP ─────────────────────────────────────────────────
 
 function nuevoProductoCP(){
-  return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg' };
+  return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg', modoUso:'directo' };
 }
 
 function addProductoCP(){
@@ -5344,7 +5437,7 @@ function calcularCostoRecetaCP(receta, cp){
 // ── CRUD de productos del CP ─────────────────────────────────────────────────
 
 function nuevoProductoCP(){
-  return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg' };
+  return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg', modoUso:'directo' };
 }
 
 function addProductoCP(){
@@ -5424,10 +5517,15 @@ function renderCP(){
         style="border:none;background:transparent;font-weight:600;width:100%"
         onchange="updProductoCP('${p.id}','nombre',this.value)"></td>
       <td>
-        <select onchange="updProductoCP('${p.id}','tipoProd',this.value)" style="font-size:12px">
+        <select onchange="updProductoCP('${p.id}','tipoProd',this.value)" style="font-size:12px;margin-bottom:4px;display:block">
           <option value="elaborado"${p.tipoProd==='elaborado'?' selected':''}>Elaborado propio</option>
           <option value="porcionado"${p.tipoProd==='porcionado'?' selected':''}>Porcionado</option>
           <option value="redistribuido"${p.tipoProd==='redistribuido'?' selected':''}>Redistribuido</option>
+        </select>
+        <select onchange="updProductoCP('${p.id}','modoUso',this.value)" style="font-size:11px;display:block" title="Modo de uso en los locales">
+          <option value="directo"${(p.modoUso||'directo')==='directo'?' selected':''}>✅ Directo (sin merma local)</option>
+          <option value="granel"${p.modoUso==='granel'?' selected':''}>📦 Granel (merma según local)</option>
+          <option value="porcionado"${p.modoUso==='porcionado'?' selected':''}>🔪 Porcionado (costo fijo)</option>
         </select>
       </td>
       <td>${selector}</td>
