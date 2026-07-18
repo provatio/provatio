@@ -2487,7 +2487,18 @@ function navigate(vista, params={}){
     semanal: renderSemanal,
     evento: renderEvento,
     buffet: renderBuffet,
-    centroProduccion: renderCP,
+    centroProduccion: ()=>{
+      // Si venimos de un local vinculado, cambiar la operación activa al CP
+      const cpActual = getCentroProduccion();
+      if(cpActual && !esCentroProduccion()){
+        const cpId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===cpActual)?.[0];
+        if(cpId && cpId !== currentOpId){
+          abrirOperacion(cpId).then(()=> navigate('centroProduccion'));
+          return;
+        }
+      }
+      renderCP();
+    },
     dashboardCadena: renderDashboardCadena,
     rentabilidad: renderRentabilidad,
     compras: renderCompras,
