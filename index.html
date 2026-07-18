@@ -1777,7 +1777,7 @@ function agregarProductoCP(){
         <label>Seleccioná el producto</label>
         <select id="cp-prod-sel" style="width:100%;font-size:14px">
           <option value="">— elegí un producto —</option>
-          ${productos.map(p=>{
+          ${productos.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')).map(p=>{
             const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
             const costoLabel = p.costoXkg>0?'$'+fmt(p.costoXkg)+'/kg':'sin precio';
             return `<option value="${p.id}">${p.nombre} — ${modoLabel} — ${costoLabel}</option>`;
