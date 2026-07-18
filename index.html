@@ -5450,7 +5450,7 @@ function getProductosCP(){
       };
     });
 
-  return [...desdeRecetas, ...legacy, ...desdeIngredientes];
+  return [...desdeRecetas, ...legacy, ...desdeIngredientes].sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
 }
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
 function calcularCostoRecetaCP(receta, cp){
