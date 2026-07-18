@@ -1815,6 +1815,25 @@ function agregarProductoCP(){
     return;
   }
   // Abrir modal selector de producto CP
+  // Combinar recetas elaboradas + ingredientes del CP para el selector
+  const cp = getCentroProduccion();
+  const ingsCP = (cp && cp._datos && cp._datos.ingredientes) || [];
+
+  // Ingredientes del CP como insumos con modoUso según categoría
+  const ingsCPComoInsumos = ingsCP.map(ing => {
+    let modoUso = 'granel';
+    const cat = (ing.cat||'').toLowerCase();
+    if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')){
+      modoUso = 'directo';
+    }
+    return { id:'cp-ing-'+ing.id, ingId:ing.id, nombre:ing.nombre, modoUso, costoXkg:ing.precio||0, tipoProd:'ingrediente' };
+  });
+
+  // Combinar y ordenar
+  const todosInsumos = [...productos, ...ingsCPComoInsumos]
+    .filter((p,i,arr)=>arr.findIndex(x=>x.nombre===p.nombre)===i) // deduplicar
+    .sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+
   openModal(`
     <div class="modal-header">
       <span class="modal-title">🏭 Agregar insumo del Centro de Producción</span>
@@ -1822,10 +1841,10 @@ function agregarProductoCP(){
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>Seleccioná el producto</label>
+        <label>Seleccioná el insumo</label>
         <select id="cp-prod-sel" style="width:100%;font-size:14px">
-          <option value="">— elegí un producto —</option>
-          ${productos.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')).map(p=>{
+          <option value="">— elegí un insumo —</option>
+          ${todosInsumos.map(p=>{
             const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
             const costoLabel = p.costoXkg>0?'$'+fmt(p.costoXkg)+'/kg':'sin precio';
             return `<option value="${p.id}">${p.nombre} — ${modoLabel} — ${costoLabel}</option>`;
@@ -1847,11 +1866,25 @@ function agregarProductoCP(){
 function confirmarProductoCP(){
   const prodId = document.getElementById('cp-prod-sel').value;
   const neto   = +document.getElementById('cp-prod-neto').value || 0;
-  if(!prodId){ showToast('Elegí un producto','error'); return; }
-  const prod = getProductosCP().find(p=>p.id===prodId);
+  if(!prodId){ showToast('Elegí un insumo','error'); return; }
+  // Buscar en productos elaborados primero, luego en ingredientes CP
+  const cp = getCentroProduccion();
+  const ingsCP = (cp && cp._datos && cp._datos.ingredientes) || [];
+  let prod = getProductosCP().find(p=>p.id===prodId);
+  if(!prod){
+    // Es un ingrediente del CP
+    const ing = ingsCP.find(i=>'cp-ing-'+i.id===prodId);
+    if(ing){
+      let modoUso = 'granel';
+      const cat = (ing.cat||'').toLowerCase();
+      if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')) modoUso = 'directo';
+      prod = { id: prodId, ingId: ing.id, nombre: ing.nombre, modoUso, costoXkg: ing.precio||0, tipoProd:'ingrediente' };
+    }
+  }
   if(!prod){ closeModal(); return; }
   recetaEditando.ingredientes.push({
     productoCP: prodId,
+    ingId: prod.ingId || null,
     neto,
     modoUso: prod.modoUso || 'directo',
   });
@@ -5453,32 +5486,7 @@ function getProductosCP(){
     return { ...p, costoXkg, tienePrecioTransferencia: true };
   });
 
-  // Todos los ingredientes del CP como productos disponibles para los locales
-  const idsLegacy = new Set(legacy.map(p=>p.ingId).filter(Boolean));
-
-  const desdeIngredientes = ingsCP
-    .filter(ing => !idsLegacy.has(ing.id)) // no duplicar los ya en legacy
-    .map(ing => {
-      // Modo de uso por defecto según categoría
-      let modoUso = 'granel';
-      const cat = (ing.cat||'').toLowerCase();
-      if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')){
-        modoUso = 'directo';
-      }
-      return {
-        id: 'cp-ing-' + ing.id,
-        ingId: ing.id,
-        nombre: ing.nombre,
-        tipoProd: 'ingrediente',
-        modoUso,
-        costoXkg: ing.precio || 0,
-        unidad: ing.unidad || 'kg',
-        cat: ing.cat,
-        tienePrecioTransferencia: true,
-      };
-    });
-
-  return [...desdeRecetas, ...legacy, ...desdeIngredientes].sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+  return [...desdeRecetas, ...legacy].sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
 }
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
 function calcularCostoRecetaCP(receta, cp){
