@@ -5395,7 +5395,6 @@ function getProductosCP(){
     .map(r => {
       const costoProd = calcularCostoRecetaCP(r, cp);
       const costoXkg  = r.rendimientoG > 0 ? costoProd / r.rendimientoG * 1000 : 0;
-      // Precio de transferencia: precioVenta si está cargado, sino costo de producción
       const precioTransfXkg = r.precioVenta > 0
         ? r.precioVenta / r.rendimientoG * 1000
         : costoXkg;
@@ -5403,15 +5402,16 @@ function getProductosCP(){
         id: 'cp-rec-' + r.id,
         nombre: r.nombre + (r.precioVenta > 0 ? '' : ' (sin precio transf.)'),
         tipoProd: 'elaborado',
+        modoUso: 'directo',
         recetaId: r.id,
-        costoXkg: precioTransfXkg,   // lo que le cobra al local
-        costoProduccionXkg: costoXkg, // lo que le cuesta al CP
+        costoXkg: precioTransfXkg,
+        costoProduccionXkg: costoXkg,
         tienePrecioTransferencia: r.precioVenta > 0,
         margenXkg: precioTransfXkg - costoXkg,
       };
     });
 
-  // Productos manuales (porcionados, redistribuidos)
+  // Productos manuales con su modoUso definido
   const legacy = (cp._productos || []).map(p => {
     let costoXkg = 0;
     if(p.tipoProd === 'porcionado'){
@@ -5425,9 +5425,33 @@ function getProductosCP(){
     return { ...p, costoXkg, tienePrecioTransferencia: true };
   });
 
-  return [...desdeRecetas, ...legacy];
-}
+  // Todos los ingredientes del CP como productos disponibles para los locales
+  const idsLegacy = new Set(legacy.map(p=>p.ingId).filter(Boolean));
 
+  const desdeIngredientes = ingsCP
+    .filter(ing => !idsLegacy.has(ing.id)) // no duplicar los ya en legacy
+    .map(ing => {
+      // Modo de uso por defecto según categoría
+      let modoUso = 'granel';
+      const cat = (ing.cat||'').toLowerCase();
+      if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')){
+        modoUso = 'directo';
+      }
+      return {
+        id: 'cp-ing-' + ing.id,
+        ingId: ing.id,
+        nombre: ing.nombre,
+        tipoProd: 'ingrediente',
+        modoUso,
+        costoXkg: ing.precio || 0,
+        unidad: ing.unidad || 'kg',
+        cat: ing.cat,
+        tienePrecioTransferencia: true,
+      };
+    });
+
+  return [...desdeRecetas, ...legacy, ...desdeIngredientes];
+}
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
 function calcularCostoRecetaCP(receta, cp){
   const ings = (cp._datos && cp._datos.ingredientes) || [];
