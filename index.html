@@ -1145,6 +1145,39 @@ async function guardarEnFirestore(){
     // TODA la operación en UN solo documento (elimina el problema de volumen).
     // ~95 KB de datos entran holgados en el límite de 1 MB por documento.
     const recetasOp = getRecetas();
+    // ── Propagar ingredientes y mermas nuevos al CP ──────────────────────────
+    const opActual = demoData.operaciones[currentOpId] || {};
+    if(opActual.grupoId && demoData.operaciones[opActual.grupoId]){
+      const cp = demoData.operaciones[opActual.grupoId];
+      if(!cp._datos) cp._datos = {ingredientes:[], mermas:[], recetas:[], eventos:[]};
+      const ingsCP   = cp._datos.ingredientes || [];
+      const mermasCP = cp._datos.mermas || [];
+      const nombresCP = new Set(ingsCP.map(i=>i.nombre.toLowerCase()));
+      const mermasNombresCP = new Set(mermasCP.map(m=>(m.tecnica||m.nombre||'').toLowerCase()));
+      // Agregar ingredientes que el local tiene y el CP no
+      let cambioCP = false;
+      demoData.ingredientes.forEach(ing => {
+        if(!nombresCP.has(ing.nombre.toLowerCase())){
+          ingsCP.push({...ing, id: 'cp-'+ing.id});
+          nombresCP.add(ing.nombre.toLowerCase());
+          cambioCP = true;
+        }
+      });
+      // Agregar mermas que el local tiene y el CP no
+      demoData.mermas.forEach(m => {
+        const key = (m.tecnica||m.nombre||'').toLowerCase();
+        if(key && !mermasNombresCP.has(key)){
+          mermasCP.push({...m, id: 'cp-m-'+m.id});
+          mermasNombresCP.add(key);
+          cambioCP = true;
+        }
+      });
+      if(cambioCP){
+        cp._datos.ingredientes = ingsCP;
+        cp._datos.mermas = mermasCP;
+      }
+    }
+
     const opData = {
       ...(demoData.operaciones[currentOpId]||{}),
       _meta: {
@@ -1526,6 +1559,21 @@ function fmtD(n,d=1){ return Number(n||0).toFixed(d); }
 function uid(){ return 'id-'+Date.now()+'-'+Math.random().toString(36).substr(2,6); }
 
 // ── HELPERS CON SCOPE POR OPERACIÓN ──
+// Mermas disponibles para el local = propias + las del CP
+function getMermasDisponibles(){
+  const propias = demoData.mermas || [];
+  const cp = getCentroProduccion();
+  if(!cp || esCentroProduccion()) return propias;
+  const mermasCP = (cp._datos && cp._datos.mermas) || [];
+  // Combinar sin duplicar por nombre de técnica
+  const nombresProxias = new Set(propias.map(m=>(m.tecnica||m.nombre||'').toLowerCase()));
+  const soloCP = mermasCP.filter(m => {
+    const key = (m.tecnica||m.nombre||'').toLowerCase();
+    return key && !nombresProxias.has(key);
+  });
+  return [...propias, ...soloCP];
+}
+
 function getIngrediente(id){ 
   const propio = demoData.ingredientes.find(i=>i.id===id);
   
@@ -1715,7 +1763,7 @@ function calcReceta(receta, porciones){
       const tecnicaCell = (modo==='granel' || modo==='porcionado')
         ? `<select onchange="updIngReceta(${idx},'tecnica',this.value)" style="font-size:12px;min-width:120px">
             <option value="">Sin técnica</option>
-            ${demoData.mermas.map(m=>`<option value="${m.id}"${m.id===ing.tecnica?' selected':''}>${m.tecnica||m.nombre} (${m.pct}%)</option>`).join('')}
+            ${getMermasDisponibles().map(m=>`<option value="${m.id}"${m.id===ing.tecnica?' selected':''}>${m.tecnica||m.nombre} (${m.pct}%)</option>`).join('')}
            </select>
            ${modo==='porcionado'?'<span style="font-size:10px;color:var(--gris-2);display:block">solo informativa</span>':''}`
         : '<span style="color:var(--gris-3);font-size:12px">—</span>';
@@ -4960,27 +5008,7 @@ function renderCP(){
       </div>`}
     </div>
 
-    ${legacyProds.length || true ? `
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-header">
-        <span class="card-title">Porcionados y redistribuidos</span>
-        <button class="btn btn-secondary btn-sm" onclick="addProductoCP()">+ Agregar</button>
-      </div>
-      ${legacyProds.length ? `
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Producto</th><th>Tipo</th><th>Configuración</th>
-            <th style="text-align:right;width:130px">Precio/kg</th>
-            <th style="width:50px"></th>
-          </tr></thead>
-          <tbody>${filasLegacy}</tbody>
-        </table>
-      </div>` : `
-      <div class="card-body" style="color:var(--gris-3);text-align:center">
-        Agregá carnes porcionadas o productos redistribuidos que el CP manda a los locales.
-      </div>`}
-    </div>` : ''}
+
 
     <div class="card">
       <div class="card-header"><span class="card-title">Locales de la cadena</span></div>
