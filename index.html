@@ -1320,6 +1320,36 @@ function esCentroProduccion(){
   const op = getOp();
   return op && (op.tipo==='centroProduccion' || op.tipo==='Centro de Producción');
 }
+
+// Obtener ingredientes del local + ingredientes del CP (si está vinculado)
+// Los ingredientes del CP se identifican con _esCP:true y su precio viene del CP
+function getIngredientesConCP(){
+  const propios = demoData.ingredientes || [];
+  
+  // Si no hay CP vinculado o somos el CP, solo los propios
+  const opActiva = currentOpId ? demoData.operaciones[currentOpId] : null;
+  if(!opActiva || !opActiva.grupoId) return propios;
+  
+  const cp = demoData.operaciones[opActiva.grupoId];
+  if(!cp || cp.tipo!=='Centro de Producción') return propios;
+  
+  const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
+  
+  // Combinar: propios primero, luego los del CP que no estén ya en propios
+  const nombresProxios = new Set(propios.map(i => i.nombre.toLowerCase()));
+  const soloCP = ingsCP
+    .filter(i => !nombresProxios.has(i.nombre.toLowerCase()))
+    .map(i => ({...i, _esCP: true, _precioCP: i.precio}));
+  
+  // Para los ingredientes que existen en ambos, usar precio del CP
+  const combinados = propios.map(ing => {
+    const enCP = ingsCP.find(i => i.nombre.toLowerCase() === ing.nombre.toLowerCase());
+    if(enCP) return {...ing, precio: enCP.precio, _precioCP: enCP.precio, _sincronizadoCP: true};
+    return ing;
+  });
+  
+  return [...combinados, ...soloCP];
+}
 function esCadena(){
   return currentUser && currentUser.rol==='cadena';
 }
@@ -1496,7 +1526,33 @@ function fmtD(n,d=1){ return Number(n||0).toFixed(d); }
 function uid(){ return 'id-'+Date.now()+'-'+Math.random().toString(36).substr(2,6); }
 
 // ── HELPERS CON SCOPE POR OPERACIÓN ──
-function getIngrediente(id){ return demoData.ingredientes.find(i=>i.id===id); }
+function getIngrediente(id){ 
+  const propio = demoData.ingredientes.find(i=>i.id===id);
+  
+  // Si hay CP vinculado, verificar si tiene el mismo ingrediente — su precio tiene prioridad
+  const cp = getCentroProduccion();
+  if(cp && !esCentroProduccion()){
+    const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
+    // Buscar por ID exacto primero
+    const porId = ingsCP.find(i=>i.id===id);
+    if(porId) return {...porId, _esCP:true};
+    // Buscar por nombre si el local tiene el ingrediente pero el CP también
+    if(propio){
+      const porNombre = ingsCP.find(i=>i.nombre.toLowerCase()===propio.nombre.toLowerCase());
+      if(porNombre) return {...propio, precio: porNombre.precio, _sincronizadoCP:true, _precioCP: porNombre.precio};
+    }
+  }
+  
+  // Fallback — precio propio del local
+  if(propio) return propio;
+  
+  // Buscar en CP si no está en el local
+  if(cp){
+    const ingCP = ((cp._datos&&cp._datos.ingredientes)||[]).find(i=>i.id===id);
+    if(ingCP) return {...ingCP, _esCP:true};
+  }
+  return null;
+}
 function getRecetas(){ return demoData.recetas.filter(r=>r.opId===currentOpId); }
 function getMermasOp(){ return demoData.mermas; } // mermas son globales (referencia)
 function getIngredientesOp(){ return demoData.ingredientes; } // ingredientes globales
@@ -2766,7 +2822,24 @@ function renderIngredientes(){
   const grouped = {};
   const cats = [...getCategorias()];
   cats.forEach(c=>grouped[c]=[]);
-  demoData.ingredientes.forEach(i=>{ if(!grouped[i.cat]){ grouped[i.cat]=[]; if(!cats.includes(i.cat)) cats.push(i.cat); } grouped[i.cat].push(i); });
+
+  // Ingredientes propios
+  demoData.ingredientes.forEach(i=>{ 
+    if(!grouped[i.cat]){ grouped[i.cat]=[]; if(!cats.includes(i.cat)) cats.push(i.cat); } 
+    grouped[i.cat].push(i); 
+  });
+
+  // Agregar ingredientes del CP que no estén ya en la lista propia
+  const cp = getCentroProduccion();
+  if(cp && !esCentroProduccion()){
+    const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
+    const nombresProxios = new Set(demoData.ingredientes.map(i=>i.nombre.toLowerCase()));
+    ingsCP.filter(i=>!nombresProxios.has(i.nombre.toLowerCase())).forEach(i=>{
+      const cat = '🏭 CP — '+(i.cat||'General');
+      if(!grouped[cat]){ grouped[cat]=[]; cats.push(cat); }
+      grouped[cat].push({...i, _esCP:true});
+    });
+  }
 
   if(!window._ingAcordeon) window._ingAcordeon = {};
 
@@ -3729,7 +3802,7 @@ function renderEditorReceta(){
       <td>
         <select onchange="updIngReceta(${idx},'ingId',this.value)" style="min-width:180px">
           <option value="">— elegí —</option>
-          ${demoData.ingredientes.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i.nombre}</option>`).join('')}
+          ${getIngredientesConCP().sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i._esCP?'🏭 ':i._sincronizadoCP?'🔗 ':''}${i.nombre}</option>`).join('')}
         </select>
       </td>
       <td>
