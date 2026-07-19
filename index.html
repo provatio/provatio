@@ -5001,9 +5001,11 @@ function updProductoCP(id, campo, val){
 }
 
 // ── RENDER CENTRO DE PRODUCCIÓN ──────────────────────────────────────────────
-// El CP funciona como cualquier operación — Ingredientes, Mermas, Recetas.
-// Sus recetas con rendimientoG y precioVenta son los "productos" que provee a los locales.
-// La tabla legacy de productos manuales se mantiene solo para porcionados y redistribuidos.
+// El CP funciona EXACTAMENTE igual que cualquier operación:
+//   Ingredientes → lo que compra y redistribuye
+//   Mermas       → técnicas de procesado
+//   Recetas      → lo que elabora, con rendimientoG y precioVenta = precio de transferencia
+// Los locales ven sus ingredientes y recetas en el selector con 🏭
 
 function renderCP(){
   const cp = getCentroProduccion();
@@ -5018,16 +5020,20 @@ function renderCP(){
 
   const recetasCP  = (cp._datos && cp._datos.recetas) || [];
   const ingsCP     = (cp._datos && cp._datos.ingredientes) || [];
-  const productosCP = getProductosCP(); // combina recetas + legacy
 
-  // Recetas listas para transferir (tienen rendimientoG)
+  // Recetas con rendimientoG = productos disponibles para los locales
   const recetasListas = recetasCP.filter(r => r.rendimientoG > 0);
   const recetasSinRendimiento = recetasCP.filter(r => !r.rendimientoG || r.rendimientoG <= 0);
 
-  // Productos legacy (porcionados y redistribuidos)
-  const legacyProds = (cp._productos||[]).filter(p => p.tipoProd !== 'elaborado');
+  // Alerta si hay recetas sin rendimiento
+  const alertaSinRendimiento = recetasSinRendimiento.length ? `
+    <div class="alert alert-warn" style="margin-bottom:16px">
+      ⚠ ${recetasSinRendimiento.length} receta${recetasSinRendimiento.length>1?'s':''} sin rendimiento cargado:
+      ${recetasSinRendimiento.map(r=>`<strong>${r.nombre}</strong>`).join(', ')} —
+      agregá el rendimiento en gramos para que los locales puedan usarlas.
+    </div>` : '';
 
-  // Tabla de recetas disponibles como insumos
+  // Tabla de recetas elaboradas disponibles para locales
   const filasRecetas = recetasListas.map(r => {
     const costoProd = calcularCostoRecetaCP(r, cp);
     const costoXkg  = r.rendimientoG > 0 ? costoProd / r.rendimientoG * 1000 : 0;
@@ -5035,7 +5041,7 @@ function renderCP(){
     const margenXkg = precioTransfXkg !== null ? precioTransfXkg - costoXkg : null;
     return `<tr>
       <td><strong>${r.nombre}</strong></td>
-      <td style="text-align:right">${r.rendimientoG ? fmt(r.rendimientoG)+'g' : '—'}</td>
+      <td style="text-align:right">${fmt(r.rendimientoG)}g</td>
       <td style="text-align:right;color:var(--gris-2)">$${fmt(costoXkg)}/kg</td>
       <td style="text-align:right;font-weight:700">
         ${precioTransfXkg !== null
@@ -5055,57 +5061,15 @@ function renderCP(){
     </tr>`;
   }).join('');
 
-  // Recetas sin rendimiento — alerta
-  const alertaSinRendimiento = recetasSinRendimiento.length ? `
-    <div class="alert alert-warn" style="margin-bottom:12px">
-      ⚠ ${recetasSinRendimiento.length} receta${recetasSinRendimiento.length>1?'s':''} sin rendimiento cargado:
-      ${recetasSinRendimiento.map(r=>`<strong>${r.nombre}</strong>`).join(', ')} —
-      cargá el rendimiento en gramos para que los locales puedan usarlas como insumo.
-    </div>` : '';
-
-  // Tabla de porcionados y redistribuidos (legacy)
-  const filasLegacy = legacyProds.map(p => {
-    const costoXkg = p.tipoProd==='porcionado'
-      ? (()=>{
-          const ing = ingsCP.find(i=>i.id===p.ingId);
-          return ing && ing.precio > 0 ? ing.precio/(1-(p.mermaPorcionado||0)/100) : 0;
-        })()
-      : (p.precioXkg||0);
-    return `<tr>
-      <td>
-        <input type="text" value="${p.nombre}" placeholder="Nombre"
-          style="border:none;background:transparent;font-weight:600;width:100%"
-          onchange="updProductoCP('${p.id}','nombre',this.value)">
-      </td>
-      <td>
-        <span style="background:${p.tipoProd==='porcionado'?'#2D5016':'#1B3A5C'};color:#fff;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
-          ${p.tipoProd==='porcionado'?'🔪 Porcionado':'📦 Redistribuido'}
-        </span>
-      </td>
-      <td>
-        ${p.tipoProd==='porcionado'
-          ? `<div style="display:flex;gap:6px;align-items:center">
-               <select onchange="updProductoCP('${p.id}','ingId',this.value)" style="font-size:12px;flex:1">
-                 <option value="">— ingrediente base —</option>
-                 ${ingsCP.map(i=>`<option value="${i.id}"${i.id===p.ingId?' selected':''}>${i.nombre}</option>`).join('')}
-               </select>
-               <input type="number" value="${p.mermaPorcionado||0}" placeholder="% merma"
-                 style="width:70px;font-size:12px" onchange="updProductoCP('${p.id}','mermaPorcionado',+this.value)">
-               <span style="font-size:11px;color:var(--gris-2)">% merma</span>
-             </div>`
-          : `<input type="number" value="${p.precioXkg||0}" placeholder="$/kg"
-               style="font-size:12px;width:130px" onchange="updProductoCP('${p.id}','precioXkg',+this.value)">
-             <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg</span>`}
-      </td>
-      <td style="text-align:right;font-weight:700">$${fmt(costoXkg)}/kg</td>
-      <td><button class="btn btn-danger btn-sm" onclick="delProductoCP('${p.id}')">${ico('trash',13)}</button></td>
-    </tr>`;
-  }).join('');
-
   setContent('Centro de Producción', `
     ${alertaSinRendimiento}
 
-    <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+    <div class="alert alert-info" style="margin-bottom:20px">
+      ${ico('bulb',14)} El CP gestiona sus <strong>Ingredientes</strong> y <strong>Recetas</strong> igual que cualquier operación.
+      Las recetas con rendimiento (g/ml) y precio de transferencia quedan disponibles para todos los locales de la cadena con el ícono 🏭.
+    </div>
+
+    <div style="display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap">
       <button class="btn btn-primary" onclick="navigate('ingredientes')">
         ${ico('clipboard',13)} Ingredientes del CP
       </button>
@@ -5120,46 +5084,52 @@ function renderCP(){
       </button>
     </div>
 
-    <div class="card" style="margin-bottom:16px">
+    ${recetasListas.length ? `
+    <div class="card" style="margin-bottom:20px">
       <div class="card-header">
-        <span class="card-title">🏭 Productos disponibles para locales</span>
-        <span style="font-size:12px;color:var(--gris-2)">${recetasListas.length} recetas · ${legacyProds.length} otros</span>
+        <span class="card-title">🏭 Recetas elaboradas disponibles para los locales</span>
+        <span style="font-size:12px;color:var(--gris-2)">${recetasListas.length} receta${recetasListas.length!==1?'s':''}</span>
       </div>
-      ${recetasListas.length ? `
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Receta elaborada</th>
+            <th>Receta</th>
             <th style="text-align:right;width:100px">Rendimiento</th>
-            <th style="text-align:right;width:120px">Costo prod./kg</th>
-            <th style="text-align:right;width:130px">Precio transf./kg</th>
+            <th style="text-align:right;width:130px">Costo prod./kg</th>
+            <th style="text-align:right;width:140px">Precio transf./kg</th>
             <th style="text-align:right;width:110px">Margen/kg</th>
             <th style="width:80px"></th>
           </tr></thead>
           <tbody>${filasRecetas}</tbody>
         </table>
-      </div>` : `
-      <div class="card-body" style="color:var(--gris-3);text-align:center">
-        Cargá recetas en el CP con el campo <strong>Rendimiento total (g/ml)</strong> para que aparezcan acá
-        y los locales puedan usarlas como insumos.
+      </div>
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
+        Para agregar una receta elaborada: andá a <strong>Recetas</strong> → cargá los ingredientes → completá el campo <strong>Rendimiento total (g/ml)</strong> → asigná un <strong>Precio de transferencia</strong>.
+      </div>
+    </div>` : `
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-body" style="text-align:center;color:var(--gris-3)">
+        Todavía no hay recetas elaboradas disponibles para los locales.<br><br>
+        Andá a <strong>Recetas</strong>, cargá una receta con su rendimiento en gramos y su precio de transferencia — va a aparecer acá automáticamente.
         <br><br>
         <button class="btn btn-primary" onclick="navigate('recetas')">Ir a Recetas</button>
-      </div>`}
-    </div>
-
-
+      </div>
+    </div>`}
 
     <div class="card">
       <div class="card-header"><span class="card-title">Locales de la cadena</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Local</th><th>Tipo</th><th style="text-align:right">Recetas</th><th></th></tr></thead>
+          <thead><tr>
+            <th>Local</th><th>Tipo</th>
+            <th style="text-align:right">Recetas</th><th></th>
+          </tr></thead>
           <tbody>
             ${getLocalesCadena().map(loc => {
               const recs = (loc._datos && loc._datos.recetas) || [];
               const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
               return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
-                <td><strong>${loc.nombre}</strong></td>
+                <td><strong>${loc.nombre}</strong><br><span style="font-size:11px;color:var(--gris-2)">Click para abrir</span></td>
                 <td>${tipoBadgeHtml(loc.tipo)}</td>
                 <td style="text-align:right">${recs.length}</td>
                 <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
@@ -5550,14 +5520,12 @@ function getLocalesCadena(){
 //   1. Recetas del CP con rendimientoG — su precio de transferencia = precioVenta/rendimientoG
 //   2. Productos manuales legacy (porcionados, redistribuidos)
 function getProductosCP(){
+  // Solo devuelve recetas elaboradas del CP con rendimientoG definido
+  // Los ingredientes del CP se acceden via getIngredientesConCP()
   const cp = getCentroProduccion();
   if(!cp) return [];
-
   const recetasCP = (cp._datos && cp._datos.recetas) || [];
-  const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
-
-  // Recetas elaboradas del CP con rendimiento definido
-  const desdeRecetas = recetasCP
+  return recetasCP
     .filter(r => r.rendimientoG > 0)
     .map(r => {
       const costoProd = calcularCostoRecetaCP(r, cp);
@@ -5567,7 +5535,7 @@ function getProductosCP(){
         : costoXkg;
       return {
         id: 'cp-rec-' + r.id,
-        nombre: r.nombre + (r.precioVenta > 0 ? '' : ' (sin precio transf.)'),
+        nombre: r.nombre,
         tipoProd: 'elaborado',
         modoUso: 'directo',
         recetaId: r.id,
@@ -5576,24 +5544,10 @@ function getProductosCP(){
         tienePrecioTransferencia: r.precioVenta > 0,
         margenXkg: precioTransfXkg - costoXkg,
       };
-    });
-
-  // Productos manuales con su modoUso definido
-  const legacy = (cp._productos || []).map(p => {
-    let costoXkg = 0;
-    if(p.tipoProd === 'porcionado'){
-      const ing = ingsCP.find(i => i.id === p.ingId);
-      if(ing && ing.precio > 0){
-        costoXkg = ing.precio / (1 - (p.mermaPorcionado||0)/100);
-      }
-    } else if(p.tipoProd === 'redistribuido'){
-      costoXkg = p.precioXkg || 0;
-    }
-    return { ...p, costoXkg, tienePrecioTransferencia: true };
-  });
-
-  return [...desdeRecetas, ...legacy].sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+    })
+    .sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
 }
+
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
 function calcularCostoRecetaCP(receta, cp){
   const ings = (cp._datos && cp._datos.ingredientes) || [];
