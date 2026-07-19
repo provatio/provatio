@@ -8094,8 +8094,47 @@ function renderImportExport(){
         </div>
       </div>
 
+      <div class="card" style="border:1.5px solid var(--bordo)">
+        <div class="card-header"><span class="card-title" style="color:var(--bordo)">⚠ Zona de peligro</span></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-danger" onclick="limpiarTodosLosDatos()" style="justify-content:flex-start;padding:14px;height:auto;flex-direction:column;align-items:flex-start;gap:4px">
+            <strong>Borrar todas las operaciones y datos</strong>
+            <span style="font-size:12px;opacity:.85">Elimina todas las operaciones de Firebase. No se puede deshacer.</span>
+          </button>
+        </div>
+      </div>
+
     </div>
   `);
+}
+
+function limpiarTodosLosDatos(){
+  if(!confirm('⚠ ATENCIÓN: Esto va a eliminar TODAS las operaciones y datos de Firebase.\n\n¿Estás seguro? Esta acción no se puede deshacer.')) return;
+  if(!confirm('Segunda confirmación: ¿Confirmar el borrado total?')) return;
+
+  const db = firebase.firestore();
+  const uid = currentUser?.uid;
+  if(!uid){ showToast('Error: no hay usuario autenticado','error'); return; }
+
+  db.collection('usuarios').doc(uid).set({
+    operaciones: {},
+    nextId: { i: 1, r: 1, m: 1 },
+  }).then(()=>{
+    // Limpiar memoria
+    demoData.operaciones = {};
+    demoData.ingredientes = [];
+    demoData.mermas = [];
+    demoData.recetas = [];
+    demoData.eventos = [];
+    demoData.buffets = [];
+    demoData.nextId = { i: 1, r: 1, m: 1 };
+    currentOpId = null;
+    buildSidebar(currentUser?.rol||'admin');
+    navigate('dashboard');
+    showToast('Todos los datos eliminados correctamente','success');
+  }).catch(err=>{
+    showToast('Error al limpiar: '+err.message,'error');
+  });
 }
 
 function exportarSoloRecetas(){
