@@ -1700,11 +1700,19 @@ function calcReceta(receta, porciones){
   const items = (receta.ingredientes||[]).map(ing=>{
     // Item tipo insumo del Centro de Producción
     if(ing.productoCP !== undefined){
-      const prod = getProductosCP().find(p=>p.id===ing.productoCP);
+      const prod = resolverInsumoCP(ing.productoCP);
       if(prod && prod.costoXkg > 0){
-        const costoItem = prod.costoXkg * (+ing.neto||0) / 1000;
+        const modo = ing.modoUso || prod.modoUso || 'directo';
+        const netoG = +ing.neto||0;
+        let mermaPct = 0, brutoG = netoG;
+        if(modo==='granel' && ing.tecnica){
+          const mRec = getMermasDisponibles().find(m=>m.ingrediente===prod.nombre && m.tecnica===ing.tecnica);
+          mermaPct = mRec ? (+mRec.pct||0) : 0;
+          if(mermaPct>0 && mermaPct<100) brutoG = netoG/(1-mermaPct/100);
+        }
+        const costoItem = prod.costoXkg * brutoG / 1000;
         merc += costoItem;
-        return {...ing, calc:{costo_porcion: costoItem, costoXkg: prod.costoXkg, ok:true, esCP:true}};
+        return {...ing, calc:{costo_porcion: costoItem, costo_total: costoItem*porciones, costoXkg: prod.costoXkg, merma_pct: mermaPct, bruto: brutoG, ok:true, esCP:true}};
       }
       return {...ing, calc:{error:'Sin costo en CP'}};
     }
@@ -1808,6 +1816,29 @@ function agregarRecetaEnReceta(){
   recetaEditando.ingredientes.push({recetaId:'', neto:0});
   renderEditorReceta();
 }
+// Costo por kg real de un ingrediente del CP (precio es por bulto)
+function costoKgIngCP(ing){
+  let v = (ing.precio||0)/(ing.bulto||1);
+  if(ing.unidadMedida==='unidades' && ing.pesoUnitario) v = v/(ing.pesoUnitario/1000);
+  return v;
+}
+// Resuelve un id de insumo CP: producto elaborado (receta con rendimiento / manual) o ingrediente crudo del CP
+function resolverInsumoCP(pid){
+  let prod = getProductosCP().find(p=>p.id===pid);
+  if(prod) return prod;
+  if(String(pid).startsWith('cp-ing-')){
+    const cp = getCentroProduccion();
+    const icp = ((cp&&cp._datos&&cp._datos.ingredientes)||[]).find(i=>'cp-ing-'+i.id===pid);
+    if(icp){
+      let modoUso='granel';
+      const cat=(icp.cat||'').toLowerCase();
+      if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')) modoUso='directo';
+      return { id:pid, ingId:icp.id, nombre:icp.nombre, modoUso, costoXkg:costoKgIngCP(icp), tipoProd:'ingrediente' };
+    }
+  }
+  return null;
+}
+
 function agregarProductoCP(){
   const productos = getProductosCP();
   if(!productos.length){
@@ -1826,7 +1857,7 @@ function agregarProductoCP(){
     if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')){
       modoUso = 'directo';
     }
-    return { id:'cp-ing-'+ing.id, ingId:ing.id, nombre:ing.nombre, modoUso, costoXkg:ing.precio||0, tipoProd:'ingrediente' };
+    return { id:'cp-ing-'+ing.id, ingId:ing.id, nombre:ing.nombre, modoUso, costoXkg:costoKgIngCP(ing), tipoProd:'ingrediente' };
   });
 
   // Combinar y ordenar
@@ -1870,17 +1901,7 @@ function confirmarProductoCP(){
   // Buscar en productos elaborados primero, luego en ingredientes CP
   const cp = getCentroProduccion();
   const ingsCP = (cp && cp._datos && cp._datos.ingredientes) || [];
-  let prod = getProductosCP().find(p=>p.id===prodId);
-  if(!prod){
-    // Es un ingrediente del CP
-    const ing = ingsCP.find(i=>'cp-ing-'+i.id===prodId);
-    if(ing){
-      let modoUso = 'granel';
-      const cat = (ing.cat||'').toLowerCase();
-      if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')) modoUso = 'directo';
-      prod = { id: prodId, ingId: ing.id, nombre: ing.nombre, modoUso, costoXkg: ing.precio||0, tipoProd:'ingrediente' };
-    }
-  }
+  let prod = resolverInsumoCP(prodId);
   if(!prod){ closeModal(); return; }
   recetaEditando.ingredientes.push({
     productoCP: prodId,
@@ -4054,6 +4075,41 @@ function renderEditorReceta(){
         <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
       </tr>`;
     }
+    // ── ITEM TIPO INSUMO CP (producto elaborado o ingrediente crudo del CP) ──
+    if(ing.productoCP !== undefined){
+      const prod = resolverInsumoCP(ing.productoCP);
+      const modo = ing.modoUso || (prod&&prod.modoUso) || 'directo';
+      const netoG = +ing.neto||0;
+      let mermaPct = 0, brutoG = netoG, costoItem = null, tecnicasCP = [];
+      if(prod){
+        if(modo==='granel'){
+          const mms = getMermasDisponibles().filter(m=>m.ingrediente===prod.nombre);
+          tecnicasCP = [...new Set(mms.map(m=>m.tecnica))].filter(Boolean);
+          if(ing.tecnica){
+            const mRec = mms.find(m=>m.tecnica===ing.tecnica);
+            mermaPct = mRec ? (+mRec.pct||0) : 0;
+            if(mermaPct>0 && mermaPct<100) brutoG = netoG/(1-mermaPct/100);
+          }
+        }
+        if(prod.costoXkg>0 && netoG>0){ costoItem = prod.costoXkg * brutoG / 1000; merc += costoItem; }
+      }
+      const badgeCP = modo==='directo' ? '✅ Directo' : modo==='granel' ? '📦 Granel' : '🔪 Porcionado';
+      const tecCell = modo==='granel'
+        ? `<select onchange="updIngReceta(${idx},'tecnica',this.value)" style="min-width:130px"><option value="">— técnica —</option>${tecnicasCP.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join('')}</select>`
+        : `<span style="color:var(--gris-2);font-size:12px">${modo==='porcionado'?'costo fijo/porción':'se usa como viene'}</span>`;
+      return `<tr style="background:#FFF6EC">
+        <td style="white-space:nowrap">🏭 ${prod?prod.nombre:'<span style="color:var(--bordo)">insumo CP no encontrado</span>'} <span style="font-size:10px;color:#B8540A;font-weight:700">${badgeCP}</span> <span style="font-size:11px;color:var(--gris-2)">${prod&&prod.costoXkg>0?'$'+fmt(prod.costoXkg)+'/kg':''}</span></td>
+        <td>${tecCell}</td>
+        <td><input type="number" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',+this.value)"></td>
+        <td style="text-align:right">${modo==='granel'&&ing.tecnica?`<span class="calc">${fmtD(mermaPct)}%</span>`:'<span style="color:var(--gris-2)">—</span>'}</td>
+        <td style="text-align:right">${modo==='granel'&&costoItem!==null?`<span class="calc">${fmtD(brutoG)}g</span>`:'—'}</td>
+        <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:(prod&&!(prod.costoXkg>0)?'<span class="calc calc-err">sin precio CP</span>':'')}</td>
+        <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem*porciones)}</span>`:''}</td>
+        <td style="text-align:right">${costoItem!==null?`<span class="calc">${fmtD(brutoG*porciones/1000,2)}kg</span>`:''}</td>
+        <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
+      </tr>`;
+    }
+
     const ingObj = getIngrediente(ing.ingId);
     const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, false);
     if(c&&!c.error) merc += c.costo_porcion;
@@ -4135,7 +4191,7 @@ function renderEditorReceta(){
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
           <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" onclick="agregarRecetaEnReceta()">+ Receta elaborada</button>
-
+          <button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" onclick="agregarProductoCP()">🏭 + Insumo CP</button>
         </div>
       </div>
       <div class="table-wrap">
