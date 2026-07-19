@@ -3237,10 +3237,18 @@ function toggleIngCat(cat){
 }
 
 function toggleTodosIngCat(abrir){
-  const grouped = {};
-  getCategorias().forEach(c=>grouped[c]=[]);
-  demoData.ingredientes.forEach(i=>{ if(!grouped[i.cat]) grouped[i.cat]=[]; grouped[i.cat].push(i); });
-  Object.keys(grouped).filter(c=>grouped[c]&&grouped[c].length).forEach(cat=>{ window._ingAcordeon[cat]=abrir; });
+  if(!window._ingAcordeon) window._ingAcordeon = {};
+  const cats = new Set();
+  demoData.ingredientes.forEach(i=>{ if(i.cat) cats.add(i.cat); });
+  // Incluir también las categorías sincronizadas del CP (mismo criterio que renderIngredientes)
+  const cp = getCentroProduccion();
+  if(cp && !esCentroProduccion()){
+    const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
+    const nombresPropios = new Set(demoData.ingredientes.map(i=>i.nombre.toLowerCase()));
+    ingsCP.filter(i=>!nombresPropios.has(i.nombre.toLowerCase()))
+      .forEach(i=>cats.add('🏭 CP — '+(i.cat||'General')));
+  }
+  cats.forEach(cat=>{ window._ingAcordeon[cat]=abrir; });
   renderIngredientes();
 }
 
@@ -3771,10 +3779,14 @@ function toggleMermaCat(key){
 
 function toggleTodasMermas(abrir){
   if(!window._mermaAcordeon) window._mermaAcordeon = {};
-  // Toggle all category and ingredient keys
+  // Cubrir todas las categorías e ingredientes visibles, incluidos los derivados del CP
   getCategorias().forEach(cat=>{ window._mermaAcordeon['cat_'+cat]=abrir; });
   demoData.ingredientes.forEach(i=>{ if(i.cat) window._mermaAcordeon['cat_'+i.cat]=abrir; });
   demoData.ingredientes.forEach(i=>{ window._mermaAcordeon['ing_'+i.nombre]=abrir; });
+  getMermasDisponibles().forEach(m=>{
+    window._mermaAcordeon['cat_'+getCatIng(m.ingrediente)]=abrir;
+    window._mermaAcordeon['ing_'+m.ingrediente]=abrir;
+  });
   renderMermas();
 }
 
