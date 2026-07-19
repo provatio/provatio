@@ -3117,7 +3117,7 @@ function renderIngredientes(){
 
   const acordeon = cats.filter(c=>grouped[c]&&grouped[c].length).map(cat=>{
     const items = grouped[cat];
-    const isOpen = window._ingAcordeon[cat] !== false;
+    const isOpen = cat.startsWith('🏭 CP — ') ? window._ingAcordeon[cat] === true : window._ingAcordeon[cat] !== false;
     const key = (cat||'sin-categoria').replace(/[^a-z0-9]/gi,'-');
     return `
       <div class="card" style="margin-bottom:8px">
@@ -4421,7 +4421,7 @@ function guardarReceta(){
   if(!recetaEditando.ingredientes || recetaEditando.ingredientes.length === 0){
     showToast('⚠ La receta no tiene ingredientes — agregá al menos uno antes de guardar','error'); return;
   }
-  const sinResolver = recetaEditando.ingredientes.filter(i=>!i.esCondimento && !i.ingId);
+  const sinResolver = recetaEditando.ingredientes.filter(i=>!i.esCondimento && !i.ingId && i.productoCP===undefined && !i.recetaId);
   if(sinResolver.length > 0){
     showToast('⚠ Hay ingredientes sin seleccionar — completá todos los campos','error'); return;
   }
