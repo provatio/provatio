@@ -3690,7 +3690,10 @@ function delMerma(id){
   guardarEnFirestore(); }
 
 function modalNuevaMerma(ingPre){
-  const ingNames = [...new Set(demoData.ingredientes.map(i=>i.nombre))].sort();
+  // Incluir también ingredientes del CP: el local puede definir su PROPIA merma
+  // para materia prima del CP (modo granel: la papa del CP se pela distinto en cada local)
+  const _todosIngs = (typeof getIngredientesConCP==='function' ? getIngredientesConCP() : demoData.ingredientes);
+  const ingNames = [...new Set(_todosIngs.map(i=>i.nombre))].sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));
   const TECNICAS_BASE = ['Parrilla','Frito','Horno','Milanesa','Plancha','Hervido','Asado','Spiedo','Vapor','Guiso','Cocción húmeda','Cocción seca','Rebozado','Desmechada','Puré','Salteado','Braseado','Confitado','Crudo','Hidratación','Sin merma'];
   const _tecMap = {};
   [...TECNICAS_BASE, ...demoData.mermas.filter(m=>!m.tipo).map(m=>m.tecnica)].forEach(t=>{
