@@ -2992,15 +2992,81 @@ function guardarNuevaCategoria(){
 
 // Crear categoría inline desde el select del modal de ingrediente
 function niCrearCategoria(sel){
-  const nombre = prompt('Nombre de la nueva categoría:');
-  if(!nombre || !nombre.trim()){ sel.selectedIndex = 0; return; }
-  const limpio = nombre.trim();
   const cats = getCategorias();
+  // Guardar referencia al select para usarla en el modal
+  window._niCatSel = sel;
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Categoría del ingrediente</span>
+      <button class="btn btn-icon" onclick="closeModal();window._niCatSel.selectedIndex=0;">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Elegí una categoría existente</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+          ${cats.map(c=>`<button class="btn btn-secondary btn-sm" onclick="niSeleccionarCategoria('${c.replace(/'/g,"\\'")}')">
+            ${c}
+          </button>`).join('')}
+        </div>
+      </div>
+      <div class="form-group" style="border-top:1px solid var(--crema-2);padding-top:16px">
+        <label>O creá una nueva</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="ni-cat-nueva" placeholder="Nombre de la nueva categoría" style="flex:1">
+          <button class="btn btn-primary btn-sm" onclick="niCrearCategoriaNueva()">Crear</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function niSeleccionarCategoria(cat){
+  const sel = window._niCatSel;
+  if(!sel){ closeModal(); return; }
+  // Buscar si ya existe como opción
+  let found = false;
+  for(let opt of sel.options){
+    if(opt.value === cat || opt.text === cat){
+      opt.selected = true;
+      found = true;
+      break;
+    }
+  }
+  if(!found){
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.text = cat;
+    opt.selected = true;
+    sel.insertBefore(opt, sel.lastElementChild);
+  }
+  closeModal();
+}
+
+function niCrearCategoriaNueva(){
+  const nombre = document.getElementById('ni-cat-nueva').value.trim();
+  if(!nombre){ showToast('Escribí un nombre para la categoría','error'); return; }
+  // Capitalizar primera letra
+  const limpio = nombre.charAt(0).toUpperCase() + nombre.slice(1);
+  const cats = getCategorias();
+  // Verificar duplicado case-insensitive
   const existente = cats.find(c=>c.toLowerCase()===limpio.toLowerCase());
-  const final = existente || (cats.push(limpio), guardarEnFirestore(), limpio);
-  // Reconstruir opciones con la nueva seleccionada
-  sel.innerHTML = getCategorias().map(c=>`<option${c===final?' selected':''}>${c}</option>`).join('') + '<option value="__nueva__">+ Crear nueva categoría…</option>';
-  if(!existente) showToast('Categoría "'+final+'" creada','success');
+  if(existente){
+    niSeleccionarCategoria(existente);
+    showToast('Ya existe "'+existente+'" — la seleccionamos','info');
+    return;
+  }
+  cats.push(limpio);
+  guardarEnFirestore();
+  const sel = window._niCatSel;
+  if(sel){
+    const opt = document.createElement('option');
+    opt.value = limpio;
+    opt.text = limpio;
+    opt.selected = true;
+    sel.insertBefore(opt, sel.lastElementChild);
+  }
+  closeModal();
+  showToast('Categoría "'+limpio+'" creada','success');
 }
 
 function renderIngredientes(){
@@ -3367,6 +3433,15 @@ function guardarNuevoIng(idExistente){
   const unidadMedida = document.getElementById('ni-unidad-medida')?.value||'kg';
   if(!nombre){ showToast('Escribí el nombre del ingrediente','error'); return; }
   if(!precio || precio <= 0){ showToast('⚠ El precio no puede ser cero — el cálculo de costos no va a funcionar','error'); return; }
+
+  // Poka-yoke: verificar si ya existe un ingrediente con el mismo nombre
+  if(!idExistente){
+    const duplicado = demoData.ingredientes.find(i=>i.nombre.toLowerCase()===nombre.toLowerCase());
+    if(duplicado){
+      showToast(`Ya existe "${duplicado.nombre}" — editalo desde la lista si querés actualizarlo`,'error');
+      return;
+    }
+  }
   const pesoUnitario = parseFloat(document.getElementById('ni-peso-unitario')?.value||60);
   const nuevo = {
     id: idExistente || 'i'+demoData.nextId.i++,
@@ -3982,10 +4057,14 @@ function renderEditorReceta(){
     const ingObj = getIngrediente(ing.ingId);
     const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, false);
     if(c&&!c.error) merc += c.costo_porcion;
-    const tecnicas = ingObj ? [...new Set(demoData.mermas.filter(m=>m.ingrediente===ingObj.nombre).map(m=>m.tecnica))] : [];
+    // Mermas disponibles: si es del CP, incluir mermas del CP
+    const todasMermas = getMermasDisponibles();
+    const tecnicas = ingObj ? [...new Set(todasMermas.filter(m=>m.ingrediente===ingObj.nombre).map(m=>m.tecnica))].filter(Boolean) : [];
+    const esCPIng = ing._esCP || false;
+    const modoUsoCP = ing._modoUso || 'granel';
     return `<tr>
       <td>
-        <select onchange="updIngReceta(${idx},'ingId',this.value)" style="min-width:180px">
+        <select onchange="onChangeIngrediente(${idx},this.value)" style="min-width:180px">
           <option value="">— elegí —</option>
           ${getIngredientesConCP().sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i._esCP?'🏭 ':i._sincronizadoCP?'🔗 ':''}${i.nombre}</option>`).join('')}
         </select>
@@ -4056,7 +4135,7 @@ function renderEditorReceta(){
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
           <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" onclick="agregarRecetaEnReceta()">+ Receta elaborada</button>
-          ${getProductosCP().length ? `<button class="btn btn-secondary btn-sm" style="border-color:var(--oliva);color:var(--oliva)" onclick="agregarProductoCP()">🏭 + Insumo CP</button>` : ''}
+
         </div>
       </div>
       <div class="table-wrap">
@@ -4144,7 +4223,11 @@ function renderVarianteDelivery(r, mercSalon){
                 if(ing.esCondimento) return `<tr style="background:var(--oliva-c)"><td colspan="3" style="color:var(--oliva);font-style:italic;font-size:13px">Condimentos básicos</td><td style="text-align:right;color:var(--oliva)">$${fmt(150*0.6)}</td><td><button class="btn btn-icon btn-sm" onclick="quitarIngDelivery(${idx})">✕</button></td></tr>`;
                 const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false);
                 const ingObj = getIngrediente(ing.ingId);
-                const tecnicas = ingObj ? [...new Set(demoData.mermas.filter(m=>m.ingrediente===ingObj.nombre).map(m=>m.tecnica))] : [];
+                // Mermas disponibles: si es del CP, incluir mermas del CP
+    const todasMermas = getMermasDisponibles();
+    const tecnicas = ingObj ? [...new Set(todasMermas.filter(m=>m.ingrediente===ingObj.nombre).map(m=>m.tecnica))].filter(Boolean) : [];
+    const esCPIng = ing._esCP || false;
+    const modoUsoCP = ing._modoUso || 'granel';
                 return `<tr>
                   <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px"><option value="">— elegí —</option>${demoData.ingredientes.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i.nombre}</option>`).join('')}</select></td>
                   <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${tecnicas.length?'<option value="">— técnica —</option>'+tecnicas.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join(''):'<option>Elegí ingrediente</option>'}</select></td>
@@ -4198,6 +4281,29 @@ function quitarIngReceta(idx){
   renderEditorReceta(); 
 }
 function agregarIngReceta(){ recetaEditando.ingredientes.push({ingId:'',tecnica:'',neto:0}); renderEditorReceta(); }
+
+function onChangeIngrediente(idx, ingId){
+  const ing = recetaEditando.ingredientes[idx];
+  if(!ing) return;
+  ing.ingId = ingId;
+  ing.tecnica = '';
+  delete ing.productoCP;
+  delete ing._esCP;
+  delete ing._modoUso;
+  // Detectar si viene del CP
+  const todosIngs = getIngredientesConCP();
+  const ingObj = todosIngs.find(i=>i.id===ingId);
+  if(ingObj && (ingObj._esCP || ingObj._sincronizadoCP)){
+    let modoUso = 'granel';
+    const cat = (ingObj.cat||'').toLowerCase();
+    if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')){
+      modoUso = 'directo';
+    }
+    ing._esCP = true;
+    ing._modoUso = modoUso;
+  }
+  renderEditorReceta();
+}
 function agregarCondReceta(){ recetaEditando.ingredientes.push({esCondimento:true}); renderEditorReceta(); }
 
 // ── VARIANTE DELIVERY: handlers ──
