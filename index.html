@@ -2337,6 +2337,208 @@ function initApp(user){
   navigate('dashboard');
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// MÓDULO FACTURAS — carga manual + foto/PDF (IA) → actualización de precios
+// ══════════════════════════════════════════════════════════════════════════
+function _facNorm(s){
+  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9ñ ]/g,' ').replace(/\s+/g,' ').trim();
+}
+function _facScore(a, b){
+  const ta = _facNorm(a).split(' ').filter(x=>x.length>2);
+  const tb = _facNorm(b).split(' ').filter(x=>x.length>2);
+  if(!ta.length || !tb.length) return 0;
+  let hit = 0;
+  ta.forEach(w=>{ if(tb.some(v=>v.includes(w)||w.includes(v))) hit++; });
+  let sc = hit / Math.max(ta.length, tb.length);
+  if(_facNorm(b).startsWith(_facNorm(a).split(' ')[0])) sc += 0.15;
+  return sc;
+}
+function _facMejorMatch(desc){
+  let best = null, bestSc = 0;
+  (demoData.ingredientes||[]).forEach(i=>{
+    const sc = _facScore(desc, i.nombre);
+    if(sc > bestSc){ bestSc = sc; best = i; }
+  });
+  return bestSc >= 0.45 ? {ing: best, score: bestSc} : null;
+}
+function _facPrecioUnitActual(ing){ return (ing.precio||0)/(ing.bulto||1); }
+
+function renderFacturas(){
+  if(!demoData.facturas) demoData.facturas = [];
+  if(window._facturaDraft){ return renderConciliacionFactura(); }
+  const hist = demoData.facturas.slice().reverse().map(f=>{
+    const tot = (f.items||[]).reduce((a,i)=>a+(+i.precioTotal||0),0);
+    const aplicados = (f.items||[]).filter(i=>i.accion==='actualizar'||i.accion==='crear').length;
+    return `<tr>
+      <td>${f.fecha||'—'}</td><td><strong>${f.proveedor||'Sin proveedor'}</strong></td>
+      <td style="text-align:center">${f.medio==='ia'?'📷 IA':'✍️ Manual'}</td>
+      <td style="text-align:right">${(f.items||[]).length} ítems</td>
+      <td style="text-align:right">$${fmt(tot)}</td>
+      <td style="text-align:right;color:var(--verde)">${aplicados} precios aplicados</td>
+    </tr>`;
+  }).join('');
+  setContent('🧾 Facturas', `
+    <div class="alert alert-info" style="margin-bottom:16px">
+      💡 Cargá facturas de proveedores para mantener los precios al día. Cada renglón se matchea contra tus ingredientes y vos aprobás qué se actualiza — nada se pisa sin tu OK.
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="iniciarFacturaManual()">✍️ Carga manual</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('fac-file').click()">📷 Foto / PDF de factura (IA)</button>
+      <input type="file" id="fac-file" accept="image/*,.pdf" style="display:none" onchange="if(this.files[0]) procesarFacturaArchivo(this.files[0])">
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Historial</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Proveedor</th><th style="text-align:center">Origen</th><th style="text-align:right">Renglones</th><th style="text-align:right">Total</th><th style="text-align:right">Resultado</th></tr></thead>
+        <tbody>${hist||'<tr><td colspan="6" style="text-align:center;color:var(--gris-3);padding:24px">Todavía no cargaste facturas</td></tr>'}</tbody>
+      </table></div>
+    </div>`);
+}
+
+function iniciarFacturaManual(){
+  window._facturaDraft = { medio:'manual', proveedor:'', fecha:new Date().toISOString().slice(0,10),
+    items:[{desc:'', cantidad:'', unidad:'kg', precioTotal:'', matchId:'', accion:'actualizar'}] };
+  renderConciliacionFactura();
+}
+
+async function procesarFacturaArchivo(file){
+  showToast('📷 Leyendo factura con IA…');
+  try{
+    const b64 = await new Promise((ok,err)=>{
+      const r = new FileReader();
+      r.onload = ()=>ok(r.result.split(',')[1]);
+      r.onerror = ()=>err(new Error('No se pudo leer el archivo'));
+      r.readAsDataURL(file);
+    });
+    const res = await fetch('/api/factura', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ mediaType:file.type||'image/jpeg', data:b64, nombre:file.name }) });
+    if(!res.ok) throw new Error(res.status===404 ? 'BACKEND_FALTA' : 'Error del servidor ('+res.status+')');
+    const j = await res.json();
+    if(!j || !Array.isArray(j.items)) throw new Error('La IA no devolvió renglones legibles');
+    window._facturaDraft = { medio:'ia', proveedor:j.proveedor||'', fecha:j.fecha||new Date().toISOString().slice(0,10),
+      items: j.items.map(it=>{
+        const m = _facMejorMatch(it.descripcion||'');
+        return { desc: it.descripcion||'', cantidad: +it.cantidad||'', unidad: ['kg','litros','unidades'].includes(it.unidad)?it.unidad:'kg',
+          precioTotal: +it.precioTotal||'', matchId: m?m.ing.id:'', accion: m?'actualizar':'crear' };
+      }) };
+    renderConciliacionFactura();
+    showToast('✓ Factura leída: '+j.items.length+' renglones. Revisá y aplicá.');
+  }catch(e){
+    if(e.message==='BACKEND_FALTA'){
+      showToast('⚠ La lectura por IA necesita configurar el backend (/api/factura). Usá carga manual mientras tanto.','error');
+    } else {
+      showToast('⚠ '+e.message,'error');
+    }
+  }
+  const inp = document.getElementById('fac-file'); if(inp) inp.value='';
+}
+
+function renderConciliacionFactura(){
+  const d = window._facturaDraft;
+  const opciones = (demoData.ingredientes||[]).slice().sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'))
+    .map(i=>({id:i.id, nombre:i.nombre}));
+  const filas = d.items.map((it,ix)=>{
+    const pu = (+it.precioTotal>0 && +it.cantidad>0) ? (+it.precioTotal / +it.cantidad) : null;
+    const ing = it.matchId ? (demoData.ingredientes||[]).find(i=>String(i.id)===String(it.matchId)) : null;
+    const puAct = ing ? _facPrecioUnitActual(ing) : null;
+    let varia = '';
+    if(pu!==null && puAct){
+      const pct = (pu-puAct)/puAct*100;
+      const col = pct>2 ? 'var(--bordo)' : pct<-2 ? 'var(--verde)' : 'var(--gris-2)';
+      varia = `<span style="color:${col};font-weight:600">${pct>0?'+':''}${fmtD(pct,1)}%</span>`;
+    }
+    const selMatch = `<select onchange="updFacItem(${ix},'matchId',this.value)" style="min-width:150px">
+      <option value="">— sin match —</option>
+      ${opciones.map(o=>`<option value="${o.id}"${String(o.id)===String(it.matchId)?' selected':''}>${o.nombre}</option>`).join('')}
+    </select>`;
+    return `<tr>
+      <td><input type="text" value="${(it.desc||'').replace(/"/g,'&quot;')}" placeholder="Descripción en factura" style="min-width:160px" onchange="updFacItem(${ix},'desc',this.value)"></td>
+      <td><input type="number" value="${it.cantidad}" placeholder="cant" style="width:70px;text-align:right" onchange="updFacItem(${ix},'cantidad',this.value)"></td>
+      <td><select onchange="updFacItem(${ix},'unidad',this.value)">
+        ${['kg','litros','unidades'].map(u=>`<option value="${u}"${u===it.unidad?' selected':''}>${u}</option>`).join('')}
+      </select></td>
+      <td><input type="number" value="${it.precioTotal}" placeholder="$ total" style="width:95px;text-align:right" onchange="updFacItem(${ix},'precioTotal',this.value)"></td>
+      <td style="text-align:right">${pu!==null?'<span class="calc">$'+fmt(pu)+'/'+(it.unidad==='unidades'?'u':it.unidad==='litros'?'L':'kg')+'</span>':'—'}</td>
+      <td>${selMatch}</td>
+      <td style="text-align:right">${puAct?'<span class="calc">$'+fmt(puAct)+'</span>':'—'}</td>
+      <td style="text-align:right">${varia||'—'}</td>
+      <td><select onchange="updFacItem(${ix},'accion',this.value)">
+        <option value="actualizar"${it.accion==='actualizar'?' selected':''}>Actualizar precio</option>
+        <option value="crear"${it.accion==='crear'?' selected':''}>Crear ingrediente</option>
+        <option value="omitir"${it.accion==='omitir'?' selected':''}>Omitir</option>
+      </select></td>
+      <td><button class="btn btn-icon btn-sm" onclick="quitarFacItem(${ix})">✕</button></td>
+    </tr>`;
+  }).join('');
+  setContent('🧾 Conciliación de factura', `
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <input type="text" value="${(d.proveedor||'').replace(/"/g,'&quot;')}" placeholder="Proveedor" style="min-width:200px" onchange="window._facturaDraft.proveedor=this.value">
+      <input type="date" value="${d.fecha}" onchange="window._facturaDraft.fecha=this.value">
+      <span style="font-size:12px;color:var(--gris-2)">${d.medio==='ia'?'📷 Leída por IA — revisá cada renglón antes de aplicar':'✍️ Carga manual'}</span>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Renglones de la factura</span>
+        <button class="btn btn-secondary btn-sm" onclick="agregarFacItem()">+ Renglón</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Descripción</th><th style="text-align:right">Cantidad</th><th>Unidad</th><th style="text-align:right">$ Total</th><th style="text-align:right">$ Unitario</th><th>Ingrediente (match)</th><th style="text-align:right">$ Actual</th><th style="text-align:right">Variación</th><th>Acción</th><th></th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table></div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:16px">
+      <button class="btn btn-primary" onclick="aplicarFactura()">✓ Aplicar factura</button>
+      <button class="btn btn-secondary" onclick="window._facturaDraft=null;renderFacturas()">Cancelar</button>
+    </div>`);
+}
+function updFacItem(ix, campo, val){
+  const it = window._facturaDraft.items[ix]; if(!it) return;
+  it[campo] = val;
+  if(campo==='desc' && !it.matchId){
+    const m = _facMejorMatch(val);
+    if(m){ it.matchId = m.ing.id; it.accion = 'actualizar'; }
+  }
+  renderConciliacionFactura();
+}
+function agregarFacItem(){
+  window._facturaDraft.items.push({desc:'', cantidad:'', unidad:'kg', precioTotal:'', matchId:'', accion:'actualizar'});
+  renderConciliacionFactura();
+}
+function quitarFacItem(ix){
+  window._facturaDraft.items.splice(ix,1);
+  if(!window._facturaDraft.items.length) agregarFacItem(); else renderConciliacionFactura();
+}
+function aplicarFactura(){
+  const d = window._facturaDraft; if(!d) return;
+  let act = 0, cre = 0, omit = 0, err = [];
+  d.items.forEach(it=>{
+    const pu = (+it.precioTotal>0 && +it.cantidad>0) ? (+it.precioTotal / +it.cantidad) : null;
+    if(it.accion==='omitir' || !it.desc){ omit++; return; }
+    if(pu===null){ err.push(it.desc||'(sin descripción)'); return; }
+    if(it.accion==='actualizar'){
+      const ing = (demoData.ingredientes||[]).find(i=>String(i.id)===String(it.matchId));
+      if(!ing){ err.push(it.desc+' (sin ingrediente elegido)'); return; }
+      ing.precio = Math.round(pu * (ing.bulto||1));
+      act++;
+    } else if(it.accion==='crear'){
+      const nid = 'fac' + Date.now().toString(36) + Math.floor(Math.random()*1000);
+      demoData.ingredientes.push({ id:nid, nombre:it.desc.trim(), cat:'Secos y almacén',
+        precio: Math.round(pu), bulto:1, unidad: it.unidad==='unidades'?'unidad':'kg',
+        ...(it.unidad==='litros'?{unidadMedida:'litros'}:{}), ...(it.unidad==='unidades'?{unidadMedida:'unidades',pesoUnitario:100}:{}) });
+      cre++;
+    }
+  });
+  if(err.length){ showToast('⚠ Renglones incompletos: '+err.slice(0,3).join(', ')+(err.length>3?'…':''),'error'); return; }
+  if(!demoData.facturas) demoData.facturas = [];
+  demoData.facturas.push({ id:'f'+Date.now(), fecha:d.fecha, proveedor:d.proveedor, medio:d.medio,
+    items:d.items.map(i=>({desc:i.desc, cantidad:i.cantidad, unidad:i.unidad, precioTotal:i.precioTotal, accion:i.accion})) });
+  window._facturaDraft = null;
+  guardarEnFirestore();
+  renderFacturas();
+  showToast(`✓ Factura aplicada: ${act} precios actualizados, ${cre} ingredientes creados${omit?', '+omit+' omitidos':''}`);
+}
+
 function buildSidebar(rol){
   const nav = document.getElementById('sidebar-nav');
 
@@ -2377,6 +2579,7 @@ function buildSidebar(rol){
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
+    {icon:'cart', label:'🧾 Facturas', vista:'facturas'},
     {section:'Próximamente'},
     {icon:'store', label:'Proveedores', vista:'proveedores', soon:true},
   ] : [
@@ -2418,6 +2621,7 @@ function buildSidebar(rol){
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
+    {icon:'cart', label:'🧾 Facturas', vista:'facturas'},
     {section:'Próximamente'},
     {icon:'store', label:'Proveedores', vista:'proveedores', soon:true},
     {icon:'chart', label:'Comparador de precios', vista:'comparador', soon:true},
@@ -2588,6 +2792,7 @@ function navigate(vista, params={}){
     clientes: renderClientes,
     ingredientes: renderIngredientes,
     mermas: renderMermas,
+    facturas: renderFacturas,
     recetas: renderRecetas,
     semanal: renderSemanal,
     evento: renderEvento,
