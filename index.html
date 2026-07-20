@@ -2622,10 +2622,14 @@ function buildSidebar(rol){
   const cpDelLocal = estaVinculadaACP ? demoData.operaciones[opActiva.grupoId] : null;
 
   // Sección cadena: SOLO cuando estás en el CP
+  const localesDeCadena = isCP ? Object.entries(demoData.operaciones||{})
+    .filter(([id,op])=>op.grupoId===currentOpId)
+    .map(([id,op])=>({ icon:'store', label:'🍽 '+op.nombre, vista:'local-'+id, onclick:`abrirOperacion('${id}')` })) : [];
   const seccionCadena = isCP ? [
     {section:'Cadena'},
     {icon:'chart', label:'Vista ejecutiva', vista:'dashboardCadena'},
     {icon:'store', label:'Centro de Producción', vista:'centroProduccion'},
+    ...(localesDeCadena.length ? [{section:'🍽 Locales ('+localesDeCadena.length+')'}, ...localesDeCadena] : []),
   ] : [];
 
   const itemsAdmin = !enOperacion ? [
@@ -2739,13 +2743,36 @@ function buildSidebar(rol){
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
   ]);
 
-  nav.innerHTML = items.map(item=>{
-    if(item.section) return `<div class="nav-section">${item.section}</div>`;
-    return `<div class="nav-item${item.soon?' opacity-50':''}" onclick="${item.soon?`navigate('soon')`:`navigate('${item.vista}')`}" id="nav-${item.vista}">
+  // ── Sidebar con secciones desplegables ───────────────────────────────────
+  if(!window._navAcordeon){
+    try{ window._navAcordeon = JSON.parse(sessionStorage.getItem('navAcordeon')||'{}'); }
+    catch(e){ window._navAcordeon = {}; }
+  }
+  const secciones = [];
+  let _secAct = null;
+  items.forEach(item=>{
+    if(item.section){ _secAct = {nombre:item.section, items:[]}; secciones.push(_secAct); }
+    else {
+      if(!_secAct){ _secAct = {nombre:null, items:[]}; secciones.push(_secAct); }
+      _secAct.items.push(item);
+    }
+  });
+  window._navSecciones = secciones.map(s=>s.nombre);
+  nav.innerHTML = secciones.map((sec,si)=>{
+    const abierta = window._navAcordeon[sec.nombre] !== false;
+    const itemsHtml = sec.items.map(item=>{
+      const click = item.soon ? `navigate('soon')` : (item.onclick || `navigate('${item.vista}')`);
+      return `<div class="nav-item${item.soon?' opacity-50':''}" onclick="${click}" id="nav-${item.vista}">
       <span class="nav-icon">${ico(item.icon, 16)}</span>
       <span>${item.label}</span>
       ${item.soon?'<span class="nav-badge">Pronto</span>':''}
     </div>`;
+    }).join('');
+    if(sec.nombre===null) return itemsHtml;
+    return `<div class="nav-section" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between" onclick="toggleNavSeccion(${si})">
+      <span>${sec.nombre}</span><span style="font-size:9px;opacity:.55;margin-right:14px">${abierta?'▼':'▶'}</span>
+    </div>
+    <div style="display:${abierta?'block':'none'}">${itemsHtml}</div>`;
   }).join('');
 
   // Badge Centro de Producción — solo si hay operación REALMENTE activa (sin fallback de getOp)
@@ -2784,6 +2811,18 @@ function buildSidebar(rol){
   } else if(opInd){
     opInd.style.display = 'none';
   }
+}
+
+function toggleNavSeccion(si){
+  const nombre = (window._navSecciones||[])[si];
+  if(nombre===undefined || nombre===null) return;
+  if(!window._navAcordeon) window._navAcordeon = {};
+  const abierta = window._navAcordeon[nombre] !== false;
+  window._navAcordeon[nombre] = !abierta ? true : false;
+  try{ sessionStorage.setItem('navAcordeon', JSON.stringify(window._navAcordeon)); }catch(e){}
+  buildSidebar(currentUser?.rol||'admin');
+  const activo = document.getElementById('nav-'+vistaActual);
+  if(activo) activo.classList.add('active');
 }
 
 // ── NAVEGACIÓN ──
