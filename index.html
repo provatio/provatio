@@ -2364,40 +2364,100 @@ function _facMejorMatch(desc){
 }
 function _facPrecioUnitActual(ing){ return (ing.precio||0)/(ing.bulto||1); }
 
+function _facSemanaISO(fechaStr){
+  const d = new Date(fechaStr+'T12:00:00');
+  if(isNaN(d)) return '?';
+  const t = new Date(d.valueOf());
+  t.setDate(t.getDate() + 3 - ((t.getDay()+6)%7));
+  const w1 = new Date(t.getFullYear(),0,4);
+  const num = 1 + Math.round(((t - w1)/86400000 - 3 + ((w1.getDay()+6)%7))/7);
+  return 'Semana '+num+' · '+t.getFullYear();
+}
+const _FAC_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+function _facClaveGrupo(f, modo){
+  const fe = f.fecha||'';
+  if(modo==='dia') return fe || 'Sin fecha';
+  if(modo==='semana') return fe ? _facSemanaISO(fe) : 'Sin fecha';
+  if(modo==='mes'){ const [y,m] = fe.split('-'); return (m&&y) ? _FAC_MESES[+m-1]+' '+y : 'Sin fecha'; }
+  if(modo==='anio') return fe ? fe.slice(0,4) : 'Sin fecha';
+  return 'Todas';
+}
+function _facFmtFecha(fe){
+  if(!fe) return '—';
+  const [y,m,d] = fe.split('-');
+  return (d&&m&&y) ? d+'/'+m+'/'+y : fe;
+}
 function renderFacturas(){
   if(!demoData.facturas) demoData.facturas = [];
   if(window._facturaDraft){ return renderConciliacionFactura(); }
-  const hist = demoData.facturas.slice().reverse().map(f=>{
-    const tot = (f.items||[]).reduce((a,i)=>a+(+i.precioTotal||0),0);
-    const aplicados = (f.items||[]).filter(i=>i.accion==='actualizar'||i.accion==='crear').length;
-    return `<tr>
-      <td>${f.fecha||'—'}</td><td><strong>${f.proveedor||'Sin proveedor'}</strong></td>
-      <td style="text-align:center">${f.medio==='ia'?'📷 IA':'✍️ Manual'}</td>
-      <td style="text-align:right">${(f.items||[]).length} ítems</td>
-      <td style="text-align:right">$${fmt(tot)}</td>
-      <td style="text-align:right;color:var(--verde)">${aplicados} precios aplicados</td>
-    </tr>`;
+  if(!window._facFiltro) window._facFiltro = {q:'', grupo:'dia'};
+  const filtro = window._facFiltro;
+  const q = _facNorm(filtro.q);
+  const lista = demoData.facturas.filter(f=>{
+    if(!q) return true;
+    const blob = _facNorm((f.proveedor||'')+' '+(f.nro||'')+' '+(f.items||[]).map(i=>i.desc).join(' '));
+    return blob.includes(q);
+  });
+  // Agrupar
+  const grupos = {};
+  lista.forEach(f=>{
+    const k = _facClaveGrupo(f, filtro.grupo);
+    (grupos[k] = grupos[k]||[]).push(f);
+  });
+  const claves = Object.keys(grupos).sort((a,b)=>{
+    const fa = grupos[a][0].fecha||'', fb = grupos[b][0].fecha||'';
+    return fb.localeCompare(fa);
+  });
+  const bloques = claves.map(k=>{
+    const fs = grupos[k].slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+    const totGrupo = fs.reduce((a,f)=>a+(f.items||[]).reduce((s,i)=>s+(+i.precioTotal||0),0),0);
+    const filas = fs.map(f=>{
+      const tot = (f.items||[]).reduce((a,i)=>a+(+i.precioTotal||0),0);
+      const aplicados = (f.items||[]).filter(i=>i.accion==='actualizar'||i.accion==='crear').length;
+      return `<tr>
+        <td>${_facFmtFecha(f.fecha)}</td>
+        <td>${f.nro?'<span style="font-family:monospace;font-size:12px">'+f.nro+'</span>':'<span style="color:var(--gris-3)">s/n</span>'}</td>
+        <td><strong>${f.proveedor||'Sin proveedor'}</strong></td>
+        <td style="text-align:center">${f.medio==='ia'?'📷 IA':'✍️ Manual'}</td>
+        <td style="text-align:right">${(f.items||[]).length} ítems</td>
+        <td style="text-align:right">$${fmt(tot)}</td>
+        <td style="text-align:right;color:var(--verde)">${aplicados} aplicados</td>
+      </tr>`;
+    }).join('');
+    return `<tr style="background:var(--crema,#F5F0E8)">
+      <td colspan="5" style="font-weight:700">${k} <span style="color:var(--gris-2);font-weight:400;font-size:12px">· ${fs.length} factura${fs.length>1?'s':''}</span></td>
+      <td style="text-align:right;font-weight:700">$${fmt(totGrupo)}</td><td></td>
+    </tr>` + filas;
   }).join('');
   setContent('🧾 Facturas', `
     <div class="alert alert-info" style="margin-bottom:16px">
       💡 Cargá facturas de proveedores para mantener los precios al día. Cada renglón se matchea contra tus ingredientes y vos aprobás qué se actualiza — nada se pisa sin tu OK.
     </div>
-    <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn btn-primary" onclick="iniciarFacturaManual()">✍️ Carga manual</button>
       <button class="btn btn-secondary" onclick="document.getElementById('fac-file').click()">📷 Foto / PDF de factura (IA)</button>
       <input type="file" id="fac-file" accept="image/*,.pdf" style="display:none" onchange="if(this.files[0]) procesarFacturaArchivo(this.files[0])">
     </div>
     <div class="card">
-      <div class="card-header"><span class="card-title">Historial</span></div>
+      <div class="card-header" style="flex-wrap:wrap;gap:10px">
+        <span class="card-title">Historial</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="text" placeholder="🔎 Proveedor, N° o producto…" value="${(filtro.q||'').replace(/"/g,'&quot;')}"
+            style="min-width:220px" oninput="window._facFiltro.q=this.value" onchange="renderFacturas()">
+          <select onchange="window._facFiltro.grupo=this.value;renderFacturas()">
+            ${[['dia','Por día'],['semana','Por semana'],['mes','Por mes'],['anio','Por año']].map(([v,l])=>`<option value="${v}"${filtro.grupo===v?' selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+      </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Fecha</th><th>Proveedor</th><th style="text-align:center">Origen</th><th style="text-align:right">Renglones</th><th style="text-align:right">Total</th><th style="text-align:right">Resultado</th></tr></thead>
-        <tbody>${hist||'<tr><td colspan="6" style="text-align:center;color:var(--gris-3);padding:24px">Todavía no cargaste facturas</td></tr>'}</tbody>
+        <thead><tr><th>Fecha</th><th>N° comp.</th><th>Proveedor</th><th style="text-align:center">Origen</th><th style="text-align:right">Renglones</th><th style="text-align:right">Total</th><th style="text-align:right">Resultado</th></tr></thead>
+        <tbody>${bloques||'<tr><td colspan="7" style="text-align:center;color:var(--gris-3);padding:24px">'+(q?'Sin resultados para esa búsqueda':'Todavía no cargaste facturas')+'</td></tr>'}</tbody>
       </table></div>
     </div>`);
 }
 
 function iniciarFacturaManual(){
-  window._facturaDraft = { medio:'manual', proveedor:'', fecha:new Date().toISOString().slice(0,10),
+  window._facturaDraft = { medio:'manual', proveedor:'', nro:'', fecha:new Date().toISOString().slice(0,10),
     items:[{desc:'', cantidad:'', unidad:'kg', precioTotal:'', matchId:'', accion:'actualizar'}] };
   renderConciliacionFactura();
 }
@@ -2416,7 +2476,7 @@ async function procesarFacturaArchivo(file){
     if(!res.ok) throw new Error(res.status===404 ? 'BACKEND_FALTA' : 'Error del servidor ('+res.status+')');
     const j = await res.json();
     if(!j || !Array.isArray(j.items)) throw new Error('La IA no devolvió renglones legibles');
-    window._facturaDraft = { medio:'ia', proveedor:j.proveedor||'', fecha:j.fecha||new Date().toISOString().slice(0,10),
+    window._facturaDraft = { medio:'ia', proveedor:j.proveedor||'', nro:j.numero||'', fecha:j.fecha||new Date().toISOString().slice(0,10),
       items: j.items.map(it=>{
         const m = _facMejorMatch(it.descripcion||'');
         return { desc: it.descripcion||'', cantidad: +it.cantidad||'', unidad: ['kg','litros','unidades'].includes(it.unidad)?it.unidad:'kg',
@@ -2475,6 +2535,7 @@ function renderConciliacionFactura(){
     <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <input type="text" value="${(d.proveedor||'').replace(/"/g,'&quot;')}" placeholder="Proveedor" style="min-width:200px" onchange="window._facturaDraft.proveedor=this.value">
       <input type="date" value="${d.fecha}" onchange="window._facturaDraft.fecha=this.value">
+      <input type="text" value="${(d.nro||'').replace(/"/g,'&quot;')}" placeholder="N° factura / comprobante (opcional)" style="min-width:220px" onchange="window._facturaDraft.nro=this.value">
       <span style="font-size:12px;color:var(--gris-2)">${d.medio==='ia'?'📷 Leída por IA — revisá cada renglón antes de aplicar':'✍️ Carga manual'}</span>
     </div>
     <div class="card">
@@ -2523,20 +2584,30 @@ function aplicarFactura(){
       act++;
     } else if(it.accion==='crear'){
       const nid = 'fac' + Date.now().toString(36) + Math.floor(Math.random()*1000);
-      demoData.ingredientes.push({ id:nid, nombre:it.desc.trim(), cat:'Secos y almacén',
+      const nombreNuevo = it.desc.trim();
+      demoData.ingredientes.push({ id:nid, nombre:nombreNuevo, cat:'Secos y almacén',
         precio: Math.round(pu), bulto:1, unidad: it.unidad==='unidades'?'unidad':'kg',
         ...(it.unidad==='litros'?{unidadMedida:'litros'}:{}), ...(it.unidad==='unidades'?{unidadMedida:'unidades',pesoUnitario:100}:{}) });
+      // Coherencia ingrediente↔merma: nace con "Sin merma 0%" listo para ajustar
+      if(!demoData.mermas) demoData.mermas = [];
+      if(!demoData.mermas.some(m=>m.ingrediente===nombreNuevo)){
+        demoData.mermas.push({ id:'facm'+Date.now().toString(36)+Math.floor(Math.random()*1000),
+          ingrediente:nombreNuevo, tecnica:'Sin merma', pct:0 });
+      }
+      // Dejar visible la categoría donde cayó
+      if(!window._ingAcordeon) window._ingAcordeon = {};
+      window._ingAcordeon['Secos y almacén'] = true;
       cre++;
     }
   });
   if(err.length){ showToast('⚠ Renglones incompletos: '+err.slice(0,3).join(', ')+(err.length>3?'…':''),'error'); return; }
   if(!demoData.facturas) demoData.facturas = [];
-  demoData.facturas.push({ id:'f'+Date.now(), fecha:d.fecha, proveedor:d.proveedor, medio:d.medio,
+  demoData.facturas.push({ id:'f'+Date.now(), fecha:d.fecha, proveedor:d.proveedor, nro:d.nro||'', medio:d.medio,
     items:d.items.map(i=>({desc:i.desc, cantidad:i.cantidad, unidad:i.unidad, precioTotal:i.precioTotal, accion:i.accion})) });
   window._facturaDraft = null;
   guardarEnFirestore();
   renderFacturas();
-  showToast(`✓ Factura aplicada: ${act} precios actualizados, ${cre} ingredientes creados${omit?', '+omit+' omitidos':''}`);
+  showToast(`✓ Factura aplicada: ${act} precios actualizados, ${cre} ingredientes creados${cre?' en Secos y almacén (con merma inicial 0%)':''}${omit?', '+omit+' omitidos':''}`);
 }
 
 function buildSidebar(rol){
@@ -2677,13 +2748,13 @@ function buildSidebar(rol){
     </div>`;
   }).join('');
 
-  // Badge Centro de Producción
+  // Badge Centro de Producción — solo si hay operación REALMENTE activa (sin fallback de getOp)
   const cpBadge = document.getElementById('cp-badge');
-  if(cpBadge) cpBadge.style.display = esCentroProduccion() ? 'flex' : 'none';
+  if(cpBadge) cpBadge.style.display = (currentOpId && esCentroProduccion()) ? 'flex' : 'none';
 
   // Badge Dark Kitchen debajo del nav
   const dkBadge = document.getElementById('dk-badge');
-  if(dkBadge) dkBadge.style.display = esDarkKitchen() ? 'flex' : 'none';
+  if(dkBadge) dkBadge.style.display = (currentOpId && esDarkKitchen()) ? 'flex' : 'none';
 
   // Indicador de operación activa
   const opInd = document.getElementById('op-indicador');
