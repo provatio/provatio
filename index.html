@@ -2413,9 +2413,25 @@ function _facFmtFecha(fe){
   const [y,m,d] = fe.split('-');
   return (d&&m&&y) ? d+'/'+m+'/'+y : fe;
 }
+function _facGuardarDraft(){
+  try{ sessionStorage.setItem('facturaDraft', JSON.stringify(window._facturaDraft||null)); }catch(e){}
+}
+function cancelarFacturaDraft(){
+  window._facturaDraft = null;
+  try{ sessionStorage.removeItem('facturaDraft'); }catch(e){}
+  renderFacturas();
+}
 function renderFacturas(){
   if(!demoData.facturas) demoData.facturas = [];
+  // Restaurar borrador si un refresh lo sacó de memoria
+  if(!window._facturaDraft){
+    try{
+      const g = sessionStorage.getItem('facturaDraft');
+      if(g && g!=='null') window._facturaDraft = JSON.parse(g);
+    }catch(e){}
+  }
   if(window._facturaDraft){ return renderConciliacionFactura(); }
+  if(window._facVer){ return renderDetalleFactura(window._facVer); }
   if(!window._facFiltro) window._facFiltro = {q:'', grupo:'dia'};
   const filtro = window._facFiltro;
   const q = _facNorm(filtro.q);
@@ -2440,7 +2456,7 @@ function renderFacturas(){
     const filas = fs.map(f=>{
       const tot = (f.items||[]).reduce((a,i)=>a+(+i.precioTotal||0),0);
       const aplicados = (f.items||[]).filter(i=>i.accion==='actualizar'||i.accion==='crear').length;
-      return `<tr>
+      return `<tr style="cursor:pointer" onclick="window._facVer='${f.id}';renderFacturas()" title="Ver detalle">
         <td>${_facFmtFecha(f.fecha)}</td>
         <td>${f.nro?'<span style="font-family:monospace;font-size:12px">'+f.nro+'</span>':'<span style="color:var(--gris-3)">s/n</span>'}</td>
         <td><strong>${f.proveedor||'Sin proveedor'}</strong></td>
@@ -2482,9 +2498,48 @@ function renderFacturas(){
     </div>`);
 }
 
+function renderDetalleFactura(fid){
+  const f = (demoData.facturas||[]).find(x=>x.id===fid);
+  if(!f){ window._facVer=null; return renderFacturas(); }
+  const tot = (f.items||[]).reduce((a,i)=>a+(+i.precioTotal||0),0);
+  const filas = (f.items||[]).map(i=>{
+    const pu = (+i.precioTotal>0 && +i.cantidad>0) ? (+i.precioTotal / +i.cantidad) : null;
+    const acc = i.accion==='actualizar' ? '<span style="color:var(--verde)">✓ Actualizó precio</span>'
+             : i.accion==='crear' ? '<span style="color:#B8540A">＋ Creó ingrediente</span>'
+             : '<span style="color:var(--gris-2)">Omitido</span>';
+    return `<tr>
+      <td><strong>${i.desc||'—'}</strong></td>
+      <td style="text-align:right">${i.cantidad||'—'} ${i.unidad||''}</td>
+      <td style="text-align:right">${pu!==null?'$'+fmt(pu)+'/'+(i.unidad==='unidades'?'u':i.unidad==='litros'?'L':'kg'):'—'}</td>
+      <td style="text-align:right">$${fmt(+i.precioTotal||0)}</td>
+      <td>${acc}</td>
+    </tr>`;
+  }).join('');
+  setContent('🧾 Factura · '+(f.proveedor||'Sin proveedor'), `
+    <button class="btn btn-secondary btn-sm" style="margin-bottom:16px" onclick="window._facVer=null;renderFacturas()">← Volver al historial</button>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Datos del comprobante</span></div>
+      <div style="padding:14px 18px;display:flex;gap:32px;flex-wrap:wrap;font-size:14px">
+        <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">Proveedor</div><strong>${f.proveedor||'Sin proveedor'}</strong></div>
+        <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">Fecha</div><strong>${_facFmtFecha(f.fecha)}</strong></div>
+        <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">N° comprobante</div><strong>${f.nro||'s/n'}</strong></div>
+        <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">Origen</div><strong>${f.medio==='ia'?'📷 IA':'✍️ Manual'}</strong></div>
+        <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">Total</div><strong>$${fmt(tot)}</strong></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Renglones (${(f.items||[]).length})</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Producto</th><th style="text-align:right">Cantidad</th><th style="text-align:right">$ Unitario</th><th style="text-align:right">$ Total</th><th>Resultado</th></tr></thead>
+        <tbody>${filas}</tbody>
+      </table></div>
+    </div>`);
+}
+
 function iniciarFacturaManual(){
   window._facturaDraft = { medio:'manual', proveedor:'', nro:'', fecha:new Date().toISOString().slice(0,10),
     items:[{desc:'', cantidad:'', unidad:'kg', precioTotal:'', matchId:'', accion:'actualizar'}] };
+  _facGuardarDraft();
   renderConciliacionFactura();
 }
 
@@ -2519,6 +2574,7 @@ async function procesarFacturaArchivo(file){
         return { desc: it.descripcion||'', cantidad: +it.cantidad||'', unidad: ['kg','litros','unidades'].includes(it.unidad)?it.unidad:'kg',
           precioTotal: +it.precioTotal||'', matchId, cat: it.categoria||'', accion: matchId?'actualizar':'crear' };
       }) };
+    _facGuardarDraft();
     renderConciliacionFactura();
     showToast('✓ Factura leída: '+j.items.length+' renglones. Revisá y aplicá.');
   }catch(e){
@@ -2574,9 +2630,9 @@ function renderConciliacionFactura(){
   }).join('');
   setContent('🧾 Conciliación de factura', `
     <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-      <input type="text" value="${(d.proveedor||'').replace(/"/g,'&quot;')}" placeholder="Proveedor" style="min-width:200px" onchange="window._facturaDraft.proveedor=this.value">
-      <input type="date" value="${d.fecha}" onchange="window._facturaDraft.fecha=this.value">
-      <input type="text" value="${(d.nro||'').replace(/"/g,'&quot;')}" placeholder="N° factura / comprobante (opcional)" style="min-width:220px" onchange="window._facturaDraft.nro=this.value">
+      <input type="text" value="${(d.proveedor||'').replace(/"/g,'&quot;')}" placeholder="Proveedor" style="min-width:200px" onchange="window._facturaDraft.proveedor=this.value;_facGuardarDraft()">
+      <input type="date" value="${d.fecha}" onchange="window._facturaDraft.fecha=this.value;_facGuardarDraft()">
+      <input type="text" value="${(d.nro||'').replace(/"/g,'&quot;')}" placeholder="N° factura / comprobante (opcional)" style="min-width:220px" onchange="window._facturaDraft.nro=this.value;_facGuardarDraft()">
       <span style="font-size:12px;color:var(--gris-2)">${d.medio==='ia'?'📷 Leída por IA — revisá cada renglón antes de aplicar':'✍️ Carga manual'}</span>
     </div>
     <div class="card">
@@ -2591,12 +2647,13 @@ function renderConciliacionFactura(){
     </div>
     <div style="display:flex;gap:12px;margin-top:16px">
       <button class="btn btn-primary" onclick="aplicarFactura()">✓ Aplicar factura</button>
-      <button class="btn btn-secondary" onclick="window._facturaDraft=null;renderFacturas()">Cancelar</button>
+      <button class="btn btn-secondary" onclick="cancelarFacturaDraft()">Cancelar</button>
     </div>`);
 }
 function updFacItem(ix, campo, val){
   const it = window._facturaDraft.items[ix]; if(!it) return;
   it[campo] = val;
+  _facGuardarDraft();
   if(campo==='desc' && !it.matchId){
     const m = _facMejorMatch(val);
     if(m){ it.matchId = m.ing.id; it.accion = 'actualizar'; }
@@ -2605,10 +2662,12 @@ function updFacItem(ix, campo, val){
 }
 function agregarFacItem(){
   window._facturaDraft.items.push({desc:'', cantidad:'', unidad:'kg', precioTotal:'', matchId:'', accion:'actualizar'});
+  _facGuardarDraft();
   renderConciliacionFactura();
 }
 function quitarFacItem(ix){
   window._facturaDraft.items.splice(ix,1);
+  _facGuardarDraft();
   if(!window._facturaDraft.items.length) agregarFacItem(); else renderConciliacionFactura();
 }
 function aplicarFactura(){
@@ -2647,6 +2706,7 @@ function aplicarFactura(){
   demoData.facturas.push({ id:'f'+Date.now(), fecha:d.fecha, proveedor:d.proveedor, nro:d.nro||'', medio:d.medio,
     items:d.items.map(i=>({desc:i.desc, cantidad:i.cantidad, unidad:i.unidad, precioTotal:i.precioTotal, accion:i.accion})) });
   window._facturaDraft = null;
+  try{ sessionStorage.removeItem('facturaDraft'); }catch(e){}
   guardarEnFirestore();
   renderFacturas();
   showToast(`✓ Factura aplicada: ${act} precios actualizados, ${cre} ingredientes creados${cre?' en sus categorías (con merma inicial 0%)':''}${omit?', '+omit+' omitidos':''}`);
@@ -2944,7 +3004,7 @@ function navigate(vista, params={}){
     clientes: renderClientes,
     ingredientes: renderIngredientes,
     mermas: renderMermas,
-    facturas: renderFacturas,
+    facturas: ()=>{ window._facVer=null; renderFacturas(); },
     recetas: renderRecetas,
     semanal: renderSemanal,
     evento: renderEvento,
