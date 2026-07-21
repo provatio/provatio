@@ -2362,6 +2362,32 @@ function _facMejorMatch(desc){
   });
   return bestSc >= 0.45 ? {ing: best, score: bestSc} : null;
 }
+function _facSugerirCat(desc){
+  const d = _facNorm(desc);
+  const reglas = [
+    [/bife|lomo|vacio|asado|picada|osobuco|matambre|cuadril|peceto|nalga|molleja|chinchul|morcilla|chorizo parrillero|entraña|falda|roast|tren de bife|carne/, 'Carnes vacunas'],
+    [/cerdo|bondiola|panceta|pechito|carre|solomillo|lechon|codillo/, 'Cerdo'],
+    [/pollo|suprema|pata muslo|pavo|pato|alitas|codorniz/, 'Aves y granja'],
+    [/merluza|salmon|atun|pescad|langostino|camaron|calamar|rabas|pulpo|mejillon|trucha|brotola|lenguado|vieira|bacalao|marisco/, 'Pescados'],
+    [/queso|leche|crema|manteca|yogur|ricota|dulce de leche|huevo/, 'Lácteos'],
+    [/jamon|salame|mortadela|fiambre|longaniza|lomito ahumado|leberwurst/, 'Fiambres'],
+    [/harina|levadura|semilla|salvado|premezcla|masa madre|gluten|semolin/, 'Masas y panificados'],
+    [/aceite|vinagre|aceto|grasa|margarina/, 'Aceites y grasas'],
+    [/pimienta|oregano|pimenton|comino|mostaza|ketchup|mayonesa|salsa de soja|curry|curcuma|canela|especia|sal fina|sal gruesa/, 'Condimentos'],
+    [/azucar|chocolate|cacao|miel|gelatina|esencia|nuez|almendra|mani|pasas|coco rallado|mermelada|glucosa|pistacho/, 'Pastelería'],
+    [/cerveza|vino|gaseosa|fernet|gin|vodka|whisky|vermouth|sidra|jugo|yerba|cafe|espumante|aperitivo/, 'Bebidas'],
+    [/congelad/, 'Congelados'],
+    [/papa|cebolla|tomate|zanahoria|lechuga|zapall|morron|berenjena|espinaca|acelga|brocoli|verdura|limon|naranja|manzana|banana|palta|frutilla|pera|kiwi/, 'Verduras y frutas'],
+  ];
+  for(const [re,cat] of reglas){ if(re.test(d)) return cat; }
+  return 'Secos y almacén';
+}
+function _facCatsDisponibles(){
+  return [...new Set([
+    ...(typeof getCategorias==='function' ? getCategorias() : []),
+    ...(demoData.ingredientes||[]).map(i=>i.cat).filter(Boolean)
+  ])];
+}
 function _facPrecioUnitActual(ing){ return (ing.precio||0)/(ing.bulto||1); }
 
 function _facSemanaISO(fechaStr){
@@ -2472,15 +2498,26 @@ async function procesarFacturaArchivo(file){
       r.readAsDataURL(file);
     });
     const res = await fetch('/api/factura', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ mediaType:file.type||'image/jpeg', data:b64, nombre:file.name }) });
+      body: JSON.stringify({ mediaType:file.type||'image/jpeg', data:b64, nombre:file.name,
+        categorias: _facCatsDisponibles(),
+        ingredientes: (demoData.ingredientes||[]).map(i=>i.nombre) }) });
     if(!res.ok) throw new Error(res.status===404 ? 'BACKEND_FALTA' : 'Error del servidor ('+res.status+')');
     const j = await res.json();
     if(!j || !Array.isArray(j.items)) throw new Error('La IA no devolvió renglones legibles');
     window._facturaDraft = { medio:'ia', proveedor:j.proveedor||'', nro:j.numero||'', fecha:j.fecha||new Date().toISOString().slice(0,10),
       items: j.items.map(it=>{
-        const m = _facMejorMatch(it.descripcion||'');
+        // 1° confianza: match semántico de la IA contra el catálogo real; 2° fallback: fuzzy local
+        let matchId = '';
+        if(it.match){
+          const ing = (demoData.ingredientes||[]).find(i=>_facNorm(i.nombre)===_facNorm(it.match));
+          if(ing) matchId = ing.id;
+        }
+        if(!matchId){
+          const m = _facMejorMatch(it.descripcion||'');
+          if(m) matchId = m.ing.id;
+        }
         return { desc: it.descripcion||'', cantidad: +it.cantidad||'', unidad: ['kg','litros','unidades'].includes(it.unidad)?it.unidad:'kg',
-          precioTotal: +it.precioTotal||'', matchId: m?m.ing.id:'', accion: m?'actualizar':'crear' };
+          precioTotal: +it.precioTotal||'', matchId, cat: it.categoria||'', accion: matchId?'actualizar':'crear' };
       }) };
     renderConciliacionFactura();
     showToast('✓ Factura leída: '+j.items.length+' renglones. Revisá y aplicá.');
@@ -2512,6 +2549,10 @@ function renderConciliacionFactura(){
       <option value="">— sin match —</option>
       ${opciones.map(o=>`<option value="${o.id}"${String(o.id)===String(it.matchId)?' selected':''}>${o.nombre}</option>`).join('')}
     </select>`;
+    const catDef = it.cat || _facSugerirCat(it.desc||'');
+    const celdaMatch = it.accion==='crear'
+      ? `<div style="font-size:10px;color:#B8540A;font-weight:700;margin-bottom:2px">SE CREARÁ EN:</div><select onchange="updFacItem(${ix},'cat',this.value)" style="min-width:150px">${_facCatsDisponibles().map(c=>`<option value="${c}"${c===catDef?' selected':''}>${c}</option>`).join('')}</select>`
+      : selMatch;
     return `<tr>
       <td><input type="text" value="${(it.desc||'').replace(/"/g,'&quot;')}" placeholder="Descripción en factura" style="min-width:160px" onchange="updFacItem(${ix},'desc',this.value)"></td>
       <td><input type="number" value="${it.cantidad}" placeholder="cant" style="width:70px;text-align:right" onchange="updFacItem(${ix},'cantidad',this.value)"></td>
@@ -2520,7 +2561,7 @@ function renderConciliacionFactura(){
       </select></td>
       <td><input type="number" value="${it.precioTotal}" placeholder="$ total" style="width:95px;text-align:right" onchange="updFacItem(${ix},'precioTotal',this.value)"></td>
       <td style="text-align:right">${pu!==null?'<span class="calc">$'+fmt(pu)+'/'+(it.unidad==='unidades'?'u':it.unidad==='litros'?'L':'kg')+'</span>':'—'}</td>
-      <td>${selMatch}</td>
+      <td>${celdaMatch}</td>
       <td style="text-align:right">${puAct?'<span class="calc">$'+fmt(puAct)+'</span>':'—'}</td>
       <td style="text-align:right">${varia||'—'}</td>
       <td><select onchange="updFacItem(${ix},'accion',this.value)">
@@ -2585,7 +2626,8 @@ function aplicarFactura(){
     } else if(it.accion==='crear'){
       const nid = 'fac' + Date.now().toString(36) + Math.floor(Math.random()*1000);
       const nombreNuevo = it.desc.trim();
-      demoData.ingredientes.push({ id:nid, nombre:nombreNuevo, cat:'Secos y almacén',
+      const catDestino = it.cat || _facSugerirCat(nombreNuevo);
+      demoData.ingredientes.push({ id:nid, nombre:nombreNuevo, cat:catDestino,
         precio: Math.round(pu), bulto:1, unidad: it.unidad==='unidades'?'unidad':'kg',
         ...(it.unidad==='litros'?{unidadMedida:'litros'}:{}), ...(it.unidad==='unidades'?{unidadMedida:'unidades',pesoUnitario:100}:{}) });
       // Coherencia ingrediente↔merma: nace con "Sin merma 0%" listo para ajustar
@@ -2596,7 +2638,7 @@ function aplicarFactura(){
       }
       // Dejar visible la categoría donde cayó
       if(!window._ingAcordeon) window._ingAcordeon = {};
-      window._ingAcordeon['Secos y almacén'] = true;
+      window._ingAcordeon[catDestino] = true;
       cre++;
     }
   });
@@ -2607,7 +2649,7 @@ function aplicarFactura(){
   window._facturaDraft = null;
   guardarEnFirestore();
   renderFacturas();
-  showToast(`✓ Factura aplicada: ${act} precios actualizados, ${cre} ingredientes creados${cre?' en Secos y almacén (con merma inicial 0%)':''}${omit?', '+omit+' omitidos':''}`);
+  showToast(`✓ Factura aplicada: ${act} precios actualizados, ${cre} ingredientes creados${cre?' en sus categorías (con merma inicial 0%)':''}${omit?', '+omit+' omitidos':''}`);
 }
 
 function buildSidebar(rol){
