@@ -2364,23 +2364,50 @@ function _facNorm(s){
   return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/[^a-z0-9ñ ]/g,' ').replace(/\s+/g,' ').trim();
 }
-function _facScore(a, b){
-  const ta = _facNorm(a).split(' ').filter(x=>x.length>2);
-  const tb = _facNorm(b).split(' ').filter(x=>x.length>2);
+// Palabras que no aportan a la identidad del producto (conectores, envases, unidades)
+const _FAC_STOP = new Set(['de','del','la','el','los','las','con','sin','por','para','al','en','un','una','uno',
+  'kg','kgs','kilo','kilos','gramo','gramos','lt','lts','litro','litros','ml','cc','uni','unid','unidad','unidades',
+  'bulto','bultos','caja','cajon','bolsa','bolsas','pack','paq','bidon','aprox','primera','calidad','marca','tipo']);
+function _facTokens(s){
+  return _facNorm(s).split(' ').filter(w => {
+    if(!w || w.length < 3 || _FAC_STOP.has(w)) return false;
+    // Descarta cantidades tipo "10kg", "x5lt", "25kgs" (dígitos + letras),
+    // pero CONSERVA números puros que identifican producto: harina 000 vs 0000
+    if(/\d/.test(w) && /[a-z]/.test(w)) return false;
+    return true;
+  });
+}
+function _facTokEq(a, b){
+  if(a === b) return true;
+  const min = Math.min(a.length, b.length);
+  return min >= 4 && (a.startsWith(b) || b.startsWith(a));  // plurales y diminutivos
+}
+function _facScore(desc, nombre){
+  const na = _facNorm(desc), nb = _facNorm(nombre);
+  if(na === nb) return 1;
+  const ta = _facTokens(desc), tb = _facTokens(nombre);
   if(!ta.length || !tb.length) return 0;
-  let hit = 0;
-  ta.forEach(w=>{ if(tb.some(v=>v.includes(w)||w.includes(v))) hit++; });
-  let sc = hit / Math.max(ta.length, tb.length);
-  if(_facNorm(b).startsWith(_facNorm(a).split(' ')[0])) sc += 0.15;
-  return sc;
+  let ma = 0, mb = 0;
+  ta.forEach(w => { if(tb.some(v => _facTokEq(w, v))) ma++; });
+  tb.forEach(v => { if(ta.some(w => _facTokEq(w, v))) mb++; });
+  const ca = ma / ta.length;   // cuánto de la descripción quedó explicado
+  const cb = mb / tb.length;   // cuánto del ingrediente quedó cubierto
+  if(!ca || !cb) return 0;
+  // Pesa más cubrir el nombre completo del ingrediente: evita que "tapa de nalga"
+  // gane con "Tapa de asado" por compartir sólo la palabra genérica "tapa"
+  return 0.4 * ca + 0.6 * cb;
 }
 function _facMejorMatch(desc){
-  let best = null, bestSc = 0;
-  (demoData.ingredientes||[]).forEach(i=>{
-    const sc = _facScore(desc, i.nombre);
-    if(sc > bestSc){ bestSc = sc; best = i; }
-  });
-  return bestSc >= 0.45 ? {ing: best, score: bestSc} : null;
+  const cands = (demoData.ingredientes||[])
+    .map(i => ({ing: i, sc: _facScore(desc, i.nombre)}))
+    .filter(c => c.sc > 0)
+    .sort((a, b) => b.sc - a.sc);
+  if(!cands.length) return null;
+  const best = cands[0], second = cands[1];
+  if(best.sc >= 0.999) return {ing: best.ing, score: best.sc};   // coincidencia exacta
+  if(best.sc < 0.55) return null;                                 // muy flojo: mejor que elija el usuario
+  if(second && (best.sc - second.sc) < 0.1) return null;          // empate técnico: no adivinar
+  return {ing: best.ing, score: best.sc};
 }
 function _facSugerirCat(desc){
   const d = _facNorm(desc);
