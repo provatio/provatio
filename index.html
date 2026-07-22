@@ -2342,6 +2342,24 @@ function initApp(user){
 // ══════════════════════════════════════════════════════════════════════════
 // MÓDULO FACTURAS — carga manual + foto/PDF (IA) → actualización de precios
 // ══════════════════════════════════════════════════════════════════════════
+function _hoyLocal(){
+  const d = new Date(); const p = n => String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function _mesLocal(){
+  const d = new Date(); const p = n => String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1);
+}
+function _stampLocal(){
+  const d = new Date(); const p = n => String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'-'+p(d.getHours())+'-'+p(d.getMinutes())+'-'+p(d.getSeconds());
+}
+function _facHoy(){
+  // Fecha LOCAL del usuario (no UTC): evita que después de las 21hs ARG salte al día siguiente
+  const d = new Date();
+  const p = n => String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
 function _facNorm(s){
   return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .replace(/[^a-z0-9ñ ]/g,' ').replace(/\s+/g,' ').trim();
@@ -2539,7 +2557,7 @@ function renderDetalleFactura(fid){
 }
 
 function iniciarFacturaManual(){
-  window._facturaDraft = { medio:'manual', proveedor:'', nro:'', fecha:new Date().toISOString().slice(0,10),
+  window._facturaDraft = { medio:'manual', proveedor:'', nro:'', fecha:_facHoy(),
     items:[{desc:'', cantidad:'', unidad:'kg', precioTotal:'', matchId:'', accion:'actualizar'}] };
   _facGuardarDraft();
   renderConciliacionFactura();
@@ -2561,7 +2579,7 @@ async function procesarFacturaArchivo(file){
     if(!res.ok) throw new Error(res.status===404 ? 'BACKEND_FALTA' : 'Error del servidor ('+res.status+')');
     const j = await res.json();
     if(!j || !Array.isArray(j.items)) throw new Error('La IA no devolvió renglones legibles');
-    window._facturaDraft = { medio:'ia', proveedor:j.proveedor||'', nro:j.numero||'', fecha:j.fecha||new Date().toISOString().slice(0,10),
+    window._facturaDraft = { medio:'ia', proveedor:j.proveedor||'', nro:j.numero||'', fecha:j.fecha||_facHoy(),
       items: j.items.map(it=>{
         // 1° confianza: match semántico de la IA contra el catálogo real; 2° fallback: fuzzy local
         let matchId = '';
@@ -4879,7 +4897,7 @@ function nuevaBebidaEvento(){
 }
 
 let eventoData = {
-  nombre:'', fecha: new Date().toISOString().slice(0,7),
+  nombre:'', fecha: _mesLocal(),
   segmentos: [nuevoSegmento('Estándar')],
   bebidas: [],
   gastosExtra: [],
@@ -4905,7 +4923,7 @@ function editarEvento(id){
 
 function cancelarEdicionEvento(){
   eventoEditandoId = null;
-  eventoData = { nombre:'', fecha: new Date().toISOString().slice(0,7), segmentos:[nuevoSegmento('Estándar')], bebidas:[], gastosExtra:[] };
+  eventoData = { nombre:'', fecha: _mesLocal(), segmentos:[nuevoSegmento('Estándar')], bebidas:[], gastosExtra:[] };
   renderEvento();
 }
 
@@ -5000,7 +5018,7 @@ function guardarEventoActual(){
   const evData = {
     id: eventoEditandoId || uid(), opId: currentOpId,
     nombre: eventoData.nombre.trim(),
-    fecha: eventoData.fecha || new Date().toISOString().slice(0,7),
+    fecha: eventoData.fecha || _mesLocal(),
     segmentos: JSON.parse(JSON.stringify(eventoData.segmentos)),
     bebidas: JSON.parse(JSON.stringify(eventoData.bebidas)),
     gastosExtra: eventoData.gastosExtra.map(g=>({concepto:g.concepto, monto:+g.monto||0})),
@@ -5022,7 +5040,7 @@ function guardarEventoActual(){
   guardarEnFirestore();
   // Reset
   eventoEditandoId = null;
-  eventoData = { nombre:'', fecha: new Date().toISOString().slice(0,7), segmentos:[nuevoSegmento('Estándar')], bebidas:[], gastosExtra:[] };
+  eventoData = { nombre:'', fecha: _mesLocal(), segmentos:[nuevoSegmento('Estándar')], bebidas:[], gastosExtra:[] };
   renderEvento();
 }
 
@@ -6340,7 +6358,7 @@ const TIPOS_BUFFET = ['Desayuno','Almuerzo','Merienda','Barra permanente','Coffe
 function nuevoServicioBuffet(){
   return {
     id: uid(), nombre:'', tipo:'Desayuno',
-    fecha: new Date().toISOString().slice(0,7),
+    fecha: _mesLocal(),
     comensales: 0, frecuencia:'diario',
     franjas: [], estado:'borrador', abierto:true,
   };
@@ -6841,7 +6859,7 @@ function renderResultado(){
 
   const ventasEst = op.ventasEstimadas || 0;
   // Eventos del mes: directo desde el módulo Evento (solo confirmados suman)
-  if(!window._saludMes) window._saludMes = new Date().toISOString().slice(0,7);
+  if(!window._saludMes) window._saludMes = _mesLocal();
   const mesSel = window._saludMes;
   const eventosMes = getEventos().filter(e=>e.fecha===mesSel);
   const eventosConf = eventosMes.filter(e=>e.estado==='confirmado');
@@ -8286,7 +8304,7 @@ async function restaurarBackup(event){
 
 function exportarBackup(){
   const op = getOp();
-  const timestamp = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+  const timestamp = _stampLocal();
   const backup = {
     version: '1.0',
     timestamp,
