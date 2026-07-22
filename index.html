@@ -1197,6 +1197,7 @@ async function guardarEnFirestore(){
         mermas: demoData.mermas,
         recetas: recetasOp,
         eventos: (demoData.eventos||[]).filter(e=>e.opId===currentOpId),
+        facturas: demoData.facturas || [],
       }
     };
 
@@ -1290,6 +1291,7 @@ async function cargarDesdeFirestore(uid){
       if(!demoData.eventos) demoData.eventos = [];
       const evs = (opActiva._datos.eventos||[]).map(e=>({...e, opId:currentOpId}));
       demoData.eventos = demoData.eventos.filter(e => e.opId !== currentOpId).concat(evs);
+      demoData.facturas = opActiva._datos.facturas || [];
       hideLoading();
       return true;
     }
@@ -2653,11 +2655,15 @@ function renderConciliacionFactura(){
 function updFacItem(ix, campo, val){
   const it = window._facturaDraft.items[ix]; if(!it) return;
   it[campo] = val;
-  _facGuardarDraft();
-  if(campo==='desc' && !it.matchId){
+  // Si el usuario elige el match a mano, queda "fijado" y no se re-evalúa solo
+  if(campo==='matchId'){ it.matchManual = !!val; }
+  // Al cambiar la descripción: re-evaluar el match automático (salvo que esté fijado a mano)
+  if(campo==='desc' && !it.matchManual){
     const m = _facMejorMatch(val);
-    if(m){ it.matchId = m.ing.id; it.accion = 'actualizar'; }
+    if(m){ it.matchId = m.ing.id; if(it.accion!=='omitir') it.accion = 'actualizar'; }
+    else { it.matchId = ''; if(it.accion==='actualizar') it.accion = 'crear'; }
   }
+  _facGuardarDraft();
   renderConciliacionFactura();
 }
 function agregarFacItem(){
@@ -2945,6 +2951,7 @@ async function abrirOperacion(opId){
         merm = data._datos.mermas || [];
         rec = (data._datos.recetas || []).map(r=>({...r, opId}));
         evs = (data._datos.eventos || []).map(e=>({...e, opId}));
+        var facturasCargadas = data._datos.facturas || [];
       } else {
         // Formato viejo: subcolecciones (compatibilidad)
         const [ingsSnap, mermasSnap, recetasSnap, eventosSnap] = await conTimeout(Promise.all([
@@ -2965,6 +2972,7 @@ async function abrirOperacion(opId){
       demoData.recetas = demoData.recetas.filter(r=>r.opId!==opId).concat(rec);
       if(!demoData.eventos) demoData.eventos=[];
       demoData.eventos = demoData.eventos.filter(e=>e.opId!==opId).concat(evs);
+      demoData.facturas = (typeof facturasCargadas!=='undefined') ? facturasCargadas : [];
       hideLoading();
     } catch(err){
       hideLoading();
