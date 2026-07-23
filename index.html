@@ -1150,8 +1150,12 @@ window._ultimoEditor = '';
 
 async function _verificarConflicto(uid){
   try{
-    const snap = await db.collection('usuarios').doc(uid)
-      .collection('operaciones').doc(currentOpId).get();
+    // Con timeout: si la red no responde en 6s, seguimos sin verificar
+    // (es preferible guardar sin chequeo que dejar al usuario sin poder guardar)
+    const snap = await Promise.race([
+      db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId).get(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000))
+    ]);
     if(!snap.exists) return {ok:true};
     const d = snap.data() || {};
     const revRemota = d._rev || 0;
@@ -1170,11 +1174,18 @@ async function guardarEnFirestore(){
   if(!currentUser){ showToast('No hay sesión activa — no se pudo guardar','error'); return false; }
   const uid = currentUser.uid;
 
-  if(window._guardando){
+  // Lock con vencimiento: si un guardado quedó colgado, a los 20s se libera solo
+  const AHORA = Date.now();
+  if(window._guardando && (AHORA - (window._guardandoDesde||0) < 20000)){
     console.info('Guardado en curso, se ignora la llamada duplicada');
+    showToast('Guardando… esperá un momento', 'info');
     return false;
   }
+  if(window._guardando){
+    console.warn('[Provatio] el guardado anterior quedó colgado, se libera el bloqueo');
+  }
   window._guardando = true;
+  window._guardandoDesde = AHORA;
 
   try {
     mostrarProgreso('Guardando…');
@@ -1285,7 +1296,8 @@ async function guardarEnFirestore(){
     showToast(`NO se guardó${err.code?' ['+err.code+']':''}: ${err.message}. Reintentá (los datos siguen en pantalla).`, 'error');
     return false;
   } finally {
-    window._guardando = false;   // liberar el lock pase lo que pase
+    window._guardando = false;      // liberar el lock pase lo que pase
+    window._guardandoDesde = 0;
   }
 }
 
@@ -5635,6 +5647,20 @@ function nuevoProductoCP(){
   return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg', modoUso:'directo' };
 }
 
+function limpiarProductosVacios(){
+  const cp = getCentroProduccion();
+  if(!cp || !cp._productos || !cp._productos.length){ showToast('No hay productos cargados','info'); return; }
+  const antes = cp._productos.length;
+  cp._productos = cp._productos.filter(p =>
+    (p.nombre && p.nombre.trim()) || p.recetaId || p.ingId || p.precioXkg > 0
+  );
+  const quitados = antes - cp._productos.length;
+  if(!quitados){ showToast('No hay filas vacías para limpiar','info'); return; }
+  guardarEnFirestore();
+  renderCP();
+  showToast(`Se eliminaron ${quitados} fila${quitados>1?'s':''} sin configurar`,'success');
+}
+
 function addProductoCP(){
   const cp = getCentroProduccion();
   if(!cp) return;
@@ -5741,6 +5767,7 @@ function renderCP(){
       <div class="card-header">
         <span class="card-title">🏭 ${cp.nombre || 'Centro de Producción'}</span>
         <button class="btn btn-primary btn-sm" onclick="addProductoCP()">+ Producto</button>
+          <button class="btn btn-secondary btn-sm" onclick="limpiarProductosVacios()" title="Elimina las filas de producto que quedaron sin nombre ni receta">🧹 Limpiar vacíos</button>
       </div>
       ${productos.length ? `
       <div class="table-wrap">
