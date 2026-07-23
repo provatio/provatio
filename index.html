@@ -23,7 +23,7 @@
       var d = document.createElement('div');
       d.textContent = '⚠ ' + msg;
       b.appendChild(d);
-    }catch(e){}
+    }catch(e){ console.warn("[Provatio] error no crítico:", e); }
   }
   window.onerror = function(msg, src, line, col){
     // Errores opacos de scripts externos ("Script error." con línea 0) no dan info útil
@@ -1139,11 +1139,66 @@ async function guardarColeccion(uid, opId, subcol, items){
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// CONCURRENCIA — evita que dos personas editando la misma operación
+// se pisen el trabajo. Cada guardado lleva un número de revisión; antes
+// de escribir se verifica que nadie haya guardado en el medio.
+// ═══════════════════════════════════════════════════════════════════════
+window._guardando = false;       // lock: un guardado a la vez por pestaña
+window._revLocal  = 0;           // revisión que esta pestaña tiene cargada
+window._ultimoEditor = '';
+
+async function _verificarConflicto(uid){
+  try{
+    const snap = await db.collection('usuarios').doc(uid)
+      .collection('operaciones').doc(currentOpId).get();
+    if(!snap.exists) return {ok:true};
+    const d = snap.data() || {};
+    const revRemota = d._rev || 0;
+    if(revRemota > (window._revLocal||0)){
+      return {ok:false, rev:revRemota, quien:d._ultimoEditor || 'otro usuario',
+              cuando:d._ultimaEdicion || ''};
+    }
+    return {ok:true};
+  }catch(e){
+    console.warn('No se pudo verificar conflicto:', e);
+    return {ok:true};   // si falla la verificación, no bloqueamos el guardado
+  }
+}
+
 async function guardarEnFirestore(){
   if(!currentUser){ showToast('No hay sesión activa — no se pudo guardar','error'); return false; }
   const uid = currentUser.uid;
+
+  if(window._guardando){
+    console.info('Guardado en curso, se ignora la llamada duplicada');
+    return false;
+  }
+  window._guardando = true;
+
   try {
     mostrarProgreso('Guardando…');
+
+    // ¿Alguien más guardó esta operación desde que la abrimos?
+    const conf = await _verificarConflicto(uid);
+    if(!conf.ok){
+      window._guardando = false;
+      ocultarProgreso && ocultarProgreso();
+      const cuando = conf.cuando ? (' el ' + new Date(conf.cuando).toLocaleString('es-AR')) : '';
+      const seguir = confirm(
+        'ATENCIÓN: ' + conf.quien + ' guardó cambios en esta operación' + cuando + '.\n\n' +
+        'Si continuás, tus cambios van a reemplazar los suyos.\n\n' +
+        'Aceptar = guardar igual (pisa lo del otro)\n' +
+        'Cancelar = recargar para ver los cambios de la otra persona (perdés lo que editaste acá)'
+      );
+      if(!seguir){
+        location.reload();
+        return false;
+      }
+      window._revLocal = conf.rev;   // asumimos su revisión y seguimos
+      window._guardando = true;
+      mostrarProgreso('Guardando…');
+    }
 
     // TODA la operación en UN solo documento (elimina el problema de volumen).
     // ~95 KB de datos entran holgados en el límite de 1 MB por documento.
@@ -1198,7 +1253,10 @@ async function guardarEnFirestore(){
         recetas: recetasOp,
         eventos: (demoData.eventos||[]).filter(e=>e.opId===currentOpId),
         facturas: demoData.facturas || [],
-      }
+      },
+      _rev: (window._revLocal||0) + 1,
+      _ultimoEditor: (currentUser && currentUser.email) || 'usuario',
+      _ultimaEdicion: Date.now(),
     };
 
     await conReintento(() =>
@@ -1215,6 +1273,8 @@ async function guardarEnFirestore(){
         2, 'meta op').catch(()=>{});
     }
 
+    window._revLocal = opData._rev;   // nuestra revisión ya es la vigente
+
     ocultarProgreso();
     const recs = getRecetas();
     showToast(`Todo guardado ✓ — ${recs.length} recetas, ${demoData.ingredientes.length} ingredientes, ${demoData.mermas.length} mermas`, 'success');
@@ -1224,6 +1284,8 @@ async function guardarEnFirestore(){
     console.error('Error guardando:', err);
     showToast(`NO se guardó${err.code?' ['+err.code+']':''}: ${err.message}. Reintentá (los datos siguen en pantalla).`, 'error');
     return false;
+  } finally {
+    window._guardando = false;   // liberar el lock pase lo que pase
   }
 }
 
@@ -1292,6 +1354,7 @@ async function cargarDesdeFirestore(uid){
       const evs = (opActiva._datos.eventos||[]).map(e=>({...e, opId:currentOpId}));
       demoData.eventos = demoData.eventos.filter(e => e.opId !== currentOpId).concat(evs);
       demoData.facturas = opActiva._datos.facturas || [];
+      window._revLocal = opActiva._rev || 0;
       hideLoading();
       return true;
     }
@@ -1559,6 +1622,25 @@ let demoData = {
 };
 
 // ── HELPERS ──
+// ═══════════════════════════════════════════════════════════════════════
+// ESCAPADO — evita que nombres con comillas o < > rompan el HTML.
+// Caso real: "Queso D'Ambrosio" cerraba el string del onclick.
+// ═══════════════════════════════════════════════════════════════════════
+function esc(s){
+  if(s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// Para strings que van DENTRO de un onclick: primero los lee el parser HTML,
+// después JavaScript. Por eso la comilla simple se escapa con barra, no con entidad.
+function escJs(s){
+  if(s === null || s === undefined) return '';
+  return String(s)
+    .replace(/\\/g,'\\\\').replace(/'/g,"\\'")
+    .replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/\r?\n/g,' ');
+}
+
 function fmt(n){ return Math.round(n||0).toLocaleString('es-AR'); }
 function fmtD(n,d=1){ return Number(n||0).toFixed(d); }
 function uid(){ return 'id-'+Date.now()+'-'+Math.random().toString(36).substr(2,6); }
@@ -1883,7 +1965,7 @@ function agregarProductoCP(){
           ${todosInsumos.map(p=>{
             const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
             const costoLabel = p.costoXkg>0?'$'+fmt(p.costoXkg)+'/kg':'sin precio';
-            return `<option value="${p.id}">${p.nombre} — ${modoLabel} — ${costoLabel}</option>`;
+            return `<option value="${esc(p.id)}">${esc(p.nombre)} — ${modoLabel} — ${costoLabel}</option>`;
           }).join('')}
         </select>
       </div>
@@ -2190,7 +2272,7 @@ function mostrarModalPerfil(email, pass){
           style="flex:1;padding:11px;background:transparent;color:var(--gris-2);border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif">
           Cancelar
         </button>
-        <button onclick="completarRegistro('${email}','${pass}')"
+        <button onclick="completarRegistro('${escJs(email)}','${pass}')"
           id="btn-completar"
           style="flex:2;padding:12px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif">
           Crear mi cuenta →
@@ -2397,17 +2479,33 @@ function _facScore(desc, nombre){
   // gane con "Tapa de asado" por compartir sólo la palabra genérica "tapa"
   return 0.4 * ca + 0.6 * cb;
 }
+// ¿Son el MISMO producto? Sólo si los términos significativos coinciden todos.
+// En gastronomía una palabra cambia el producto: "tapa de nalga" ≠ "nalga",
+// "bife de chorizo" ≠ "bife ancho", "harina 0000" ≠ "harina 000".
+function _facMismoProducto(desc, nombre){
+  if(_facNorm(desc) === _facNorm(nombre)) return true;
+  const ta = _facTokens(desc), tb = _facTokens(nombre);
+  if(!ta.length || !tb.length || ta.length !== tb.length) return false;
+  const usados = new Array(tb.length).fill(false);
+  return ta.every(w => {
+    const ix = tb.findIndex((v, k) => !usados[k] && _facTokEq(w, v));
+    if(ix < 0) return false;
+    usados[ix] = true; return true;
+  });
+}
+// Auto-match SOLO ante coincidencia real. Lo parecido se ofrece como sugerencia.
 function _facMejorMatch(desc){
-  const cands = (demoData.ingredientes||[])
+  const ing = (demoData.ingredientes||[]).find(i => _facMismoProducto(desc, i.nombre));
+  return ing ? {ing, score: 1} : null;
+}
+// Candidatos parecidos, para sugerir sin imponer
+function _facSugerencias(desc, n){
+  if(!_facTokens(desc).length) return [];
+  return (demoData.ingredientes||[])
     .map(i => ({ing: i, sc: _facScore(desc, i.nombre)}))
-    .filter(c => c.sc > 0)
-    .sort((a, b) => b.sc - a.sc);
-  if(!cands.length) return null;
-  const best = cands[0], second = cands[1];
-  if(best.sc >= 0.999) return {ing: best.ing, score: best.sc};   // coincidencia exacta
-  if(best.sc < 0.55) return null;                                 // muy flojo: mejor que elija el usuario
-  if(second && (best.sc - second.sc) < 0.1) return null;          // empate técnico: no adivinar
-  return {ing: best.ing, score: best.sc};
+    .filter(c => c.sc >= 0.45 && !_facMismoProducto(desc, c.ing.nombre))
+    .sort((a, b) => b.sc - a.sc)
+    .slice(0, n || 3);
 }
 function _facSugerirCat(desc){
   const d = _facNorm(desc);
@@ -2449,7 +2547,7 @@ function _facSemanaISO(fechaStr){
 const _FAC_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 function _facClaveGrupo(f, modo){
   const fe = f.fecha||'';
-  if(modo==='dia') return fe || 'Sin fecha';
+  if(modo==='dia') return fe ? _facFmtFecha(fe) : 'Sin fecha';
   if(modo==='semana') return fe ? _facSemanaISO(fe) : 'Sin fecha';
   if(modo==='mes'){ const [y,m] = fe.split('-'); return (m&&y) ? _FAC_MESES[+m-1]+' '+y : 'Sin fecha'; }
   if(modo==='anio') return fe ? fe.slice(0,4) : 'Sin fecha';
@@ -2461,11 +2559,11 @@ function _facFmtFecha(fe){
   return (d&&m&&y) ? d+'/'+m+'/'+y : fe;
 }
 function _facGuardarDraft(){
-  try{ sessionStorage.setItem('facturaDraft', JSON.stringify(window._facturaDraft||null)); }catch(e){}
+  try{ sessionStorage.setItem('facturaDraft', JSON.stringify(window._facturaDraft||null)); }catch(e){ console.warn("[Provatio] error no crítico:", e); }
 }
 function cancelarFacturaDraft(){
   window._facturaDraft = null;
-  try{ sessionStorage.removeItem('facturaDraft'); }catch(e){}
+  try{ sessionStorage.removeItem('facturaDraft'); }catch(e){ console.warn("[Provatio] error no crítico:", e); }
   renderFacturas();
 }
 function renderFacturas(){
@@ -2475,7 +2573,7 @@ function renderFacturas(){
     try{
       const g = sessionStorage.getItem('facturaDraft');
       if(g && g!=='null') window._facturaDraft = JSON.parse(g);
-    }catch(e){}
+    }catch(e){ console.warn("[Provatio] error no crítico:", e); }
   }
   if(window._facturaDraft){ return renderConciliacionFactura(); }
   if(window._facVer){ return renderDetalleFactura(window._facVer); }
@@ -2650,12 +2748,14 @@ function renderConciliacionFactura(){
     }
     const selMatch = `<select onchange="updFacItem(${ix},'matchId',this.value)" style="min-width:150px">
       <option value="">— sin match —</option>
-      ${opciones.map(o=>`<option value="${o.id}"${String(o.id)===String(it.matchId)?' selected':''}>${o.nombre}</option>`).join('')}
+      ${opciones.map(o=>`<option value="${o.id}"${String(o.id)===String(it.matchId)?' selected':''}>${esc(o.nombre)}</option>`).join('')}
     </select>`;
     const catDef = it.cat || _facSugerirCat(it.desc||'');
+    const sugs = (!it.matchId && it.desc) ? _facSugerencias(it.desc, 3) : [];
+    const chips = sugs.length ? `<div style="margin-top:4px;font-size:11px;color:var(--gris-2)">¿Es alguno? ${sugs.map(s=>`<span onclick="updFacItem(${ix},'matchId','${s.ing.id}')" style="cursor:pointer;color:var(--azul);text-decoration:underline;margin-right:8px">${s.ing.nombre}</span>`).join('')}</div>` : '';
     const celdaMatch = it.accion==='crear'
-      ? `<div style="font-size:10px;color:#B8540A;font-weight:700;margin-bottom:2px">SE CREARÁ EN:</div><select onchange="updFacItem(${ix},'cat',this.value)" style="min-width:150px">${_facCatsDisponibles().map(c=>`<option value="${c}"${c===catDef?' selected':''}>${c}</option>`).join('')}</select>`
-      : selMatch;
+      ? `<div style="font-size:10px;color:#B8540A;font-weight:700;margin-bottom:2px">SE CREARÁ EN:</div><select onchange="updFacItem(${ix},'cat',this.value)" style="min-width:150px">${_facCatsDisponibles().map(c=>`<option value="${c}"${c===catDef?' selected':''}>${c}</option>`).join('')}</select>${chips}`
+      : selMatch + chips;
     return `<tr>
       <td><input type="text" value="${(it.desc||'').replace(/"/g,'&quot;')}" placeholder="Descripción en factura" style="min-width:160px" onchange="updFacItem(${ix},'desc',this.value)"></td>
       <td><input type="number" value="${it.cantidad}" placeholder="cant" style="width:70px;text-align:right" onchange="updFacItem(${ix},'cantidad',this.value)"></td>
@@ -2701,7 +2801,7 @@ function updFacItem(ix, campo, val){
   const it = window._facturaDraft.items[ix]; if(!it) return;
   it[campo] = val;
   // Si el usuario elige el match a mano, queda "fijado" y no se re-evalúa solo
-  if(campo==='matchId'){ it.matchManual = !!val; }
+  if(campo==='matchId'){ it.matchManual = !!val; if(val && it.accion==='crear') it.accion='actualizar'; }
   // Al cambiar la descripción: re-evaluar el match automático (salvo que esté fijado a mano)
   if(campo==='desc' && !it.matchManual){
     const m = _facMejorMatch(val);
@@ -2757,7 +2857,7 @@ function aplicarFactura(){
   demoData.facturas.push({ id:'f'+Date.now(), fecha:d.fecha, proveedor:d.proveedor, nro:d.nro||'', medio:d.medio,
     items:d.items.map(i=>({desc:i.desc, cantidad:i.cantidad, unidad:i.unidad, precioTotal:i.precioTotal, accion:i.accion})) });
   window._facturaDraft = null;
-  try{ sessionStorage.removeItem('facturaDraft'); }catch(e){}
+  try{ sessionStorage.removeItem('facturaDraft'); }catch(e){ console.warn("[Provatio] error no crítico:", e); }
   guardarEnFirestore();
   renderFacturas();
   showToast(`✓ Factura aplicada: ${act} precios actualizados, ${cre} ingredientes creados${cre?' en sus categorías (con merma inicial 0%)':''}${omit?', '+omit+' omitidos':''}`);
@@ -2923,7 +3023,7 @@ function buildSidebar(rol){
     }).join('');
     if(sec.nombre===null) return itemsHtml;
     return `<div class="nav-section" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between" onclick="toggleNavSeccion(${si})">
-      <span>${sec.nombre}</span><span style="font-size:9px;opacity:.55;margin-right:14px">${abierta?'▼':'▶'}</span>
+      <span>${esc(sec.nombre)}</span><span style="font-size:9px;opacity:.55;margin-right:14px">${abierta?'▼':'▶'}</span>
     </div>
     <div style="display:${abierta?'block':'none'}">${itemsHtml}</div>`;
   }).join('');
@@ -2972,7 +3072,7 @@ function toggleNavSeccion(si){
   if(!window._navAcordeon) window._navAcordeon = {};
   const abierta = window._navAcordeon[nombre] !== false;
   window._navAcordeon[nombre] = !abierta ? true : false;
-  try{ sessionStorage.setItem('navAcordeon', JSON.stringify(window._navAcordeon)); }catch(e){}
+  try{ sessionStorage.setItem('navAcordeon', JSON.stringify(window._navAcordeon)); }catch(e){ console.warn("[Provatio] error no crítico:", e); }
   buildSidebar(currentUser?.rol||'admin');
   const activo = document.getElementById('nav-'+vistaActual);
   if(activo) activo.classList.add('active');
@@ -3018,6 +3118,7 @@ async function abrirOperacion(opId){
       if(!demoData.eventos) demoData.eventos=[];
       demoData.eventos = demoData.eventos.filter(e=>e.opId!==opId).concat(evs);
       demoData.facturas = (typeof facturasCargadas!=='undefined') ? facturasCargadas : [];
+      window._revLocal = data._rev || 0;
       hideLoading();
     } catch(err){
       hideLoading();
@@ -3164,8 +3265,8 @@ function renderDashboardAdmin(){
   const alerts = [];
   if(ingsSinPrecio.length > 0) alerts.push(`⚠ ${ingsSinPrecio.length} ingrediente${ingsSinPrecio.length>1?'s':''} sin precio — los cálculos no serán correctos`);
   statsPorOp.forEach(({op, s})=>{
-    if(s.sinPrecio > 0) alerts.push(`⚠ <strong>${op.nombre}</strong>: ${s.sinPrecio} receta${s.sinPrecio>1?'s':''} sin precio de venta`);
-    if(s.sinIngredientes > 0) alerts.push(`⚠ <strong>${op.nombre}</strong>: ${s.sinIngredientes} receta${s.sinIngredientes>1?'s':''} sin ingredientes`);
+    if(s.sinPrecio > 0) alerts.push(`⚠ <strong>${esc(op.nombre)}</strong>: ${s.sinPrecio} receta${s.sinPrecio>1?'s':''} sin precio de venta`);
+    if(s.sinIngredientes > 0) alerts.push(`⚠ <strong>${esc(op.nombre)}</strong>: ${s.sinIngredientes} receta${s.sinIngredientes>1?'s':''} sin ingredientes`);
   });
 
   setContent('Panel general', `
@@ -3212,9 +3313,9 @@ function renderDashboardAdmin(){
             <th>Salud</th><th></th>
           </tr></thead>
           <tbody>
-            ${statsPorOp.length ? statsPorOp.map(({op, s})=>`<tr style="cursor:pointer" onclick="abrirOperacion('${op.id}')">
+            ${statsPorOp.length ? statsPorOp.map(({op, s})=>`<tr style="cursor:pointer" onclick="abrirOperacion('${escJs(op.id)}')">
               <td>
-                <strong>${op.nombre}</strong>
+                <strong>${esc(op.nombre)}</strong>
                 <div style="font-size:11px;color:var(--gris-2);margin-top:2px">${op.responsable || '<span style="color:#B8860B">Sin contacto — cargalo en Clientes</span>'}${op.telefono ? ' · '+op.telefono : ''}</div>
               </td>
               <td>${tipoBadgeHtml(op.tipo)}</td>
@@ -3315,8 +3416,8 @@ function renderDashboardOperacion(){
               ${locales.map(loc=>{
                 const recs = (loc._datos&&loc._datos.recetas)||[];
                 const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
-                return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
-                  <td><strong>${loc.nombre}</strong></td>
+                return `<tr style="cursor:pointer" onclick="abrirOperacion('${escJs(locId)}')">
+                  <td><strong>${esc(loc.nombre)}</strong></td>
                   <td>${tipoBadgeHtml(loc.tipo)}</td>
                   <td style="text-align:right">${recs.length}</td>
                   <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
@@ -3360,7 +3461,7 @@ function renderDashboardOperacion(){
     <div class="metric-grid">
       <div class="metric">
         <div class="metric-label">Operación</div>
-        <div class="metric-value" style="font-size:15px;margin-top:4px">${op.nombre}</div>
+        <div class="metric-value" style="font-size:15px;margin-top:4px">${esc(op.nombre)}</div>
         <div class="metric-sub">${op.tipo}</div>
       </div>
       <div class="metric">
@@ -3399,7 +3500,7 @@ function renderDashboardOperacion(){
               const {merc} = calcReceta(r, r.porciones||1);
               const pct = r.precioVenta>0 ? merc/r.precioVenta*100 : null;
               return `<tr>
-                <td><strong>${r.nombre}</strong></td>
+                <td><strong>${esc(r.nombre)}</strong></td>
                 <td>${badgeLinea(r.tipoServicio)}</td>
                 <td style="text-align:right">$${fmt(merc)}</td>
                 ${cocina ? '' : `<td style="text-align:right">${r.precioVenta>0 ? '$'+fmt(r.precioVenta) : '<span style="color:var(--gris-3)">—</span>'}</td>
@@ -3594,7 +3695,7 @@ function renderIngredientes(){
     const key = (cat||'sin-categoria').replace(/[^a-z0-9]/gi,'-');
     return `
       <div class="card" style="margin-bottom:8px">
-        <div class="card-header" onclick="toggleIngCat('${cat}')" style="cursor:pointer;user-select:none">
+        <div class="card-header" onclick="toggleIngCat('${escJs(cat)}')" style="cursor:pointer;user-select:none">
           <span style="font-size:14px;display:inline-block;transition:transform .2s;transform:rotate(${isOpen?'90':'0'}deg);margin-right:8px" id="ing-arrow-${key}">▶</span>
           <span class="card-title" style="flex:1">${cat}</span>
           <span style="font-size:12px;color:var(--gris-2);font-weight:400">${items.length} ingrediente${items.length!==1?'s':''}</span>
@@ -3611,7 +3712,7 @@ function renderIngredientes(){
               </tr></thead>
               <tbody>
                 ${items.map(item=>`<tr>
-                  <td><strong>${item.nombre}</strong></td>
+                  <td><strong>${esc(item.nombre)}</strong></td>
                   <td>${item.unidadTipo||item.unidad||'kg'}</td>
                   <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
                   <td style="text-align:right"><input type="number" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',+this.value)"></td>
@@ -3679,7 +3780,7 @@ function filtrarIngredientes(q){
           </tr></thead>
           <tbody>
             ${resultados.map(item=>`<tr>
-              <td><strong>${item.nombre}</strong></td>
+              <td><strong>${esc(item.nombre)}</strong></td>
               <td><span class="badge badge-gray">${item.cat}</span></td>
               <td>${item.unidadTipo||item.unidad||'kg'}</td>
               <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
@@ -3756,7 +3857,7 @@ function modalNuevoIng(ingExistente){
 
       <div class="form-group">
         <label>Nombre</label>
-        <input type="text" id="ni-nombre" placeholder="Ej: Provoleta" value="${ing.nombre||''}">
+        <input type="text" id="ni-nombre" placeholder="Ej: Provoleta" value="${esc(ing.nombre||'')}">
       </div>
 
       <div class="form-group">
@@ -4058,7 +4159,7 @@ function renderMermas(){
         ${m.desperdicio_pct?`<span style="font-size:10px;color:var(--gris-2);margin-left:4px">+${m.desperdicio_pct}% desp.</span>`:''}
       </td>
       <td style="font-size:11px;color:var(--oliva)">${m.subproducto||'—'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="delMerma('${m.id}')">${ico('trash',13)} Eliminar</button></td>
+      <td><button class="btn btn-danger btn-sm" onclick="delMerma('${escJs(m.id)}')">${ico('trash',13)} Eliminar</button></td>
     </tr>`).join('')}
   `).join('');
 
@@ -4129,7 +4230,7 @@ function editarMerma(id){
       </div>
       <div class="form-group">
         <label>Técnica de cocción</label>
-        <input type="text" id="em-tec" value="${m.tecnica}" placeholder="Ej: Cocción húmeda / Plancha / Sin merma">
+        <input type="text" id="em-tec" value="${esc(m.tecnica)}" placeholder="Ej: Cocción húmeda / Plancha / Sin merma">
       </div>
       <div class="form-group">
         <label>% Merma (negativo si gana peso)</label>
@@ -4359,16 +4460,16 @@ let recetaEditando = null;
 
 // El borrador del editor sobrevive a cambios de pestaña / PDF abiertos
 function guardarBorradorEditor(){
-  try{ if(recetaEditando) sessionStorage.setItem('prov_borrador_receta', JSON.stringify({op:currentOpId, r:recetaEditando})); }catch(e){}
+  try{ if(recetaEditando) sessionStorage.setItem('prov_borrador_receta', JSON.stringify({op:currentOpId, r:recetaEditando})); }catch(e){ console.warn("[Provatio] error no crítico:", e); }
 }
-function limpiarBorradorEditor(){ try{ sessionStorage.removeItem('prov_borrador_receta'); }catch(e){} }
+function limpiarBorradorEditor(){ try{ sessionStorage.removeItem('prov_borrador_receta'); }catch(e){ console.warn("[Provatio] error no crítico:", e); } }
 function recuperarBorradorEditor(){
   try{
     const raw = sessionStorage.getItem('prov_borrador_receta');
     if(!raw) return false;
     const d = JSON.parse(raw);
     if(d && d.op===currentOpId && d.r){ recetaEditando = d.r; return true; }
-  }catch(e){}
+  }catch(e){ console.warn("[Provatio] error no crítico:", e); }
   return false;
 }
 // Al volver el foco a la app, si había un borrador y la vista quedó vacía, restaurarlo
@@ -4397,15 +4498,15 @@ function renderRecetas(){
       sep = `<tr><td colspan="7" style="background:var(--crema);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--gris-1);padding:8px 12px">${r.tipoPlato||'Sin categoría'}</td></tr>`;
     }
     return sep + `<tr>
-      <td><strong>${r.nombre}</strong></td>
+      <td><strong>${esc(r.nombre)}</strong></td>
       <td>${badgeLinea(r.tipoServicio)}</td>
       <td><span class="badge badge-gray">${r.tipoPlato}</span></td>
       <td style="text-align:right">$${fmt(merc)}</td>
       <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'<span style="color:var(--gris-3)">—</span>'}</td>
       <td>${pct!==null?semaforo(pct):'<span class="sem" style="color:var(--gris-2)">Sin precio</span>'}</td>
       <td style="display:flex;gap:6px">
-        <button class="btn btn-secondary btn-sm" onclick="editarReceta('${r.id}')">${ico('edit',13)} Editar</button>
-        <button class="btn btn-danger btn-sm" onclick="delReceta('${r.id}')">${ico('trash',13)} Eliminar</button>
+        <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
+        <button class="btn btn-danger btn-sm" onclick="delReceta('${escJs(r.id)}')">${ico('trash',13)} Eliminar</button>
       </td>
     </tr>`;
   }).join('');
@@ -4470,13 +4571,13 @@ function filtrarRecetas(q){
               const {merc} = calcReceta(r, 1);
               const pct = r.precioVenta>0 ? merc/r.precioVenta*100 : null;
               return `<tr>
-                <td><strong>${r.nombre}</strong></td>
+                <td><strong>${esc(r.nombre)}</strong></td>
                 <td><span class="badge badge-op">${r.tipoServicio||'—'}</span></td>
                 <td>${r.tipoPlato||'—'}</td>
                 <td style="text-align:right">$${fmt(merc)}</td>
                 <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'—'}</td>
                 <td style="text-align:right">${pct!==null?fmtD(pct)+'%':'—'}</td>
-                <td><button class="btn btn-secondary btn-sm" onclick="editarReceta('${r.id}')">${ico('edit',13)} Editar</button></td>
+                <td><button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -4548,7 +4649,7 @@ function renderEditorReceta(){
         <td>
           <select onchange="updIngReceta(${idx},'recetaId',this.value)" style="min-width:180px">
             <option value="">— elegí receta —</option>
-            ${recetasDisp.map(x=>`<option value="${x.id}"${x.id===ing.recetaId?' selected':''}>${x.nombre}${x.rendimientoG?' ('+x.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
+            ${recetasDisp.map(x=>`<option value="${esc(x.id)}"${x.id===ing.recetaId?' selected':''}>${esc(x.nombre)}${x.rendimientoG?' ('+x.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
           </select>
         </td>
         <td style="font-size:11px;color:var(--azul);white-space:nowrap">
@@ -4635,7 +4736,7 @@ function renderEditorReceta(){
   setContent(r.nombre||'Nueva receta', `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="recetaEditando=null;limpiarBorradorEditor();renderRecetas()">← Volver</button>
-      <input type="text" id="rec-nombre" value="${r.nombre}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
+      <input type="text" id="rec-nombre" value="${esc(r.nombre)}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
         <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCentroProduccion() ? "$ PRECIO TRANSFERENCIA" : "$ PRECIO VENTA"}</span>
         <input type="number" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
@@ -4773,7 +4874,7 @@ function renderVarianteDelivery(r, mercSalon){
     const esCPIng = ing._esCP || false;
     const modoUsoCP = ing._modoUso || 'granel';
                 return `<tr>
-                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px"><option value="">— elegí —</option>${demoData.ingredientes.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i.nombre}</option>`).join('')}</select></td>
+                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px"><option value="">— elegí —</option>${demoData.ingredientes.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${esc(i.nombre)}</option>`).join('')}</select></td>
                   <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${tecnicas.length?'<option value="">— técnica —</option>'+tecnicas.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join(''):'<option>Elegí ingrediente</option>'}</select></td>
                   <td><input type="number" value="${ing.neto||''}" placeholder="g" style="width:75px;text-align:right" onchange="updIngDelivery(${idx},'neto',+this.value)"></td>
                   <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
@@ -5087,615 +5188,9 @@ function delEvento(id){
 }
 
 // ── RENDER PRINCIPAL ─────────────────────────────────────────────────────────
-function renderEvento(){
-  const recetas = getRecetas().sort((a,b)=>a.nombre.localeCompare(b.nombre));
-  const eventosGuardados = getEventos().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+// [dedup] renderEvento() estaba definida dos veces — se conserva la definición de más abajo
 
-  // Totales generales
-  let totalPersonas=0, totalCosto=0, totalIngresos=0;
-  eventoData.segmentos.forEach(seg=>{
-    const c=calcSegmento(seg);
-    totalPersonas+=(+seg.personas||0);
-    totalCosto+=c.costoTotal;
-    totalIngresos+=c.ingresos;
-  });
-
-  // Bebidas totales
-  let ingresosBebidasTotal=0;
-  eventoData.bebidas.forEach(b=>{
-    ingresosBebidasTotal += b.modalidad==='barraLibre'
-      ? (+b.precioVenta||0)
-      : (+b.precioVenta||0)*totalPersonas;
-  });
-
-  const extrasTotal = eventoData.gastosExtra.reduce((s,g)=>s+(+g.monto||0),0);
-  const margenTotal = (totalIngresos+ingresosBebidasTotal) - totalCosto - extrasTotal;
-  const pctCosto = (totalIngresos+ingresosBebidasTotal)>0 ? totalCosto/(totalIngresos+ingresosBebidasTotal)*100 : null;
-
-  // ── HTML de segmentos ────────────────────────────────────────────────────
-  const segHtml = eventoData.segmentos.map(seg=>{
-    const c = calcSegmento(seg);
-    const margenSeg = c.ingresos - c.costoTotal;
-    const pctSeg = c.ingresos>0 ? c.costoTotal/c.ingresos*100 : null;
-
-    const cursosHtml = CURSOS_EVENTO.map(curso=>{
-      const activo = seg.cursos[curso]!==undefined;
-      const items  = Array.isArray(seg.cursos[curso]) ? seg.cursos[curso] : [];
-      const costoTotalCurso = items.reduce((sum,item)=>{
-        if(!item.recetaId) return sum;
-        const rec = recetas.find(r=>r.id===item.recetaId);
-        return sum + (rec ? calcReceta(rec,1).merc : 0);
-      }, 0);
-
-      const personas = +seg.personas || 0;
-      const platosHtml = items.map(item=>{
-        const rec = item.recetaId ? recetas.find(r=>r.id===item.recetaId) : null;
-        const costoPorPersona = rec ? calcReceta(rec,1).merc : null;
-        const cantItem = +item.cantidad || 0;
-        const costoItem = (costoPorPersona!==null && cantItem>0) ? costoPorPersona*cantItem : null;
-        return `<div style="display:grid;grid-template-columns:1fr 120px 110px 90px auto;align-items:center;gap:8px;margin:6px 0 6px 24px;padding:6px 10px;background:var(--crema);border-radius:8px">
-          <select onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','recetaId',this.value)"
-            style="font-size:13px;width:100%">
-            <option value="">— elegí receta —</option>
-            ${recetas.map(r=>`<option value="${r.id}"${r.id===item.recetaId?' selected':''}>${r.nombre}</option>`).join('')}
-          </select>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Comensales</span>
-            <input type="number" value="${item.cantidad||''}" placeholder="${personas||'?'}" min="0"
-              style="width:100%;text-align:center;font-size:14px;font-weight:700;border:none;border-bottom:1.5px solid var(--dorado);background:transparent;padding:2px 0"
-              onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','cantidad',+this.value)">
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
-            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Costo/p</span>
-            <span style="font-size:13px;font-weight:600;color:var(--gris-1)">${costoPorPersona!==null?'$'+fmt(costoPorPersona):'—'}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
-            <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Subtotal</span>
-            <span style="font-size:13px;font-weight:700;color:var(--bordo)">${costoItem!==null?'$'+fmt(costoItem):'—'}</span>
-          </div>
-          <button class="btn btn-icon btn-sm" style="color:var(--bordo)" onclick="delPlatoCurso('${seg.id}','${curso}','${item.id}')">✕</button>
-        </div>`;
-      }).join('');
-
-      return `<div style="padding:8px 0;border-bottom:1px solid var(--crema-2)">
-        <div style="display:flex;align-items:center;gap:10px">
-          <label style="display:flex;align-items:center;gap:6px;min-width:130px;font-size:13px;cursor:pointer">
-            <input type="checkbox" ${activo?'checked':''} onchange="toggleCurso('${seg.id}','${curso}')">
-            <strong>${curso}</strong>
-          </label>
-          ${activo
-            ? `<span style="font-size:12px;color:var(--gris-2)">${items.length} plato${items.length!==1?'s':''} · $${fmt(costoTotalCurso)}/p total</span>
-               <button class="btn btn-secondary btn-sm" style="margin-left:auto;font-size:11px" onclick="addPlatoCurso('${seg.id}','${curso}')">+ Plato</button>`
-            : `<span style="font-size:12px;color:var(--gris-3);font-style:italic">No incluido</span>`}
-        </div>
-        ${activo ? platosHtml : ''}
-      </div>`;
-    }).join('');
-
-    return `<div class="card" style="margin-bottom:12px;border:1.5px solid ${seg.abierto?'var(--dorado)':'var(--crema-2)'}">
-      <div class="card-header" style="cursor:pointer" onclick="toggleSegmento('${seg.id}')">
-        <span class="card-title" style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:18px">${seg.abierto?'▾':'▸'}</span>
-          <input type="text" value="${seg.nombre}" placeholder="Nombre del segmento (ej: Vegano, Sin TACC...)"
-            onclick="event.stopPropagation()"
-            onchange="updSegmento('${seg.id}','nombre',this.value)"
-            style="border:none;background:transparent;font-size:15px;font-weight:700;color:var(--negro);min-width:200px">
-        </span>
-        <div style="display:flex;align-items:center;gap:16px">
-          ${c.personas>0 ? `<span style="font-size:13px;color:var(--gris-2)">${c.personas} pers. · Costo $${fmt(c.costoMercPorPersona)}/p · ${pctSeg!==null?fmtD(pctSeg)+'% food cost':''}</span>` : ''}
-          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();delSegmento('${seg.id}')">${ico('trash',12)}</button>
-        </div>
-      </div>
-      ${seg.abierto ? `
-      <div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-          <div class="form-group" style="margin:0">
-            <label style="font-size:12px">Cantidad de personas</label>
-            <input type="number" value="${seg.personas||''}" placeholder="0" min="0"
-              style="font-size:20px;font-weight:700;border:none;border-bottom:2px solid var(--dorado);background:transparent;width:100%;padding:4px 0"
-              onchange="updSegmento('${seg.id}','personas',+this.value)">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label style="font-size:12px">Precio por cabeza cotizado ($)</label>
-            <input type="number" value="${seg.precioCabeza||''}" placeholder="0" min="0"
-              style="font-size:20px;font-weight:700;border:none;border-bottom:2px solid var(--dorado);background:transparent;width:100%;padding:4px 0"
-              onchange="updSegmento('${seg.id}','precioCabeza',+this.value)">
-          </div>
-        </div>
-        <div style="font-size:12px;font-weight:700;color:var(--gris-1);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Cursos</div>
-        ${cursosHtml}
-        ${c.costoTotal>0 ? `
-        <div style="margin-top:12px;padding:10px;background:var(--crema);border-radius:8px;font-size:13px;display:flex;gap:24px;flex-wrap:wrap">
-          <span>Costo mercadería: <strong>$${fmt(c.costoTotal)}</strong></span>
-          <span>Cotizado: <strong>$${fmt(c.ingresos)}</strong></span>
-          <span style="font-weight:700;color:${margenSeg>=0?'var(--oliva)':'var(--bordo)'}">Margen: ${margenSeg>=0?'+':'−'}$${fmt(Math.abs(margenSeg))}</span>
-        </div>` : ''}
-      </div>` : ''}
-    </div>`;
-  }).join('');
-
-  // ── HTML de bebidas ──────────────────────────────────────────────────────
-  const bebidasHtml = eventoData.bebidas.length ? `
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Bebida</th><th>Modalidad</th>
-          <th style="text-align:right">Cantidad/p o total</th>
-          <th style="text-align:right">Precio venta ($)</th>
-          <th style="text-align:right">Ingreso total</th>
-          <th></th>
-        </tr></thead>
-        <tbody>
-          ${eventoData.bebidas.map(b=>{
-            const ingreso = b.modalidad==='barraLibre'
-              ? (+b.precioVenta||0)
-              : (+b.precioVenta||0)*totalPersonas;
-            return `<tr>
-              <td><input type="text" value="${b.nombre}" placeholder="Ej: Vino, Coca-Cola, Agua..."
-                style="border:none;background:transparent;font-weight:600;width:100%"
-                onchange="updBebidaEvento('${b.id}','nombre',this.value)"></td>
-              <td>
-                <select onchange="updBebidaEvento('${b.id}','modalidad',this.value)" style="font-size:13px">
-                  <option value="persona"${b.modalidad==='persona'?' selected':''}>Por persona</option>
-                  <option value="barraLibre"${b.modalidad==='barraLibre'?' selected':''}>Barra libre (precio fijo)</option>
-                </select>
-              </td>
-              <td style="text-align:right">
-                ${b.modalidad==='barraLibre'
-                  ? '<span style="font-size:12px;color:var(--gris-2)">Precio único</span>'
-                  : `<input type="number" value="${b.cantidad||''}" placeholder="0"
-                      style="width:70px;text-align:right" onchange="updBebidaEvento('${b.id}','cantidad',+this.value)">`}
-              </td>
-              <td style="text-align:right">
-                <input type="number" value="${b.precioVenta||''}" placeholder="0"
-                  style="width:110px;text-align:right" onchange="updBebidaEvento('${b.id}','precioVenta',+this.value)">
-              </td>
-              <td style="text-align:right;font-weight:600">$${fmt(ingreso)}</td>
-              <td><button class="btn btn-danger btn-sm" onclick="delBebidaEvento('${b.id}')">${ico('trash',13)}</button></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">Agregá las bebidas con su precio para el evento — pueden ser por persona o barra libre.</div>`;
-
-  // ── HTML de gastos extra ─────────────────────────────────────────────────
-  const gastosHtml = eventoData.gastosExtra.length ? `
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Concepto</th><th style="text-align:right;width:180px">Monto ($)</th><th style="width:60px"></th></tr></thead>
-        <tbody>
-          ${eventoData.gastosExtra.map(g=>`<tr>
-            <td><input type="text" list="ge-sugerencias" value="${(g.concepto||'').replace(/"/g,'&quot;')}" placeholder="Ej: Personal extra"
-              onchange="updGastoEvento('${g.id}','concepto',this.value)"
-              style="border:none;background:transparent;font-weight:600;width:100%"></td>
-            <td style="text-align:right"><input type="number" value="${g.monto||0}" onchange="updGastoEvento('${g.id}','monto',+this.value)" style="width:150px;text-align:right"></td>
-            <td><button class="btn btn-danger btn-sm" onclick="delGastoEvento('${g.id}')">${ico('trash',13)}</button></td>
-          </tr>`).join('')}
-          <tr style="background:var(--crema)">
-            <td style="font-weight:700">Total gastos extra</td>
-            <td style="text-align:right;font-weight:700">$${fmt(extrasTotal)}</td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table>
-      <datalist id="ge-sugerencias">${GASTOS_EVENTO_SUGERIDOS.map(s=>`<option value="${s}">`).join('')}</datalist>
-    </div>` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">Personal extra, logística, alquiler de equipos y vajilla, imponderables.</div>`;
-
-  // ── RESUMEN TOTAL ────────────────────────────────────────────────────────
-  const resumenHtml = `
-    <div style="padding:16px;background:var(--crema);border-radius:12px;margin-bottom:0">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
-        <div class="metric"><div class="metric-label">Total personas</div><div class="metric-value">${fmt(totalPersonas)}</div></div>
-        <div class="metric"><div class="metric-label">Segmentos</div><div class="metric-value">${eventoData.segmentos.length}</div></div>
-        <div class="metric"><div class="metric-label">Costo mercadería</div><div class="metric-value" style="color:var(--bordo)">$${fmt(totalCosto)}</div></div>
-        <div class="metric"><div class="metric-label">Gastos extra</div><div class="metric-value" style="color:var(--bordo)">$${fmt(extrasTotal)}</div></div>
-        <div class="metric"><div class="metric-label">Ingresos totales</div><div class="metric-value" style="color:var(--oliva)">$${fmt(totalIngresos+ingresosBebidasTotal)}</div></div>
-        <div class="metric">
-          <div class="metric-label">Margen neto</div>
-          <div class="metric-value" style="color:${margenTotal>=0?'var(--oliva)':'var(--bordo)'}">
-            ${margenTotal>=0?'+':'−'}$${fmt(Math.abs(margenTotal))}
-          </div>
-        </div>
-      </div>
-      ${pctCosto!==null ? semaforo(pctCosto) : ''}
-      ${totalPersonas>0 && eventoData.nombre.trim() ? `
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button class="btn btn-primary" style="flex:1" onclick="guardarEventoActual()">${ico('save',13)} ${eventoEditandoId ? 'Actualizar evento' : 'Guardar evento'}</button>
-          <button class="btn btn-secondary" onclick="imprimirPresupuesto()">${ico('print',13)} PDF</button>
-        </div>` : ''}
-    </div>`;
-
-  setContent('Evento / Presupuesto', `
-
-    ${eventoEditandoId ? `
-    <div class="alert alert-warn" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <span>${ico('edit',14)} <strong>Modo edición:</strong> estás modificando "${eventoData.nombre||'evento sin nombre'}"</span>
-      <button class="btn btn-secondary btn-sm" onclick="cancelarEdicionEvento()">✕ Cancelar edición</button>
-    </div>` : ''}
-
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-header"><span class="card-title">Datos del evento</span></div>
-      <div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
-          <div class="form-group" style="margin:0">
-            <label>Nombre del evento</label>
-            <input type="text" value="${eventoData.nombre}" placeholder="Ej: Casamiento García · 200 pax"
-              onchange="eventoData.nombre=this.value" style="width:100%">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label>Fecha</label>
-            <input type="month" value="${eventoData.fecha}" onchange="eventoData.fecha=this.value"
-              style="width:100%;padding:8px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label>Resumen</label>
-            <div style="font-size:13px;color:var(--gris-2);padding-top:8px">
-              ${totalPersonas>0 ? `${totalPersonas} personas en ${eventoData.segmentos.length} segmento${eventoData.segmentos.length>1?'s':''}` : 'Completá los segmentos'}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <h3 style="margin:0;font-size:15px;font-weight:700">Segmentos de comensales</h3>
-      <button class="btn btn-primary btn-sm" onclick="addSegmento()">+ Agregar segmento</button>
-    </div>
-    ${segHtml}
-
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-header">
-        <span class="card-title">Bebidas</span>
-        <button class="btn btn-secondary btn-sm" onclick="addBebidaEvento()">+ Agregar bebida</button>
-      </div>
-      ${bebidasHtml}
-    </div>
-
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-header">
-        <span class="card-title">Gastos extra</span>
-        <button class="btn btn-secondary btn-sm" onclick="addGastoEvento()">+ Agregar gasto</button>
-      </div>
-      ${gastosHtml}
-    </div>
-
-    <div class="card" style="margin-bottom:24px">
-      <div class="card-header"><span class="card-title">Resumen del evento</span></div>
-      <div class="card-body">${resumenHtml}</div>
-    </div>
-
-    ${eventosGuardados.length ? `
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Eventos guardados</span>
-        <input type="text" id="ev-buscar" placeholder="Buscar por nombre..." oninput="renderEvento()"
-          style="border:1.5px solid var(--crema-2);border-radius:8px;padding:6px 12px;font-size:13px;width:220px">
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Fecha</th><th>Evento</th>
-            <th style="text-align:right">Personas</th>
-            <th style="text-align:right">Ingresos</th>
-            <th style="text-align:right">Margen neto</th>
-            <th>Estado</th><th></th>
-          </tr></thead>
-          <tbody>
-            ${(()=>{
-              const q = (document.getElementById('ev-buscar')?.value||'').toLowerCase().trim();
-              const filtrados = q ? eventosGuardados.filter(e=>e.nombre.toLowerCase().includes(q)) : eventosGuardados;
-              if(!filtrados.length) return '<tr><td colspan="7" style="text-align:center;color:var(--gris-3);padding:20px">Sin resultados</td></tr>';
-              return filtrados.map(e=>`<tr style="${eventoEditandoId===e.id?'background:var(--crema);outline:2px solid var(--dorado)':''}">
-                <td>${e.fecha||'—'}</td>
-                <td><strong>${e.nombre}</strong></td>
-                <td style="text-align:right">${fmt(e.totalPersonas||e.porciones||0)}</td>
-                <td style="text-align:right">$${fmt(e.ingresos)}</td>
-                <td style="text-align:right;font-weight:700;color:${e.margen>=0?'#1B7A34':'#C02626'}">${e.margen>=0?'+':'−'}$${fmt(Math.abs(e.margen))}</td>
-                <td><button class="btn btn-sm ${e.estado==='confirmado'?'btn-primary':'btn-secondary'}"
-                  onclick="toggleEstadoEvento('${e.id}')">${e.estado==='confirmado'?'Confirmado':'Presupuestado'}</button></td>
-                <td style="display:flex;gap:6px">
-                  <button class="btn btn-secondary btn-sm" onclick="editarEvento('${e.id}')" title="Editar este evento">${ico('edit',13)}</button>
-                  <button class="btn btn-danger btn-sm" onclick="delEvento('${e.id}')">${ico('trash',13)}</button>
-                </td>
-              </tr>`).join('');
-            })()}
-          </tbody>
-        </table>
-      </div>
-      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
-        Los eventos <strong>Confirmados</strong> se suman en Salud del negocio del mes correspondiente.
-      </div>
-    </div>` : ''}
-  `);
-}
-
-function imprimirPresupuesto(){ window.print(); }
-
-
-
-// ── MÓDULO CADENA / MULTI-LOCAL ───────────────────────────────────────────────
-//
-// Arquitectura:
-// - Centro de Producción (CP): operación especial que provee ingredientes
-//   y recetas elaboradas a los locales de la cadena
-// - Local: operación normal que puede usar insumos del CP como ingredientes
-// - Vista ejecutiva: dashboard consolidado de todos los locales
-//
-// Tres tipos de productos del CP:
-//   1. ELABORADO: receta propia del CP (ravioles, panificación) → costo/kg calculado
-//   2. PORCIONADO: ingrediente comprado + merma de porcionado (ojo de bife, lomo)
-//   3. REDISTRIBUIDO: ingrediente comprado que el CP reparte sin transformación
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-// Obtener el Centro de Producción vinculado al admin
-function getCentroProduccion(){
-  const ops = Object.values(demoData.operaciones||{});
-  return ops.find(op => op.tipo==='Centro de Producción' || op.tipo==='centroProduccion') || null;
-}
-
-// Obtener locales de la cadena (solo los vinculados al CP activo)
-function getLocalesCadena(){
-  const cp = getCentroProduccion();
-  if(!cp) return [];
-  const cpId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===cp)?.[0];
-  if(!cpId) return [];
-  const ops = Object.values(demoData.operaciones||{});
-  return ops.filter(op =>
-    (op.tipo!=='Centro de Producción' && op.tipo!=='centroProduccion') &&
-    op.grupoId === cpId
-  );
-}
-
-// Obtener productos del CP para los locales.
-// Combina dos fuentes:
-//   1. Recetas del CP con rendimientoG — su precio de transferencia = precioVenta/rendimientoG
-//   2. Productos manuales legacy (porcionados, redistribuidos)
-function getProductosCP(){
-  const cp = getCentroProduccion();
-  if(!cp) return [];
-
-  const recetasCP = (cp._datos && cp._datos.recetas) || [];
-  const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
-
-  // Recetas elaboradas del CP con rendimiento definido
-  const desdeRecetas = recetasCP
-    .filter(r => r.rendimientoG > 0)
-    .map(r => {
-      const costoProd = calcularCostoRecetaCP(r, cp);
-      const costoXkg  = r.rendimientoG > 0 ? costoProd / r.rendimientoG * 1000 : 0;
-      // Precio de transferencia: precioVenta si está cargado, sino costo de producción
-      const precioTransfXkg = r.precioVenta > 0
-        ? r.precioVenta / r.rendimientoG * 1000
-        : costoXkg;
-      return {
-        id: 'cp-rec-' + r.id,
-        nombre: r.nombre + (r.precioVenta > 0 ? '' : ' (sin precio transf.)'),
-        tipoProd: 'elaborado',
-        recetaId: r.id,
-        costoXkg: precioTransfXkg,   // lo que le cobra al local
-        costoProduccionXkg: costoXkg, // lo que le cuesta al CP
-        tienePrecioTransferencia: r.precioVenta > 0,
-        margenXkg: precioTransfXkg - costoXkg,
-      };
-    });
-
-  // Productos manuales (porcionados, redistribuidos)
-  const legacy = (cp._productos || []).map(p => {
-    let costoXkg = 0;
-    if(p.tipoProd === 'porcionado'){
-      const ing = ingsCP.find(i => i.id === p.ingId);
-      if(ing && ing.precio > 0){
-        costoXkg = ing.precio / (1 - (p.mermaPorcionado||0)/100);
-      }
-    } else if(p.tipoProd === 'redistribuido'){
-      costoXkg = p.precioXkg || 0;
-    }
-    return { ...p, costoXkg, tienePrecioTransferencia: true };
-  });
-
-  return [...desdeRecetas, ...legacy];
-}
-
-// Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
-function calcularCostoRecetaCP(receta, cp){
-  const ings = (cp._datos && cp._datos.ingredientes) || [];
-  const mermas = (cp._datos && cp._datos.mermas) || [];
-  let total = 0;
-  (receta.ingredientes||[]).forEach(item => {
-    const ing = ings.find(i => i.id === item.ingId);
-    if(!ing || !ing.precio) return;
-    const merma = mermas.find(m => m.id === item.tecnica);
-    const mermaPct = merma ? (merma.pct||0) : 0;
-    const neto = item.neto || 0;
-    const bruto = neto / (1 - mermaPct/100);
-    total += (bruto/1000) * ing.precio;
-  });
-  return total;
-}
-
-// ── CRUD de productos del CP ─────────────────────────────────────────────────
-
-function nuevoProductoCP(){
-  return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg', modoUso:'directo' };
-}
-
-function addProductoCP(){
-  const cp = getCentroProduccion();
-  if(!cp) return;
-  if(!cp._productos) cp._productos = [];
-  cp._productos.push(nuevoProductoCP());
-  guardarEnFirestore();
-  renderCP();
-}
-
-function delProductoCP(id){
-  const cp = getCentroProduccion();
-  if(!cp) return;
-  cp._productos = (cp._productos||[]).filter(p => p.id !== id);
-  guardarEnFirestore();
-  renderCP();
-}
-
-function updProductoCP(id, campo, val){
-  const cp = getCentroProduccion();
-  if(!cp) return;
-  const p = (cp._productos||[]).find(x => x.id === id);
-  if(p){ p[campo] = val; guardarEnFirestore(); renderCP(); }
-}
-
-// ── RENDER CENTRO DE PRODUCCIÓN ──────────────────────────────────────────────
-// El CP funciona EXACTAMENTE igual que cualquier operación:
-//   Ingredientes → lo que compra y redistribuye
-//   Mermas       → técnicas de procesado
-//   Recetas      → lo que elabora, con rendimientoG y precioVenta = precio de transferencia
-// Los locales ven sus ingredientes y recetas en el selector con 🏭
-
-function renderCP(){
-  const cp = getCentroProduccion();
-  if(!cp){
-    setContent('Centro de Producción', `
-      <div class="alert alert-warn">
-        No hay ninguna operación de tipo <strong>Centro de Producción</strong> creada todavía.
-        Creá una operación y elegí el tipo "Centro de Producción" para activar este módulo.
-      </div>`);
-    return;
-  }
-
-  const recetasCP  = (cp._datos && cp._datos.recetas) || [];
-  const ingsCP     = (cp._datos && cp._datos.ingredientes) || [];
-
-  // Recetas con rendimientoG = productos disponibles para los locales
-  const recetasListas = recetasCP.filter(r => r.rendimientoG > 0);
-  const recetasSinRendimiento = recetasCP.filter(r => !r.rendimientoG || r.rendimientoG <= 0);
-
-  // Alerta si hay recetas sin rendimiento
-  const alertaSinRendimiento = recetasSinRendimiento.length ? `
-    <div class="alert alert-warn" style="margin-bottom:16px">
-      ⚠ ${recetasSinRendimiento.length} receta${recetasSinRendimiento.length>1?'s':''} sin rendimiento cargado:
-      ${recetasSinRendimiento.map(r=>`<strong>${r.nombre}</strong>`).join(', ')} —
-      agregá el rendimiento en gramos para que los locales puedan usarlas.
-    </div>` : '';
-
-  // Tabla de recetas elaboradas disponibles para locales
-  const filasRecetas = recetasListas.map(r => {
-    const costoProd = calcularCostoRecetaCP(r, cp);
-    const costoXkg  = r.rendimientoG > 0 ? costoProd / r.rendimientoG * 1000 : 0;
-    const precioTransfXkg = r.precioVenta > 0 ? r.precioVenta / r.rendimientoG * 1000 : null;
-    const margenXkg = precioTransfXkg !== null ? precioTransfXkg - costoXkg : null;
-    return `<tr>
-      <td><strong>${r.nombre}</strong></td>
-      <td style="text-align:right">${fmt(r.rendimientoG)}g</td>
-      <td style="text-align:right;color:var(--gris-2)">$${fmt(costoXkg)}/kg</td>
-      <td style="text-align:right;font-weight:700">
-        ${precioTransfXkg !== null
-          ? `$${fmt(precioTransfXkg)}/kg`
-          : `<span style="color:var(--bordo);font-size:12px">⚠ Sin precio transf.</span>`}
-      </td>
-      <td style="text-align:right">
-        ${margenXkg !== null
-          ? `<span style="color:${margenXkg>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(margenXkg))}/kg</span>`
-          : '—'}
-      </td>
-      <td>
-        <button class="btn btn-secondary btn-sm" onclick="abrirEditorRecetaCP('${r.id}')">
-          ${ico('edit',13)} Editar
-        </button>
-      </td>
-    </tr>`;
-  }).join('');
-
-  setContent('Centro de Producción', `
-    ${alertaSinRendimiento}
-
-    <div class="alert alert-info" style="margin-bottom:20px">
-      ${ico('bulb',14)} El CP gestiona sus <strong>Ingredientes</strong> y <strong>Recetas</strong> igual que cualquier operación.
-      Las recetas con rendimiento (g/ml) y precio de transferencia quedan disponibles para todos los locales de la cadena con el ícono 🏭.
-    </div>
-
-    <div style="display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="navigate('ingredientes')">
-        ${ico('clipboard',13)} Ingredientes del CP
-      </button>
-      <button class="btn btn-primary" onclick="navigate('mermas')">
-        ${ico('flame',13)} Mermas del CP
-      </button>
-      <button class="btn btn-primary" onclick="navigate('recetas')">
-        ${ico('chef',13)} Recetas del CP
-      </button>
-      <button class="btn btn-secondary" onclick="navigate('dashboardCadena')">
-        ${ico('chart',13)} Vista ejecutiva
-      </button>
-    </div>
-
-    ${recetasListas.length ? `
-    <div class="card" style="margin-bottom:20px">
-      <div class="card-header">
-        <span class="card-title">🏭 Recetas elaboradas disponibles para los locales</span>
-        <span style="font-size:12px;color:var(--gris-2)">${recetasListas.length} receta${recetasListas.length!==1?'s':''}</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Receta</th>
-            <th style="text-align:right;width:100px">Rendimiento</th>
-            <th style="text-align:right;width:130px">Costo prod./kg</th>
-            <th style="text-align:right;width:140px">Precio transf./kg</th>
-            <th style="text-align:right;width:110px">Margen/kg</th>
-            <th style="width:80px"></th>
-          </tr></thead>
-          <tbody>${filasRecetas}</tbody>
-        </table>
-      </div>
-      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
-        Para agregar una receta elaborada: andá a <strong>Recetas</strong> → cargá los ingredientes → completá el campo <strong>Rendimiento total (g/ml)</strong> → asigná un <strong>Precio de transferencia</strong>.
-      </div>
-    </div>` : `
-    <div class="card" style="margin-bottom:20px">
-      <div class="card-body" style="text-align:center;color:var(--gris-3)">
-        Todavía no hay recetas elaboradas disponibles para los locales.<br><br>
-        Andá a <strong>Recetas</strong>, cargá una receta con su rendimiento en gramos y su precio de transferencia — va a aparecer acá automáticamente.
-        <br><br>
-        <button class="btn btn-primary" onclick="navigate('recetas')">Ir a Recetas</button>
-      </div>
-    </div>`}
-
-    <div class="card">
-      <div class="card-header"><span class="card-title">Locales de la cadena</span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Local</th><th>Tipo</th>
-            <th style="text-align:right">Recetas</th><th></th>
-          </tr></thead>
-          <tbody>
-            ${getLocalesCadena().map(loc => {
-              const recs = (loc._datos && loc._datos.recetas) || [];
-              const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
-              return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
-                <td><strong>${loc.nombre}</strong><br><span style="font-size:11px;color:var(--gris-2)">Click para abrir</span></td>
-                <td>${tipoBadgeHtml(loc.tipo)}</td>
-                <td style="text-align:right">${recs.length}</td>
-                <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `);
-}
-
-// Abrir editor de receta del CP directamente
-function abrirEditorRecetaCP(recetaId){
-  const cp = getCentroProduccion();
-  if(!cp) return;
-  const rec = ((cp._datos&&cp._datos.recetas)||[]).find(r=>r.id===recetaId);
-  if(!rec) return;
-  recetaEditando = JSON.parse(JSON.stringify(rec));
-  vistaActual = 'editorReceta';
-  renderEditorReceta();
-}
+// [dedup] imprimirPresupuesto() estaba definida dos veces — se conserva la definición de más abajo
 
 
 // ── RENDER PRINCIPAL ─────────────────────────────────────────────────────────
@@ -5749,7 +5244,7 @@ function renderEvento(){
           <select onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','recetaId',this.value)"
             style="font-size:13px;width:100%">
             <option value="">— elegí receta —</option>
-            ${recetas.map(r=>`<option value="${r.id}"${r.id===item.recetaId?' selected':''}>${r.nombre}</option>`).join('')}
+            ${recetas.map(r=>`<option value="${r.id}"${r.id===item.recetaId?' selected':''}>${esc(r.nombre)}</option>`).join('')}
           </select>
           <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
             <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Comensales</span>
@@ -5765,7 +5260,7 @@ function renderEvento(){
             <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Subtotal</span>
             <span style="font-size:13px;font-weight:700;color:var(--bordo)">${costoItem!==null?'$'+fmt(costoItem):'—'}</span>
           </div>
-          <button class="btn btn-icon btn-sm" style="color:var(--bordo)" onclick="delPlatoCurso('${seg.id}','${curso}','${item.id}')">✕</button>
+          <button class="btn btn-icon btn-sm" style="color:var(--bordo)" onclick="delPlatoCurso('${escJs(seg.id)}','${curso}','${item.id}')">✕</button>
         </div>`;
       }).join('');
 
@@ -5777,7 +5272,7 @@ function renderEvento(){
           </label>
           ${activo
             ? `<span style="font-size:12px;color:var(--gris-2)">${items.length} plato${items.length!==1?'s':''} · $${fmt(costoTotalCurso)}/p total</span>
-               <button class="btn btn-secondary btn-sm" style="margin-left:auto;font-size:11px" onclick="addPlatoCurso('${seg.id}','${curso}')">+ Plato</button>`
+               <button class="btn btn-secondary btn-sm" style="margin-left:auto;font-size:11px" onclick="addPlatoCurso('${escJs(seg.id)}','${curso}')">+ Plato</button>`
             : `<span style="font-size:12px;color:var(--gris-3);font-style:italic">No incluido</span>`}
         </div>
         ${activo ? platosHtml : ''}
@@ -5785,10 +5280,10 @@ function renderEvento(){
     }).join('');
 
     return `<div class="card" style="margin-bottom:12px;border:1.5px solid ${seg.abierto?'var(--dorado)':'var(--crema-2)'}">
-      <div class="card-header" style="cursor:pointer" onclick="toggleSegmento('${seg.id}')">
+      <div class="card-header" style="cursor:pointer" onclick="toggleSegmento('${escJs(seg.id)}')">
         <span class="card-title" style="display:flex;align-items:center;gap:10px">
           <span style="font-size:18px">${seg.abierto?'▾':'▸'}</span>
-          <input type="text" value="${seg.nombre}" placeholder="Nombre del segmento (ej: Vegano, Sin TACC...)"
+          <input type="text" value="${esc(seg.nombre)}" placeholder="Nombre del segmento (ej: Vegano, Sin TACC...)"
             onclick="event.stopPropagation()"
             onchange="updSegmento('${seg.id}','nombre',this.value)"
             style="border:none;background:transparent;font-size:15px;font-weight:700;color:var(--negro);min-width:200px">
@@ -5843,7 +5338,7 @@ function renderEvento(){
               ? (+b.precioVenta||0)
               : (+b.precioVenta||0)*totalPersonas;
             return `<tr>
-              <td><input type="text" value="${b.nombre}" placeholder="Ej: Vino, Coca-Cola, Agua..."
+              <td><input type="text" value="${esc(b.nombre)}" placeholder="Ej: Vino, Coca-Cola, Agua..."
                 style="border:none;background:transparent;font-weight:600;width:100%"
                 onchange="updBebidaEvento('${b.id}','nombre',this.value)"></td>
               <td>
@@ -5863,7 +5358,7 @@ function renderEvento(){
                   style="width:110px;text-align:right" onchange="updBebidaEvento('${b.id}','precioVenta',+this.value)">
               </td>
               <td style="text-align:right;font-weight:600">$${fmt(ingreso)}</td>
-              <td><button class="btn btn-danger btn-sm" onclick="delBebidaEvento('${b.id}')">${ico('trash',13)}</button></td>
+              <td><button class="btn btn-danger btn-sm" onclick="delBebidaEvento('${escJs(b.id)}')">${ico('trash',13)}</button></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -5881,7 +5376,7 @@ function renderEvento(){
               onchange="updGastoEvento('${g.id}','concepto',this.value)"
               style="border:none;background:transparent;font-weight:600;width:100%"></td>
             <td style="text-align:right"><input type="number" value="${g.monto||0}" onchange="updGastoEvento('${g.id}','monto',+this.value)" style="width:150px;text-align:right"></td>
-            <td><button class="btn btn-danger btn-sm" onclick="delGastoEvento('${g.id}')">${ico('trash',13)}</button></td>
+            <td><button class="btn btn-danger btn-sm" onclick="delGastoEvento('${escJs(g.id)}')">${ico('trash',13)}</button></td>
           </tr>`).join('')}
           <tr style="background:var(--crema)">
             <td style="font-weight:700">Total gastos extra</td>
@@ -5931,7 +5426,7 @@ function renderEvento(){
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div class="form-group" style="margin:0">
             <label>Nombre del evento</label>
-            <input type="text" value="${eventoData.nombre}" placeholder="Ej: Casamiento García · 200 pax"
+            <input type="text" value="${esc(eventoData.nombre)}" placeholder="Ej: Casamiento García · 200 pax"
               onchange="eventoData.nombre=this.value" style="width:100%">
           </div>
           <div class="form-group" style="margin:0">
@@ -5999,15 +5494,15 @@ function renderEvento(){
               if(!filtrados.length) return '<tr><td colspan="7" style="text-align:center;color:var(--gris-3);padding:20px">Sin resultados</td></tr>';
               return filtrados.map(e=>`<tr style="${eventoEditandoId===e.id?'background:var(--crema);outline:2px solid var(--dorado)':''}">
                 <td>${e.fecha||'—'}</td>
-                <td><strong>${e.nombre}</strong></td>
+                <td><strong>${esc(e.nombre)}</strong></td>
                 <td style="text-align:right">${fmt(e.totalPersonas||e.porciones||0)}</td>
                 <td style="text-align:right">$${fmt(e.ingresos)}</td>
                 <td style="text-align:right;font-weight:700;color:${e.margen>=0?'#1B7A34':'#C02626'}">${e.margen>=0?'+':'−'}$${fmt(Math.abs(e.margen))}</td>
                 <td><button class="btn btn-sm ${e.estado==='confirmado'?'btn-primary':'btn-secondary'}"
-                  onclick="toggleEstadoEvento('${e.id}')">${e.estado==='confirmado'?'Confirmado':'Presupuestado'}</button></td>
+                  onclick="toggleEstadoEvento('${escJs(e.id)}')">${e.estado==='confirmado'?'Confirmado':'Presupuestado'}</button></td>
                 <td style="display:flex;gap:6px">
-                  <button class="btn btn-secondary btn-sm" onclick="editarEvento('${e.id}')" title="Editar este evento">${ico('edit',13)}</button>
-                  <button class="btn btn-danger btn-sm" onclick="delEvento('${e.id}')">${ico('trash',13)}</button>
+                  <button class="btn btn-secondary btn-sm" onclick="editarEvento('${escJs(e.id)}')" title="Editar este evento">${ico('edit',13)}</button>
+                  <button class="btn btn-danger btn-sm" onclick="delEvento('${escJs(e.id)}')">${ico('trash',13)}</button>
                 </td>
               </tr>`).join('');
             })()}
@@ -6064,12 +5559,15 @@ function getLocalesCadena(){
 //   1. Recetas del CP con rendimientoG — su precio de transferencia = precioVenta/rendimientoG
 //   2. Productos manuales legacy (porcionados, redistribuidos)
 function getProductosCP(){
-  // Solo devuelve recetas elaboradas del CP con rendimientoG definido
-  // Los ingredientes del CP se acceden via getIngredientesConCP()
+  // Productos que el CP entrega a los locales. Dos orígenes:
+  //  a) recetas elaboradas del CP con rendimiento cargado
+  //  b) productos manuales del CP (porcionados y redistribuidos)
   const cp = getCentroProduccion();
   if(!cp) return [];
   const recetasCP = (cp._datos && cp._datos.recetas) || [];
-  return recetasCP
+  const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
+
+  const desdeRecetas = recetasCP
     .filter(r => r.rendimientoG > 0)
     .map(r => {
       const costoProd = calcularCostoRecetaCP(r, cp);
@@ -6088,8 +5586,30 @@ function getProductosCP(){
         tienePrecioTransferencia: r.precioVenta > 0,
         margenXkg: precioTransfXkg - costoXkg,
       };
-    })
-    .sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+    });
+
+  // Productos manuales cargados desde la pantalla "Centro de Producción"
+  const manuales = (cp._productos || []).map(p => {
+    let costoXkg = 0;
+    if(p.tipoProd === 'porcionado'){
+      const ing = ingsCP.find(i => i.id === p.ingId);
+      if(ing && ing.precio > 0){
+        const costoBase = (ing.precio||0) / (ing.bulto||1);
+        costoXkg = costoBase / (1 - (p.mermaPorcionado||0)/100);
+      }
+    } else if(p.tipoProd === 'redistribuido'){
+      costoXkg = p.precioXkg || 0;
+    }
+    return {
+      ...p,
+      costoXkg,
+      modoUso: p.modoUso || (p.tipoProd === 'porcionado' ? 'porcionado' : 'directo'),
+      tienePrecioTransferencia: true
+    };
+  });
+
+  return [...desdeRecetas, ...manuales]
+    .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es'));
 }
 
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
@@ -6171,13 +5691,13 @@ function renderCP(){
     const selector = p.tipoProd==='elaborado'
       ? `<select onchange="updProductoCP('${p.id}','recetaId',this.value)" style="font-size:12px;width:100%">
            <option value="">— elegí receta del CP —</option>
-           ${recetasCP.map(r=>`<option value="${r.id}"${r.id===p.recetaId?' selected':''}>${r.nombre}${r.rendimientoG?' ('+r.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
+           ${recetasCP.map(r=>`<option value="${esc(r.id)}"${r.id===p.recetaId?' selected':''}>${esc(r.nombre)}${r.rendimientoG?' ('+r.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
          </select>`
       : p.tipoProd==='porcionado'
       ? `<div style="display:flex;gap:8px;align-items:center">
            <select onchange="updProductoCP('${p.id}','ingId',this.value)" style="font-size:12px;flex:1">
              <option value="">— ingrediente base —</option>
-             ${ingsCP.map(i=>`<option value="${i.id}"${i.id===p.ingId?' selected':''}>${i.nombre}</option>`).join('')}
+             ${ingsCP.map(i=>`<option value="${i.id}"${i.id===p.ingId?' selected':''}>${esc(i.nombre)}</option>`).join('')}
            </select>
            <input type="number" value="${p.mermaPorcionado||0}" placeholder="% merma" style="width:80px;font-size:12px"
              onchange="updProductoCP('${p.id}','mermaPorcionado',+this.value)">
@@ -6188,7 +5708,7 @@ function renderCP(){
          <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg</span>`;
 
     return `<tr>
-      <td><input type="text" value="${p.nombre}" placeholder="Nombre del producto"
+      <td><input type="text" value="${esc(p.nombre)}" placeholder="Nombre del producto"
         style="border:none;background:transparent;font-weight:600;width:100%"
         onchange="updProductoCP('${p.id}','nombre',this.value)"></td>
       <td>
@@ -6207,7 +5727,7 @@ function renderCP(){
       <td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}</td>
       <td style="text-align:right;font-weight:700;color:var(--negro)">${precioTransf}</td>
       <td style="text-align:right">${margen}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="delProductoCP('${p.id}')">${ico('trash',13)}</button></td>
+      <td><button class="btn btn-danger btn-sm" onclick="delProductoCP('${escJs(p.id)}')">${ico('trash',13)}</button></td>
     </tr>`;
   }).join('');
 
@@ -6254,8 +5774,8 @@ function renderCP(){
             ${getLocalesCadena().map(loc => {
               const recs = (loc._datos && loc._datos.recetas) || [];
               const locId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===loc)?.[0];
-              return `<tr style="cursor:pointer" onclick="abrirOperacion('${locId}')">
-                <td><strong>${loc.nombre}</strong><br><span style="font-size:11px;color:var(--gris-2)">Click para abrir</span></td>
+              return `<tr style="cursor:pointer" onclick="abrirOperacion('${escJs(locId)}')">
+                <td><strong>${esc(loc.nombre)}</strong><br><span style="font-size:11px;color:var(--gris-2)">Click para abrir</span></td>
                 <td>${tipoBadgeHtml(loc.tipo)}</td>
                 <td style="text-align:right">${recs.length}</td>
                 <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${locId}')">Abrir →</button></td>
@@ -6318,8 +5838,8 @@ function renderDashboardCadena(){
                  : pctProm < 30 ? '● OK'
                  : pctProm < 38 ? '● Atención'
                  : '● Crítico';
-    return `<tr style="cursor:pointer" onclick="abrirOperacion('${loc.id||Object.keys(demoData.operaciones).find(k=>demoData.operaciones[k]===loc)}')">
-      <td><strong>${loc.nombre}</strong><br>${tipoBadgeHtml(loc.tipo)}</td>
+    return `<tr style="cursor:pointer" onclick="abrirOperacion('${escJs(loc.id||Object.keys(demoData.operaciones).find(k=>demoData.operaciones[k]===loc))}')">
+      <td><strong>${esc(loc.nombre)}</strong><br>${tipoBadgeHtml(loc.tipo)}</td>
       <td style="text-align:right">${recetas.length}</td>
       <td style="text-align:right">${conPrecio}</td>
       <td style="text-align:right;font-weight:700;color:${col}">${pctProm !== null ? fmtD(pctProm)+'%' : '—'}</td>
@@ -6508,7 +6028,7 @@ function renderBuffet(){
                   padding:8px 12px;margin:4px 0 4px 20px;background:var(--crema);border-radius:8px">
           <select onchange="updItem('${franja.id}','${item.id}','recetaId',this.value)" style="font-size:13px">
             <option value="">— elegí receta —</option>
-            ${recetas.map(r=>`<option value="${r.id}"${r.id===item.recetaId?' selected':''}>${r.nombre}${r.rendimientoG?' ('+r.rendimientoG+'g)':''}</option>`).join('')}
+            ${recetas.map(r=>`<option value="${esc(r.id)}"${r.id===item.recetaId?' selected':''}>${esc(r.nombre)}${r.rendimientoG?' ('+r.rendimientoG+'g)':''}</option>`).join('')}
           </select>
           <select onchange="updItem('${franja.id}','${item.id}','modalidad',this.value)" style="font-size:13px">
             <option value="kg"${item.modalidad==='kg'?' selected':''}>Kg totales</option>
@@ -6527,15 +6047,15 @@ function renderBuffet(){
           <div style="text-align:right;font-size:13px;font-weight:700;color:var(--bordo)">
             ${c ? '$'+fmt(c.costoTotal) : '—'}
           </div>
-          <button class="btn btn-icon btn-sm" style="color:var(--bordo)" onclick="delItem('${franja.id}','${item.id}')">✕</button>
+          <button class="btn btn-icon btn-sm" style="color:var(--bordo)" onclick="delItem('${escJs(franja.id)}','${item.id}')">✕</button>
         </div>`;
       }).join('');
 
       return `<div style="border:1.5px solid var(--crema-2);border-radius:10px;margin-bottom:10px">
         <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--crema);border-radius:8px 8px ${franja.abierto?'0 0':'8px 8px'}"
-          onclick="toggleFranja('${franja.id}')">
+          onclick="toggleFranja('${escJs(franja.id)}')">
           <span style="font-size:16px">${franja.abierto?'▾':'▸'}</span>
-          <input type="text" value="${franja.nombre}" placeholder="Nombre de la franja (ej: Barra de café, Mesa fría...)"
+          <input type="text" value="${esc(franja.nombre)}" placeholder="Nombre de la franja (ej: Barra de café, Mesa fría...)"
             onclick="event.stopPropagation()"
             onchange="updFranja('${franja.id}','nombre',this.value)"
             style="border:none;background:transparent;font-size:14px;font-weight:700;flex:1">
@@ -6571,7 +6091,7 @@ function renderBuffet(){
           <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:12px;align-items:end">
             <div class="form-group" style="margin:0">
               <label>Nombre del servicio</label>
-              <input type="text" value="${srv.nombre}" placeholder="Ej: Desayuno buffet · Julio 2026"
+              <input type="text" value="${esc(srv.nombre)}" placeholder="Ej: Desayuno buffet · Julio 2026"
                 onchange="buffetActual.nombre=this.value" style="width:100%">
             </div>
             <div class="form-group" style="margin:0">
@@ -6664,17 +6184,17 @@ function renderBuffet(){
                 const c=calcServicioBuffet(b);
                 return `<tr style="${buffetActual?.id===b.id?'background:var(--crema);outline:2px solid var(--dorado)':''}">
                   <td>${b.fecha||'—'}</td>
-                  <td><strong>${b.nombre}</strong></td>
+                  <td><strong>${esc(b.nombre)}</strong></td>
                   <td><span class="badge badge-op">${b.tipo}</span></td>
                   <td style="text-align:right">${fmt(c.comensales)}</td>
                   <td style="text-align:right">$${fmt(c.costoTotalServicio)}</td>
                   <td style="text-align:right">$${fmt(c.costoPorPersona)}</td>
                   <td style="text-align:right">$${fmt(c.costoMensual)}</td>
                   <td><button class="btn btn-sm ${b.estado==='confirmado'?'btn-primary':'btn-secondary'}"
-                    onclick="toggleEstadoBuffet('${b.id}')">${b.estado==='confirmado'?'Confirmado':'Borrador'}</button></td>
+                    onclick="toggleEstadoBuffet('${escJs(b.id)}')">${b.estado==='confirmado'?'Confirmado':'Borrador'}</button></td>
                   <td style="display:flex;gap:6px">
-                    <button class="btn btn-secondary btn-sm" onclick="editarBuffet('${b.id}')">${ico('edit',13)}</button>
-                    <button class="btn btn-danger btn-sm" onclick="delBuffet('${b.id}')">${ico('trash',13)}</button>
+                    <button class="btn btn-secondary btn-sm" onclick="editarBuffet('${escJs(b.id)}')">${ico('edit',13)}</button>
+                    <button class="btn btn-danger btn-sm" onclick="delBuffet('${escJs(b.id)}')">${ico('trash',13)}</button>
                   </td>
                 </tr>`;
               }).join('');
@@ -6735,7 +6255,7 @@ function renderSemanal(){
                     <select onchange="setPlanSemanal('${dia}','${servicio}',this.value)" style="width:100%;font-size:12px">
                       <option value="">— elegí receta —</option>
                       ${getRecetas().filter(r=>r.tipoServicio===servicio).map(r=>
-                        `<option value="${r.id}"${sel&&sel.recetaId===r.id?' selected':''}>${r.nombre}</option>`
+                        `<option value="${r.id}"${sel&&sel.recetaId===r.id?' selected':''}>${esc(r.nombre)}</option>`
                       ).join('')}
                     </select>
                     ${sel?`<input type="number" value="${sel.porciones||120}" style="width:70px;margin-top:4px;font-size:12px" placeholder="porciones"
@@ -6927,7 +6447,7 @@ function renderResultado(){
             ${gastos.map(g=>`<tr>
               <td><input type="text" value="${(g.concepto||'').replace(/"/g,'&quot;')}" onchange="updGastoFijo('${g.id}','concepto',this.value)" style="border:none;background:transparent;padding:4px 0;font-weight:600"></td>
               <td style="text-align:right"><input type="number" value="${g.monto||0}" onchange="updGastoFijo('${g.id}','monto',+this.value)" style="width:150px;text-align:right"></td>
-              <td><button class="btn btn-danger btn-sm" onclick="delGastoFijo('${g.id}')">${ico('trash',13)}</button></td>
+              <td><button class="btn btn-danger btn-sm" onclick="delGastoFijo('${escJs(g.id)}')">${ico('trash',13)}</button></td>
             </tr>`).join('')}
             <tr style="background:var(--crema)">
               <td style="font-weight:700">Total gastos fijos</td>
@@ -7010,7 +6530,7 @@ function renderResultado(){
             ${eventosMes.length ? `
               ${eventosMes.map(e=>`
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;padding:5px 0;border-bottom:1px solid var(--crema-2);${e.estado!=='confirmado'?'opacity:.55':''}">
-                  <span><strong>${e.nombre}</strong> · ${fmt(e.porciones)} personas</span>
+                  <span><strong>${esc(e.nombre)}</strong> · ${fmt(e.porciones)} personas</span>
                   <span style="white-space:nowrap">$${fmt(e.ingresos)} · margen <strong style="color:${e.margen>=0?'#1B7A34':'#C02626'}">${e.margen>=0?'+':'−'}$${fmt(Math.abs(e.margen))}</strong> · <em>${e.estado==='confirmado'?'confirmado':'presupuestado (no suma)'}</em></span>
                 </div>`).join('')}
               <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-top:8px">
@@ -7062,7 +6582,7 @@ function renderResultado(){
         <div class="card-body">
           <div style="font-size:12px;color:var(--gris-2);margin-bottom:14px">Cargá las unidades vendidas de cada receta en <strong>${mesSel}</strong> y la matriz clasifica tu carta: qué platos sostienen el negocio, cuáles venden mucho pero pierden plata, y cuáles hay que sacar.</div>
           <div style="margin-bottom:14px">
-            <button class="btn btn-secondary btn-sm" onclick="importarVentasDesdeExcel('${mesSel}')">${ico('chart',13)} Importar ventas desde Excel</button>
+            <button class="btn btn-secondary btn-sm" onclick="importarVentasDesdeExcel('${escJs(mesSel)}')">${ico('chart',13)} Importar ventas desde Excel</button>
             <span style="font-size:11px;color:var(--gris-3);margin-left:8px">Columnas: RECETA · UNIDADES VENDIDAS</span>
           </div>
           <div class="table-wrap" style="margin-bottom:16px">
@@ -7078,7 +6598,7 @@ function renderResultado(){
                   const tieneDelivery = getOp().tieneDelivery && rec && rec.delivery && rec.delivery.activa;
                   const ventasMes = (getOp().ventasPorMes||{})[mesSel]||{};
                   return `<tr>
-                  <td><strong>${i.nombre}</strong></td>
+                  <td><strong>${esc(i.nombre)}</strong></td>
                   <td style="text-align:right">$${fmt(i.pv)}</td>
                   <td style="text-align:right">$${fmt(i.mc)}</td>
                   <td style="text-align:right"><input type="number" min="0" value="${i.unid||''}" placeholder="0" style="width:90px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)"></td>
@@ -7155,9 +6675,9 @@ function renderResultado(){
                     ${vis.map(i=>{
                       const c = CLASES_MENU[i.clase];
                       return `<tr>
-                        <td><strong>${i.nombre}</strong></td>
+                        <td><strong>${esc(i.nombre)}</strong></td>
                         <td><span class="badge badge-gray">${i.tipoPlato}</span></td>
-                        <td><span class="sem" style="background:${c.col}18;color:${c.col};border:1px solid ${c.col}55"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> ${c.nombre}</span></td>
+                        <td><span class="sem" style="background:${c.col}18;color:${c.col};border:1px solid ${c.col}55"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> ${esc(c.nombre)}</span></td>
                         <td style="text-align:right">$${fmt(i.pv)}</td>
                         <td style="text-align:right;${i.fc>35?'color:#C02626;font-weight:700':''}">${fmtD(i.fc)}%</td>
                         <td style="text-align:right">${fmt(i.unid)}</td>
@@ -7480,7 +7000,7 @@ function chartMatriz(matriz, popThreshold, mcProm){
 
   const leyenda = Object.entries(CLASES_MENU).map(([k,v],idx)=>
     `<circle cx="${mL+idx*130+10}" cy="${H-8}" r="5" fill="${v.col}"/>
-     <text x="${mL+idx*130+20}" y="${H-4}" font-family="Arial" font-size="10" fill="#555">${v.nombre}</text>`
+     <text x="${mL+idx*130+20}" y="${H-4}" font-family="Arial" font-size="10" fill="#555">${esc(v.nombre)}</text>`
   ).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FAFAF8;border-radius:10px">
@@ -7581,7 +7101,7 @@ function chartDona(matriz){
     return `<g>
       <rect x="280" y="${y}" width="380" height="46" fill="${g.col}" opacity="0.08" rx="8"/>
       <circle cx="300" cy="${y+23}" r="8" fill="${g.col}" opacity="0.9"/>
-      <text x="318" y="${y+16}" font-family="Arial" font-size="13" font-weight="700" fill="${g.col}">${g.nombre}</text>
+      <text x="318" y="${y+16}" font-family="Arial" font-size="13" font-weight="700" fill="${g.col}">${esc(g.nombre)}</text>
       <text x="318" y="${y+32}" font-family="Arial" font-size="11" fill="#555">${g.count} plato${g.count!==1?'s':''} · $${fmtCorto(g.contrib)} · ${fmtD(pct)}% del total</text>
     </g>`;
   }).join('');
@@ -7732,7 +7252,7 @@ function descargarInforme(){
       <thead><tr><th>Receta</th><th>Clase</th><th class="num">Food cost</th><th class="num">Unidades</th><th class="num">Contribución del mes</th></tr></thead>
       <tbody>
         ${c.matriz.map(i=>`<tr>
-          <td>${i.nombre}</td>
+          <td>${esc(i.nombre)}</td>
           <td><strong>${({estrella:'Estrella',caballito:'Caballito de batalla',puzzle:'Puzzle',perro:'Perro'})[i.clase]}</strong></td>
           <td class="num">${fmtD(i.fc)}%</td>
           <td class="num">${fmt(i.unid)}</td>
@@ -7878,7 +7398,7 @@ function renderRentabilidad(){
               };
               vis.sort(ord[orden]||ord.costo);
               return vis.map(r=>`<tr>
-              <td><strong>${r.nombre}</strong></td>
+              <td><strong>${esc(r.nombre)}</strong></td>
               <td>${badgeLinea(r.tipoServicio)}</td>
               <td><span class="badge badge-gray">${r.tipoPlato}</span></td>
               <td style="text-align:right">$${fmt(r.merc)}</td>
@@ -7991,7 +7511,7 @@ function renderClientes(){
     return `<tr style="${indent?'background:#FAFAF8':''}"">
       <td>
         ${indent?'<span style="color:var(--gris-3);margin-right:6px;font-size:13px">└</span>':''}
-        <strong>${op.nombre}</strong>
+        <strong>${esc(op.nombre)}</strong>
         <div style="font-size:11px;color:var(--gris-2);margin-top:2px">
           ${op.responsable?op.responsable:'<span style="color:#B8860B">Sin datos de contacto</span>'}${op.telefono?' · '+op.telefono:''}
         </div>
@@ -8000,10 +7520,10 @@ function renderClientes(){
       <td>${recetasLabel(op)}</td>
       <td><span class="sem sem-v"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> Activo</span></td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="modalDatosCliente('${op.id}')">${ico('edit',13)} Datos</button>
-        <button class="btn btn-secondary btn-sm" onclick="modalVincularCadena('${op.id}')">${ico('link',13)} Cadena</button>
-        <button class="btn btn-secondary btn-sm" onclick="abrirOperacion('${op.id}')">Ver operación</button>
-        <button class="btn btn-danger btn-sm" onclick="delOperacion('${op.id}')">${ico('trash',13)} Eliminar</button>
+        <button class="btn btn-secondary btn-sm" onclick="modalDatosCliente('${escJs(op.id)}')">${ico('edit',13)} Datos</button>
+        <button class="btn btn-secondary btn-sm" onclick="modalVincularCadena('${escJs(op.id)}')">${ico('link',13)} Cadena</button>
+        <button class="btn btn-secondary btn-sm" onclick="abrirOperacion('${escJs(op.id)}')">Ver operación</button>
+        <button class="btn btn-danger btn-sm" onclick="delOperacion('${escJs(op.id)}')">${ico('trash',13)} Eliminar</button>
       </td>
     </tr>`;
   }
@@ -8058,11 +7578,11 @@ window.modalVincularCadena = function(opId){
         <label>Centro de Producción / Casa Matriz</label>
         <select id="vc-grupo">
           <option value="">— Operación independiente —</option>
-          ${cps.map(([k,v])=>`<option value="${k}"${op.grupoId===k?' selected':''}>${v.nombre}</option>`).join('')}
+          ${cps.map(([k,v])=>`<option value="${k}"${op.grupoId===k?' selected':''}>${esc(v.nombre)}</option>`).join('')}
         </select>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn btn-primary" style="flex:1" onclick="guardarVinculoCadena('${opId}')">Guardar</button>
+        <button class="btn btn-primary" style="flex:1" onclick="guardarVinculoCadena('${escJs(opId)}')">Guardar</button>
         <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
       </div>
     </div>
@@ -8120,7 +7640,7 @@ window.modalDatosCliente = function(opId){
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarDatosCliente('${opId}')">Guardar datos</button>
+      <button class="btn btn-primary" onclick="guardarDatosCliente('${escJs(opId)}')">Guardar datos</button>
     </div>
   `);
 };
@@ -8199,7 +7719,7 @@ function modalNuevaOperacion(){
         <label>Pertenece a (Centro de Producción / Cadena)</label>
         <select id="no-grupo">
           <option value="">— Operación independiente —</option>
-          ${Object.entries(demoData.operaciones||{}).filter(([k,v])=>v.tipo==='Centro de Producción'||v.tipo==='centroProduccion').map(([k,v])=>`<option value="${k}">${v.nombre}</option>`).join('')}
+          ${Object.entries(demoData.operaciones||{}).filter(([k,v])=>v.tipo==='Centro de Producción'||v.tipo==='centroProduccion').map(([k,v])=>`<option value="${k}">${esc(v.nombre)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -8977,8 +8497,8 @@ function renderSubproductos(){
           <span class="card-title">${ico('tag',14)} ${corte.nombre}</span>
           <div style="display:flex;gap:8px">
             <span style="font-size:12px;color:#5A5A52">Precio base: $${fmt(precioXkg)}/kg</span>
-            <button class="btn btn-secondary btn-sm" onclick="editarCorte('${corte.id}')">${ico('edit',13)} Editar</button>
-            <button class="btn btn-danger btn-sm" onclick="delCorte('${corte.id}')">${ico('trash',13)} Eliminar</button>
+            <button class="btn btn-secondary btn-sm" onclick="editarCorte('${escJs(corte.id)}')">${ico('edit',13)} Editar</button>
+            <button class="btn btn-danger btn-sm" onclick="delCorte('${escJs(corte.id)}')">${ico('trash',13)} Eliminar</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -8991,7 +8511,7 @@ function renderSubproductos(){
             </tr></thead>
             <tbody>
               ${partes.map(p=>`<tr>
-                <td><strong>${p.nombre}</strong></td>
+                <td><strong>${esc(p.nombre)}</strong></td>
                 <td>${p.tipo==='principal'?'<span class="badge badge-op">Principal</span>':
                      p.tipo==='subproducto'?'<span class="badge badge-sc">Subproducto</span>':
                      '<span class="badge badge-gray">Desperdicio</span>'}</td>
@@ -9003,7 +8523,7 @@ function renderSubproductos(){
                 <td>
                   ${p.tipo==='subproducto'?
                     `<button class="btn btn-secondary btn-sm" 
-                      onclick="crearIngDesdeSubproducto('${corte.id}','${p.nombre}',${p.costoXkg})">
+                      onclick="crearIngDesdeSubproducto('${escJs(corte.id)}','${p.nombre}',${p.costoXkg})">
                       + Crear ingrediente
                     </button>`:'—'}
                 </td>
@@ -9221,7 +8741,7 @@ function crearIngDesdeSubproducto(corteId, nombreParte, costoXkg){
       </div>
       <div class="form-group">
         <label>Nombre del ingrediente nuevo</label>
-        <input type="text" id="sub-nombre" value="${nombreParte}">
+        <input type="text" id="sub-nombre" value="${esc(nombreParte)}">
       </div>
       <div class="form-group">
         <label>Categoría</label>
@@ -9322,7 +8842,7 @@ function renderPersonal(){
           <select onchange="setMenuPersonal('${dia}','${serv}',this.value)" style="width:100%;font-size:12px;margin-bottom:4px">
             <option value="">— sin menú —</option>
             ${demoData.recetas.filter(r=>r.opId===currentOpId).map(r=>
-              `<option value="${r.id}"${item&&item.recetaId===r.id?' selected':''}>${r.nombre}</option>`
+              `<option value="${r.id}"${item&&item.recetaId===r.id?' selected':''}>${esc(r.nombre)}</option>`
             ).join('')}
           </select>
           ${receta?`<div style="font-size:11px;color:var(--verde)">$${fmt(costo)} total · $${fmt(costo/p.cantEmpleados)}/p</div>`:''}
@@ -9540,7 +9060,7 @@ function renderDesvios(){
             </tr></thead>
             <tbody>
               ${desvios.map(d=>`<tr>
-                <td><strong>${d.nombre}</strong></td>
+                <td><strong>${esc(d.nombre)}</strong></td>
                 <td style="text-align:right">${fmtD(d.kgTeorico,2)} kg</td>
                 <td style="text-align:right">${d.kgReal!==null?`${fmtD(d.kgReal,2)} kg`:'<span style="color:var(--gris-3)">—</span>'}</td>
                 <td style="text-align:right">
@@ -9586,7 +9106,7 @@ function renderDesvios(){
               ${Object.entries(consolidadoTeorico).map(([ingId,teo])=>{
                 const real = semana.comprasReales.find(r=>r.ingId===ingId)||{};
                 return `<tr>
-                  <td><strong>${teo.nombre}</strong></td>
+                  <td><strong>${esc(teo.nombre)}</strong></td>
                   <td style="text-align:right;color:var(--gris-3)">${fmtD(teo.kgTeorico,2)} kg</td>
                   <td><input type="number" step="0.1" value="${real.kgReal||''}" 
                     placeholder="${fmtD(teo.kgTeorico,2)}"
@@ -9730,7 +9250,7 @@ function modalAsignarOperacion(userId, email){
         <label>Operación a asignar</label>
         <select id="asignar-op">
           <option value="">— Sin operación —</option>
-          ${ops.map(op=>`<option value="${op.id}">${op.nombre}</option>`).join('')}
+          ${ops.map(op=>`<option value="${op.id}">${esc(op.nombre)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -9743,7 +9263,7 @@ function modalAsignarOperacion(userId, email){
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarAsignarOperacion('${userId}')">Guardar</button>
+      <button class="btn btn-primary" onclick="confirmarAsignarOperacion('${escJs(userId)}')">Guardar</button>
     </div>
   `);
 }
@@ -9786,7 +9306,7 @@ function modalCambiarRol(userId, rolActual, nivelActual){
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarCambiarRol('${userId}')">Guardar</button>
+      <button class="btn btn-primary" onclick="confirmarCambiarRol('${escJs(userId)}')">Guardar</button>
     </div>
   `);
 }
@@ -10096,7 +9616,7 @@ function getOnboardingContent(paso){
         <div style="display:grid;gap:14px">
           <div>
             <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Nombre de tu operación</label>
-            <input type="text" id="ob-nombre" value="${getOp().nombre||''}" placeholder="Ej: Restaurante El Olivo"
+            <input type="text" id="ob-nombre" value="${esc(getOp().nombre||'')}" placeholder="Ej: Restaurante El Olivo"
               style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:14px;font-family:'Inter',sans-serif">
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -10124,7 +9644,7 @@ function getOnboardingContent(paso){
         </div>
         ${demoData.ingredientes.slice(0,5).map(i=>`
           <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--crema-2);font-size:13px">
-            <span style="color:var(--negro)">${i.nombre}</span>
+            <span style="color:var(--negro)">${esc(i.nombre)}</span>
             <span style="color:${i.precio>0?'var(--oliva)':'var(--bordo)'}">
               ${i.precio>0?`$${fmt(i.precio/(i.bulto||1))}/kg`:'⚠ Sin precio'}
             </span>
@@ -10148,7 +9668,7 @@ function getOnboardingContent(paso){
         </div>
         ${getRecetas().slice(0,3).map(r=>`
           <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--crema-2);font-size:13px">
-            <span style="color:var(--negro)">${r.nombre}</span>
+            <span style="color:var(--negro)">${esc(r.nombre)}</span>
             <span style="color:var(--gris-2)">${r.ingredientes?.length||0} ingredientes</span>
           </div>
         `).join('')}
@@ -10229,7 +9749,7 @@ function getOnboardingContent(paso){
                 const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, false);
                 if(!c||c.error) return '';
                 return `<div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.8);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.1)">
-                  <span>${ingObj.nombre}</span>
+                  <span>${esc(ingObj.nombre)}</span>
                   <span style="color:var(--dorado)">${fmtD(c.kg_total,2)} kg</span>
                 </div>`;
               }).join('')}
