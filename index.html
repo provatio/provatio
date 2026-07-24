@@ -1201,16 +1201,9 @@ async function migrarAEmpresa(nombreEmpresa){
     });
     paso('   Empresa creada: ' + empresaId);
 
-    paso('3/5 · Copiando operaciones (esto puede tardar)…');
-    let n = 0;
-    for(const op of ops){
-      await db.collection('empresas').doc(empresaId)
-        .collection('operaciones').doc(op.id).set(op.data);
-      n++;
-      paso('   Copiada ' + n + '/' + ops.length + ' · ' + (op.data.nombre || op.id));
-    }
-
-    paso('4/5 · Registrándote como dueño…');
+    // El alta como dueño va ANTES de copiar: las reglas de seguridad exigen
+    // ser miembro de la empresa para poder escribir sus operaciones.
+    paso('3/5 · Registrándote como dueño…');
     await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid).set({
       uid, email: currentUser.email || '',
       nombre: currentUser.displayName || currentUser.email || 'Dueño',
@@ -1219,6 +1212,15 @@ async function migrarAEmpresa(nombreEmpresa){
       activo: true,
       altaEn: Date.now(),
     });
+
+    paso('4/5 · Copiando operaciones (esto puede tardar)…');
+    let n = 0;
+    for(const op of ops){
+      await db.collection('empresas').doc(empresaId)
+        .collection('operaciones').doc(op.id).set(op.data);
+      n++;
+      paso('   Copiada ' + n + '/' + ops.length + ' · ' + (op.data.nombre || op.id));
+    }
 
     paso('5/5 · Vinculando tu usuario a la empresa…');
     await db.collection('usuarios').doc(uid).set({ empresaId }, {merge:true});
