@@ -1562,7 +1562,9 @@ function verMargenCP(){ const r = getMiRol(); return r === 'dueno' || r === 'cp'
 
 // Operaciones que el usuario tiene permitidas (lista vacía en dueño = todas)
 function misOperacionesPermitidas(){
-  if(esDueno()) return null;                     // null = sin restricción
+  // Sin empresa (modelo anterior): el dueño de la cuenta ve todo lo suyo
+  if(!getEmpresaId()) return null;               // null = sin restricción
+  if(esDueno()) return null;
   const l = (currentUser && currentUser.operacionesAsignadas) || [];
   return Array.isArray(l) ? l : [];
 }
