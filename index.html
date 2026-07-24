@@ -1153,7 +1153,9 @@ async function _verificarConflicto(uid){
     // Con timeout: si la red no responde en 6s, seguimos sin verificar
     // (es preferible guardar sin chequeo que dejar al usuario sin poder guardar)
     const snap = await Promise.race([
-      db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId).get(),
+      (getEmpresaId()
+        ? db.collection('empresas').doc(getEmpresaId()).collection('operaciones')
+        : db.collection('usuarios').doc(uid).collection('operaciones')).doc(currentOpId).get(),
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000))
     ]);
     if(!snap.exists) return {ok:true};
@@ -1168,6 +1170,103 @@ async function _verificarConflicto(uid){
     console.warn('No se pudo verificar conflicto:', e);
     return {ok:true};   // si falla la verificación, no bloqueamos el guardado
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MIGRACIÓN a modelo de empresa. Copia, nunca borra: los datos viejos
+// quedan intactos hasta que se verifique que todo funciona.
+// ═══════════════════════════════════════════════════════════════════════
+async function migrarAEmpresa(nombreEmpresa){
+  if(!currentUser || !currentUser.uid){ showToast('No hay sesión activa','error'); return; }
+  const uid = currentUser.uid;
+  const log = [];
+  const paso = (t) => { log.push(t); const el = document.getElementById('mig-log');
+    if(el) el.innerHTML = log.map(x=>'<div style="padding:2px 0">'+esc(x)+'</div>').join(''); };
+
+  try{
+    paso('1/5 · Leyendo las operaciones actuales…');
+    const snap = await db.collection('usuarios').doc(uid).collection('operaciones').get();
+    if(snap.empty){ paso('⚠ No se encontraron operaciones para migrar.'); return; }
+    const ops = [];
+    snap.forEach(d => ops.push({ id:d.id, data:d.data() }));
+    paso('   Encontradas ' + ops.length + ' operaciones.');
+
+    paso('2/5 · Creando la empresa…');
+    const empresaId = 'emp-' + Date.now().toString(36);
+    await db.collection('empresas').doc(empresaId).set({
+      nombre: nombreEmpresa || 'Mi empresa',
+      duenoUid: uid,
+      creadaEn: Date.now(),
+      migradaDesde: uid,
+    });
+    paso('   Empresa creada: ' + empresaId);
+
+    paso('3/5 · Copiando operaciones (esto puede tardar)…');
+    let n = 0;
+    for(const op of ops){
+      await db.collection('empresas').doc(empresaId)
+        .collection('operaciones').doc(op.id).set(op.data);
+      n++;
+      paso('   Copiada ' + n + '/' + ops.length + ' · ' + (op.data.nombre || op.id));
+    }
+
+    paso('4/5 · Registrándote como dueño…');
+    await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid).set({
+      uid, email: currentUser.email || '',
+      nombre: currentUser.displayName || currentUser.email || 'Dueño',
+      rol: 'dueno',
+      operacionesAsignadas: [],
+      activo: true,
+      altaEn: Date.now(),
+    });
+
+    paso('5/5 · Vinculando tu usuario a la empresa…');
+    await db.collection('usuarios').doc(uid).set({ empresaId }, {merge:true});
+
+    currentUser.empresaId = empresaId;
+    currentUser.rolEmpresa = 'dueno';
+    currentUser.operacionesAsignadas = [];
+
+    paso('✓ Migración completa. Recargá la página para trabajar con el modelo nuevo.');
+    paso('   Los datos anteriores NO se borraron: siguen en tu cuenta por seguridad.');
+    const btn = document.getElementById('mig-btn');
+    if(btn){ btn.textContent = 'Recargar ahora'; btn.onclick = () => location.reload(); btn.disabled = false; }
+  }catch(err){
+    console.error('Migración fallida:', err);
+    paso('✗ ERROR: ' + err.message);
+    paso('   No se perdió nada: los datos originales siguen intactos.');
+    const btn = document.getElementById('mig-btn');
+    if(btn){ btn.disabled = false; btn.textContent = 'Reintentar'; }
+  }
+}
+
+function modalMigrar(){
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Activar el modelo multiusuario</span>
+      <button class="btn btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:14px">
+        Tus operaciones pasan a pertenecer a una empresa. Eso permite invitar
+        encargados, supervisores y cocina con permisos propios.
+        <strong>No se borra nada</strong>: se copian los datos y los originales quedan intactos.
+      </div>
+      <div class="form-group">
+        <label>Nombre de la empresa</label>
+        <input type="text" id="mig-nombre" placeholder="ej: Parrillas de Marcelo" style="width:100%">
+      </div>
+      <div id="mig-log" style="margin-top:12px;font-size:12px;font-family:var(--mono,monospace);
+        background:var(--crema,#F5F0E8);padding:10px;border-radius:6px;max-height:220px;overflow:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="mig-btn" onclick="
+        this.disabled=true; this.textContent='Migrando…';
+        migrarAEmpresa(document.getElementById('mig-nombre').value.trim());
+      ">Migrar ahora</button>
+    </div>
+  `);
 }
 
 async function guardarEnFirestore(){
@@ -1270,9 +1369,12 @@ async function guardarEnFirestore(){
       _ultimaEdicion: Date.now(),
     };
 
+    const _refOps = getEmpresaId()
+      ? db.collection('empresas').doc(getEmpresaId()).collection('operaciones')
+      : db.collection('usuarios').doc(uid).collection('operaciones');
+
     await conReintento(() =>
-      db.collection('usuarios').doc(uid).collection('operaciones').doc(currentOpId)
-        .set(limpiarParaFirestore(opData)),
+      _refOps.doc(currentOpId).set(limpiarParaFirestore(opData)),
       4, 'guardar operación');
 
     // Metadatos ligeros de las otras operaciones (sin sus datos pesados)
@@ -1280,7 +1382,7 @@ async function guardarEnFirestore(){
       if(opId===currentOpId) continue;
       const meta = {...op}; delete meta._datos;
       await conReintento(() =>
-        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).set(limpiarParaFirestore(meta), {merge:true}),
+        _refOps.doc(opId).set(limpiarParaFirestore(meta), {merge:true}),
         2, 'meta op').catch(()=>{});
     }
 
@@ -1335,8 +1437,11 @@ async function cargarDesdeFirestore(uid){
     showLoading('Cargando tus datos...');
     
     // Cargar operaciones
-    const opsSnap = await conTimeout(db.collection('usuarios').doc(uid)
-      .collection('operaciones').get(), 20000, 'La carga de operaciones');
+    const _origen = getEmpresaId()
+      ? db.collection('empresas').doc(getEmpresaId()).collection('operaciones')
+      : db.collection('usuarios').doc(uid).collection('operaciones');
+    const opsSnap = await conTimeout(_origen.get(), 20000, 'La carga de operaciones');
+    const _permitidas = misOperacionesPermitidas();   // null = todas (dueño)
     
     if(opsSnap.empty){
       // Primera vez — usar datos demo como punto de partida
@@ -1349,8 +1454,18 @@ async function cargarDesdeFirestore(uid){
     demoData.operaciones = {};
     
     opsSnap.forEach(doc => {
-      demoData.operaciones[doc.id] = doc.data();
+      // Solo las operaciones que este usuario tiene permitidas
+      if(_permitidas === null || _permitidas.includes(doc.id)){
+        demoData.operaciones[doc.id] = doc.data();
+      }
     });
+
+    if(!Object.keys(demoData.operaciones).length){
+      hideLoading();
+      showToast('Todavía no tenés locales asignados. Pedile al administrador que te habilite uno.', 'error');
+      navigate('dashboard');
+      return false;
+    }
 
     // Usar primera operación como activa
     currentOpId = Object.keys(demoData.operaciones)[0];
@@ -1424,6 +1539,45 @@ let vistaActual = null;
 function getOp(){ return demoData.operaciones[currentOpId] || Object.values(demoData.operaciones)[0]; }
 
 // Nivel de acceso: 'cocina' ve solo lo operativo, sin precios de venta ni números del negocio
+// ═══════════════════════════════════════════════════════════════════════
+// MODELO MULTIUSUARIO — los datos viven en la empresa, no en la cuenta
+//   empresas/{empresaId}/operaciones/{opId}
+//   empresas/{empresaId}/miembros/{uid}   → rol + operaciones asignadas
+//   usuarios/{uid}                        → a qué empresa pertenece
+// ═══════════════════════════════════════════════════════════════════════
+const ROLES = {
+  dueno:      { nombre:'Dueño',            desc:'Todo: locales, CP, márgenes y usuarios' },
+  supervisor: { nombre:'Supervisor',       desc:'Varios locales asignados, sin gestión de usuarios' },
+  encargado:  { nombre:'Encargado',        desc:'Su local: costos, recetas, facturas y precios' },
+  cocina:     { nombre:'Cocina',           desc:'Recetas y mermas, sin ver dinero' },
+  cp:         { nombre:'Centro producción',desc:'El CP con sus costos y márgenes' },
+};
+
+function getEmpresaId(){ return (currentUser && currentUser.empresaId) || null; }
+function getMiRol(){ return (currentUser && currentUser.rolEmpresa) || null; }
+function esDueno(){ return getMiRol() === 'dueno'; }
+function puedeGestionarUsuarios(){ return esDueno(); }
+function verDinero(){ return getMiRol() !== 'cocina'; }
+function verMargenCP(){ const r = getMiRol(); return r === 'dueno' || r === 'cp'; }
+
+// Operaciones que el usuario tiene permitidas (lista vacía en dueño = todas)
+function misOperacionesPermitidas(){
+  if(esDueno()) return null;                     // null = sin restricción
+  const l = (currentUser && currentUser.operacionesAsignadas) || [];
+  return Array.isArray(l) ? l : [];
+}
+function puedeVerOperacion(opId){
+  const permitidas = misOperacionesPermitidas();
+  if(permitidas === null) return true;
+  return permitidas.includes(opId);
+}
+// Referencia a la colección de operaciones de la empresa
+function refOperaciones(){
+  const eid = getEmpresaId();
+  if(!eid) throw new Error('El usuario no tiene empresa asignada');
+  return db.collection('empresas').doc(eid).collection('operaciones');
+}
+
 function esNivelCocina(){ return currentUser && currentUser.rol==='cliente' && currentUser.nivel==='cocina'; }
 function esDarkKitchen(){
   const op = getOp();
@@ -1938,6 +2092,53 @@ function resolverInsumoCP(pid){
   return null;
 }
 
+function toggleGrupoCP(ci){
+  const d = document.getElementById('cp-gr-'+ci);
+  const f = document.getElementById('cp-fl-'+ci);
+  if(!d) return;
+  const abierto = d.style.display !== 'none';
+  d.style.display = abierto ? 'none' : 'block';
+  if(f) f.textContent = abierto ? '▶' : '▼';
+}
+function seleccionarInsumoCP(id){
+  const hid = document.getElementById('cp-prod-sel');
+  if(hid) hid.value = id;
+  const p = (window._insumosCP||[]).find(x => String(x.id) === String(id));
+  const box = document.getElementById('cp-elegido');
+  if(box && p){
+    const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
+    box.style.display = 'block';
+    box.innerHTML = '<strong>Elegido:</strong> ' + esc(p.nombre) + ' — ' + modoLabel +
+                    (p.costoXkg>0 ? ' — $'+fmt(p.costoXkg)+'/kg' : '');
+  }
+  document.querySelectorAll('#cp-lista .cp-item').forEach(el => {
+    el.style.background = (el.dataset.id === String(id)) ? '#FFF6EC' : '';
+  });
+  const neto = document.getElementById('cp-prod-neto');
+  if(neto) neto.focus();
+}
+function filtrarInsumosCP(q){
+  const t = (q||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  document.querySelectorAll('#cp-lista .cp-grupo').forEach((g,ci) => {
+    let visibles = 0;
+    g.querySelectorAll('.cp-item').forEach(it => {
+      const n = (it.dataset.nombre||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      const match = !t || n.includes(t);
+      it.style.display = match ? 'flex' : 'none';
+      if(match) visibles++;
+    });
+    g.style.display = visibles ? 'block' : 'none';
+    // Al buscar, abrir los grupos que tengan coincidencias
+    const cont = document.getElementById('cp-gr-'+ci);
+    const fl = document.getElementById('cp-fl-'+ci);
+    if(cont){
+      const abrir = !!t && visibles > 0;
+      cont.style.display = abrir ? 'block' : (t ? 'none' : cont.style.display);
+      if(fl && t) fl.textContent = abrir ? '▼' : '▶';
+    }
+  });
+}
+
 function agregarProductoCP(){
   const productos = getProductosCP();
   if(!productos.length){
@@ -1964,6 +2165,41 @@ function agregarProductoCP(){
     .filter((p,i,arr)=>arr.findIndex(x=>x.nombre===p.nombre)===i) // deduplicar
     .sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
 
+  // Agrupar por categoría para el acordeón. Los elaborados del CP van primero.
+  window._insumosCP = todosInsumos;
+  const catDe = (p) => {
+    if(p.tipoProd !== 'ingrediente') return '🍳 Elaborados del CP';
+    const ing = ingsCP.find(i => i.id === p.ingId);
+    return (ing && ing.cat) ? ing.cat : 'Sin categoría';
+  };
+  const grupos = {};
+  todosInsumos.forEach(p => { (grupos[catDe(p)] = grupos[catDe(p)] || []).push(p); });
+  const nombresCat = Object.keys(grupos).sort((a,b) => {
+    if(a.startsWith('🍳')) return -1;
+    if(b.startsWith('🍳')) return 1;
+    return a.localeCompare(b,'es');
+  });
+
+  const listaHtml = nombresCat.map((cat,ci) => {
+    const items = grupos[cat].map(p => {
+      const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
+      const costoLabel = p.costoXkg>0 ? '$'+fmt(p.costoXkg)+'/kg' : 'sin precio';
+      return `<div class="cp-item" data-nombre="${esc((p.nombre||'').toLowerCase())}" data-id="${esc(p.id)}"
+           onclick="seleccionarInsumoCP('${escJs(p.id)}')"
+           style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #EEE;display:flex;justify-content:space-between;gap:10px;align-items:center">
+        <span style="font-size:13px">${esc(p.nombre)}</span>
+        <span style="font-size:11px;color:var(--gris-2);white-space:nowrap">${modoLabel} · ${costoLabel}</span>
+      </div>`;
+    }).join('');
+    return `<div class="cp-grupo" data-cat="${esc(cat.toLowerCase())}">
+      <div onclick="toggleGrupoCP(${ci})" style="padding:8px 12px;background:#F5F0E8;cursor:pointer;user-select:none;display:flex;justify-content:space-between;font-weight:600;font-size:13px;border-bottom:1px solid #E5DED0">
+        <span>${esc(cat)}</span>
+        <span style="color:var(--gris-2);font-weight:400">${grupos[cat].length} <span id="cp-fl-${ci}">▶</span></span>
+      </div>
+      <div id="cp-gr-${ci}" style="display:none">${items}</div>
+    </div>`;
+  }).join('');
+
   openModal(`
     <div class="modal-header">
       <span class="modal-title">🏭 Agregar insumo del Centro de Producción</span>
@@ -1971,15 +2207,14 @@ function agregarProductoCP(){
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>Seleccioná el insumo</label>
-        <select id="cp-prod-sel" style="width:100%;font-size:14px">
-          <option value="">— elegí un insumo —</option>
-          ${todosInsumos.map(p=>{
-            const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
-            const costoLabel = p.costoXkg>0?'$'+fmt(p.costoXkg)+'/kg':'sin precio';
-            return `<option value="${esc(p.id)}">${esc(p.nombre)} — ${modoLabel} — ${costoLabel}</option>`;
-          }).join('')}
-        </select>
+        <label>Buscar insumo</label>
+        <input type="text" id="cp-buscar" placeholder="🔎 Escribí para filtrar…" autocomplete="off"
+          style="width:100%;font-size:14px" oninput="filtrarInsumosCP(this.value)">
+        <div id="cp-elegido" style="display:none;margin-top:8px;padding:8px 12px;background:#FFF6EC;border:1px solid #B8540A;border-radius:6px;font-size:13px"></div>
+        <input type="hidden" id="cp-prod-sel" value="">
+        <div id="cp-lista" style="max-height:320px;overflow-y:auto;border:1px solid #E5DED0;border-radius:6px;margin-top:8px">
+          ${listaHtml}
+        </div>
       </div>
       <div class="form-group">
         <label>Cantidad (g o ml)</label>
@@ -2126,6 +2361,27 @@ function login(){
 async function cargarUsuarioFirebase(firebaseUser){
   try {
     const userDoc = await conTimeout(db.collection('usuarios').doc(firebaseUser.uid).get(), 20000, 'La carga del perfil');
+    // Si el usuario pertenece a una empresa, cargar su ficha de miembro (rol y locales)
+    try{
+      const _ud = userDoc.exists ? userDoc.data() : null;
+      if(_ud && _ud.empresaId){
+        const miem = await db.collection('empresas').doc(_ud.empresaId)
+          .collection('miembros').doc(firebaseUser.uid).get();
+        if(miem.exists){
+          const m = miem.data();
+          if(m.activo === false){
+            showAuthError('Tu acceso fue desactivado. Contactá al administrador.');
+            await auth.signOut();
+            return;
+          }
+          window._miembroEmpresa = {
+            empresaId: _ud.empresaId,
+            rolEmpresa: m.rol || 'encargado',
+            operacionesAsignadas: m.operacionesAsignadas || [],
+          };
+        }
+      }
+    }catch(e){ console.warn('[Provatio] no se pudo leer la ficha de miembro:', e); }
     let userData;
     if(userDoc.exists){
       userData = userDoc.data();
@@ -2404,10 +2660,17 @@ function showAuthError(msg){
 // ── INIT APP ──
 function initApp(user){
   currentUser = user;
+  // Incorporar rol y locales asignados desde la ficha de miembro de la empresa
+  if(window._miembroEmpresa){
+    currentUser = {...currentUser, ...window._miembroEmpresa};
+  }
   document.getElementById('auth-screen').style.display = 'none';
-  
-  // Solo mostrar pantalla pendiente si es cliente sin operación asignada
-  if(user.rol === 'cliente' && !user.operacionId){
+
+  // Pantalla de espera: sin empresa (modelo nuevo) o sin operación (modelo viejo)
+  const sinAcceso = getEmpresaId()
+    ? false
+    : (user.rol === 'cliente' && !user.operacionId);
+  if(sinAcceso){
     mostrarPendienteActivacion(user);
     return;
   }
@@ -2902,6 +3165,7 @@ function buildSidebar(rol){
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     {icon:'users', label:'Clientes', vista:'clientes'},
+    ...(puedeGestionarUsuarios() || !getEmpresaId() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
   ] : isDK ? [
     // Dark Kitchen activa
     {section:'Principal'},
@@ -3171,6 +3435,7 @@ function navigate(vista, params={}){
     ingredientes: renderIngredientes,
     mermas: renderMermas,
     facturas: ()=>{ window._facVer=null; renderFacturas(); },
+    equipo: renderEquipo,
     recetas: renderRecetas,
     semanal: renderSemanal,
     evento: renderEvento,
@@ -7480,6 +7745,200 @@ function tipoBadgeColor(tipo){
 function tipoBadgeHtml(tipo){
   const b = tipoBadgeColor(tipo);
   return `<span style="background:${b.bg};color:${b.color};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap">${b.label}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// EQUIPO — alta de miembros, roles y locales asignados
+// ═══════════════════════════════════════════════════════════════════════
+async function renderEquipo(){
+  const eid = getEmpresaId();
+  if(!eid){
+    setContent('Equipo', `
+      <div class="alert alert-warn" style="margin-bottom:16px">
+        Para invitar gente a tu operación primero hay que activar el modelo de empresa.
+        Es un paso único y no se pierde ningún dato.
+      </div>
+      <button class="btn btn-primary" onclick="modalMigrar()">Activar modelo multiusuario</button>`);
+    return;
+  }
+  if(!puedeGestionarUsuarios()){
+    setContent('Equipo', '<div class="alert alert-warn">Solo el dueño puede gestionar los accesos.</div>');
+    return;
+  }
+
+  setContent('Equipo', '<div style="padding:24px;color:var(--gris-2)">Cargando el equipo…</div>');
+  let miembros = [];
+  try{
+    const snap = await db.collection('empresas').doc(eid).collection('miembros').get();
+    snap.forEach(d => miembros.push({ uid:d.id, ...d.data() }));
+  }catch(err){
+    setContent('Equipo', '<div class="alert alert-error">No se pudo leer el equipo: ' + esc(err.message) + '</div>');
+    return;
+  }
+
+  const ops = Object.entries(demoData.operaciones||{});
+  const filas = miembros.map(m => {
+    const rolInfo = ROLES[m.rol] || { nombre: m.rol || '—' };
+    const locales = m.rol === 'dueno'
+      ? '<span style="color:var(--gris-2)">Todos</span>'
+      : (m.operacionesAsignadas||[]).length
+        ? (m.operacionesAsignadas||[]).map(id => esc((demoData.operaciones[id]||{}).nombre || id)).join(', ')
+        : '<span style="color:var(--bordo)">Sin asignar</span>';
+    return `<tr${m.activo===false?' style="opacity:.45"':''}>
+      <td><strong>${esc(m.nombre || m.email || m.uid)}</strong><br>
+          <span style="font-size:11px;color:var(--gris-2)">${esc(m.email||'')}</span></td>
+      <td>${esc(rolInfo.nombre)}<br><span style="font-size:11px;color:var(--gris-2)">${esc(rolInfo.desc||'')}</span></td>
+      <td style="font-size:13px">${locales}</td>
+      <td>${m.activo===false?'<span style="color:var(--bordo);font-size:12px">Desactivado</span>':'<span style="color:var(--verde);font-size:12px">Activo</span>'}</td>
+      <td style="white-space:nowrap">
+        ${m.rol==='dueno' ? '' : `
+          <button class="btn btn-secondary btn-sm" onclick="modalEditarMiembro('${escJs(m.uid)}')">Permisos</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleMiembro('${escJs(m.uid)}', ${m.activo===false})">
+            ${m.activo===false?'Reactivar':'Desactivar'}</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+
+  setContent('Equipo', `
+    <div class="alert alert-info" style="margin-bottom:16px">
+      Cada persona entra con su propio mail y ve únicamente los locales que le asignes.
+      Para sumar a alguien, primero tiene que registrarse en Provatio; después lo agregás acá con su mail.
+    </div>
+    <div style="margin-bottom:16px">
+      <button class="btn btn-primary" onclick="modalInvitarMiembro()">+ Agregar persona</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Equipo (${miembros.length})</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Persona</th><th>Rol</th><th>Locales</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${filas || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gris-3)">Todavía no hay nadie más en el equipo</td></tr>'}</tbody>
+      </table></div>
+    </div>`);
+}
+
+function _selectorLocales(seleccionadas){
+  const sel = seleccionadas || [];
+  return Object.entries(demoData.operaciones||{}).map(([id,op]) => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer">
+      <input type="checkbox" class="miem-op" value="${esc(id)}"${sel.includes(id)?' checked':''}>
+      <span>${esc(op.nombre||id)}</span>
+    </label>`).join('');
+}
+
+function modalInvitarMiembro(){
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Agregar persona al equipo</span>
+      <button class="btn btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:12px;font-size:13px">
+        La persona tiene que haberse registrado antes en Provatio con ese mismo mail.
+      </div>
+      <div class="form-group">
+        <label>Mail de la persona</label>
+        <input type="email" id="miem-email" placeholder="encargado@ejemplo.com" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label>Nombre (para identificarlo)</label>
+        <input type="text" id="miem-nombre" placeholder="Jorge — encargado Devoto" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label>Rol</label>
+        <select id="miem-rol" style="width:100%">
+          ${Object.entries(ROLES).filter(([k])=>k!=='dueno')
+            .map(([k,v])=>`<option value="${k}">${esc(v.nombre)} — ${esc(v.desc)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Locales a los que accede</label>
+        <div style="max-height:180px;overflow:auto;border:1px solid var(--borde,#E5DED0);border-radius:6px;padding:8px">
+          ${_selectorLocales([])}
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarMiembro(null)">Agregar</button>
+    </div>`);
+}
+
+async function modalEditarMiembro(uid){
+  const eid = getEmpresaId();
+  const doc = await db.collection('empresas').doc(eid).collection('miembros').doc(uid).get();
+  if(!doc.exists){ showToast('No se encontró a esa persona','error'); return; }
+  const m = doc.data();
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Permisos de ${esc(m.nombre || m.email || uid)}</span>
+      <button class="btn btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Rol</label>
+        <select id="miem-rol" style="width:100%">
+          ${Object.entries(ROLES).filter(([k])=>k!=='dueno')
+            .map(([k,v])=>`<option value="${k}"${m.rol===k?' selected':''}>${esc(v.nombre)} — ${esc(v.desc)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Locales a los que accede</label>
+        <div style="max-height:180px;overflow:auto;border:1px solid var(--borde,#E5DED0);border-radius:6px;padding:8px">
+          ${_selectorLocales(m.operacionesAsignadas||[])}
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarMiembro('${escJs(uid)}')">Guardar cambios</button>
+    </div>`);
+}
+
+async function guardarMiembro(uidExistente){
+  if(!puedeGestionarUsuarios()){ showToast('No tenés permiso para gestionar accesos','error'); return; }
+  const eid = getEmpresaId();
+  const rol = document.getElementById('miem-rol').value;
+  const ops = [...document.querySelectorAll('.miem-op:checked')].map(c => c.value);
+  try{
+    if(uidExistente){
+      await db.collection('empresas').doc(eid).collection('miembros').doc(uidExistente)
+        .set({ rol, operacionesAsignadas: ops }, {merge:true});
+      showToast('Permisos actualizados','success');
+    }else{
+      const email = (document.getElementById('miem-email').value||'').trim().toLowerCase();
+      const nombre = (document.getElementById('miem-nombre').value||'').trim();
+      if(!email){ showToast('Falta el mail','error'); return; }
+      // Buscar al usuario ya registrado con ese mail
+      const q = await db.collection('usuarios').where('email','==',email).limit(1).get();
+      if(q.empty){
+        showToast('No hay ninguna cuenta con ese mail. Pedile que se registre primero en Provatio.','error');
+        return;
+      }
+      const uid = q.docs[0].id;
+      await db.collection('empresas').doc(eid).collection('miembros').doc(uid).set({
+        uid, email, nombre: nombre || email, rol,
+        operacionesAsignadas: ops, activo: true, altaEn: Date.now(),
+        invitadoPor: currentUser.email || '',
+      });
+      await db.collection('usuarios').doc(uid).set({ empresaId: eid }, {merge:true});
+      showToast('Persona agregada al equipo','success');
+    }
+    closeModal();
+    renderEquipo();
+  }catch(err){
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+async function toggleMiembro(uid, reactivar){
+  if(!puedeGestionarUsuarios()){ showToast('No tenés permiso para gestionar accesos','error'); return; }
+  const eid = getEmpresaId();
+  try{
+    await db.collection('empresas').doc(eid).collection('miembros').doc(uid)
+      .set({ activo: !!reactivar }, {merge:true});
+    showToast(reactivar ? 'Acceso reactivado' : 'Acceso desactivado','success');
+    renderEquipo();
+  }catch(err){ showToast('Error: ' + err.message,'error'); }
 }
 
 function renderClientes(){
