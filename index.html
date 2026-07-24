@@ -986,7 +986,7 @@ input:focus, select:focus, textarea:focus {
       </button>
       <div class="topbar-title" id="topbar-title">—</div>
       <div id="topbar-actions"></div>
-      <button class="btn btn-secondary btn-sm" onclick="guardarEnFirestore()">
+      <button class="btn btn-secondary btn-sm" id="btn-guardar-top" onclick="guardarEnFirestore()">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M7 18a4.5 4.5 0 0 1-.5-8.97A6 6 0 0 1 18 8.5 4 4 0 0 1 17.5 18z"/></svg> Guardar
       </button>
     </div>
@@ -1273,6 +1273,11 @@ function modalMigrar(){
 
 async function guardarEnFirestore(){
   if(!currentUser){ showToast('No hay sesión activa — no se pudo guardar','error'); return false; }
+  // Sin operación abierta no hay nada que guardar (ej.: estando en el Panel general)
+  if(!currentOpId){
+    showToast('Abrí una operación para poder guardar sus datos','info');
+    return false;
+  }
   const uid = currentUser.uid;
 
   // Lock con vencimiento: si un guardado quedó colgado, a los 20s se libera solo
@@ -3471,6 +3476,9 @@ function navigate(vista, params={}){
 }
 
 function setContent(titulo, html, acciones=''){
+  // El botón Guardar solo tiene sentido con una operación abierta
+  const _bg = document.getElementById('btn-guardar-top');
+  if(_bg) _bg.style.display = currentOpId ? '' : 'none';
   document.getElementById('topbar-title').textContent = titulo;
   document.getElementById('topbar-actions').innerHTML = acciones;
   document.getElementById('main-content').innerHTML = html;
