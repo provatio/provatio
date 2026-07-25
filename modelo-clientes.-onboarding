@@ -1,0 +1,148 @@
+# Provatio — Modelo de administración de clientes y onboarding
+
+> **Para qué sirve este documento:** dejar registrada la decisión de producto sobre
+> cómo Provatio administra a sus clientes y cómo funciona el onboarding, para poder
+> retomar la construcción en otra sesión, con otra IA o con un programador, sin tener
+> que volver a explicar todo desde cero.
+>
+> **Fecha:** 25 de julio de 2026
+> **Estado:** decidido y especificado. NO construido todavía (se pospuso a propósito).
+> **Versión de código vigente al decidir esto:** `index_v31.html`
+
+---
+
+## 1. El problema que resuelve
+
+Hoy, cuando una persona se registra en Provatio (por ejemplo, porque vio una
+publicidad), crea su propia empresa y podría empezar a usar el sistema **sin que
+el administrador de Provatio se entere**. No existe ninguna pantalla donde el dueño
+del negocio vea "se registró alguien nuevo".
+
+Esto choca con el modelo de negocio elegido: **todos los onboarding pasan por el
+administrador de Provatio**, que cobra 3 meses de onboarding antes de la suscripción
+mensual. Sin enterarse de los registros, no puede contactar al interesado ni cobrar.
+
+## 2. Los dos "sombreros" que hay que separar
+
+El sistema mezclaba dos cosas distintas que el dueño usa según el contexto:
+
+- **Nivel 1 — Dueño de una operación gastronómica.** Usa "Equipo y accesos" para
+  invitar a su encargado, cocina, supervisor y darles acceso a sus locales.
+  *Esto YA está construido y funciona (modelo de empresa, v31).*
+- **Nivel 2 — Dueño de Provatio (el negocio SaaS).** Necesita ver a quién le vende
+  el sistema, enterarse de nuevos registros, y administrar la relación comercial.
+  *Esto es lo que falta y describe este documento.*
+
+La pantalla vieja "Clientes" intentaba ser el Nivel 2 pero estaba mal construida
+(usa código previo al modelo de empresa y muestra "No hay otros usuarios"). **Hay
+que reemplazarla, no arreglarla.**
+
+## 3. Decisiones de producto tomadas
+
+Estas son decisiones del dueño del negocio, ya tomadas, que guían la construcción:
+
+1. **El onboarding siempre pasa por el administrador de Provatio.** No hay
+   auto-servicio de configuración. Esto justifica cobrar el onboarding como servicio,
+   da control y sirve de backup ante problemas.
+2. **El cliente tiene su propia cuenta desde el día 1** y hacen el onboarding
+   *juntos* (cliente + admin), de modo que el cliente aprende a usar el sistema
+   mientras se configura. Al terminar los 3 meses ya es autónomo.
+3. **El administrador de Provatio entra a la empresa del cliente para configurar
+   codo a codo con él.** No configura "por detrás": lo hacen juntos.
+4. **Registro con lista de espera + recorrida gratis (Flujo B mejorado).** Ver abajo.
+
+## 4. El flujo elegido (Flujo B con modo demo)
+
+```
+1. La persona ve la publicidad  →  se registra en Provatio
+2. Entra a un MODO DEMO: navega todo el sistema con datos de ejemplo,
+   pero NO puede cargar su operación real ni guardar nada útil.
+3. Al administrador de Provatio le llega el AVISO del nuevo registro
+   (mail, fecha, estado: demo/pendiente).
+4. El administrador lo contacta y cierra el trato del onboarding pago.
+5. El administrador ACTIVA la cuenta  →  recién ahí el cliente puede crear
+   su empresa real y arrancan el onboarding juntos.
+```
+
+Por qué este flujo:
+- **No se pierde al interesado** (a diferencia de un simple formulario de contacto):
+  puede probar ya.
+- **Nadie usa Provatio gratis de verdad** (a diferencia del registro libre): el modo
+  demo es solo vidriera funcional.
+- **El demo hace media venta solo:** quien probó ya se imaginó usándolo; cuando el
+  admin lo llama, no hay que explicarle qué es Provatio.
+
+## 5. Plan de construcción en dos fases
+
+### FASE 1 — Panel de administración (simple, alto valor)
+*Construir primero. Resuelve la pregunta "¿cómo me entero de un registro nuevo?".*
+
+- Panel visible solo para el administrador de Provatio (cuenta `elementosfood@gmail.com`
+  u otra marcada como admin de la plataforma).
+- Lista los registros nuevos leyendo la colección `indiceEmails` (que YA existe y se
+  llena en cada registro — media pieza ya construida).
+- Cada registro muestra: mail, nombre, fecha de alta, estado (demo / activado).
+- Acción principal: **activar** una cuenta (pasarla de demo a cliente real) y
+  opcionalmente entrar a su empresa para el onboarding conjunto.
+- Reemplaza la pantalla vieja "Clientes" en el menú.
+
+**Costo estimado:** ~media tarde. No requiere modo demo todavía.
+
+### FASE 2 — Modo demo / sandbox (más complejo, hacer cuando haya tráfico)
+*Construir después, cuando la publicidad realmente traiga gente. Hoy no hay nadie
+registrándose, así que construirlo ahora sería trabajar sobre algo que no se usa.*
+
+- Una operación de ejemplo **profesional** (no los 34 ingredientes de prueba actuales):
+  una operación ficticia bien armada que se vea seria.
+- Un "candado" en cada acción de guardado que distinga cuenta demo de cliente real.
+- Pantalla que, cuando el usuario demo intenta algo funcional, lo invite a contactar
+  al administrador para activar la cuenta.
+- Cuidado especial: no dejar agujeros por donde alguien use el sistema gratis.
+
+**Costo estimado:** bastante mayor que la Fase 1. Requiere probar que no haya fugas.
+
+## 6. Tensión técnica a resolver (IMPORTANTE)
+
+Las reglas de seguridad de Firestore (publicadas el 24/7/2026, "modelo de empresa v2")
+**impiden que una empresa vea los datos de otra** — esto protege a los clientes entre
+sí y es correcto. Pero también **bloquea al administrador de Provatio de entrar a la
+empresa de un cliente** para el onboarding conjunto.
+
+Para permitir que el admin entre a configurar, sin abrir un agujero de seguridad,
+la opción elegida es:
+
+> **Opción 2 — El administrador se agrega como miembro de la empresa del cliente.**
+> Cuando se activa un cliente, la cuenta del admin de Provatio queda agregada como
+> miembro (rol dueño o un rol nuevo "soporte") de esa empresa. Así el admin ve SOLO
+> las empresas donde está explícitamente incluido, no todas. Es más seguro que un
+> "superadmin" con llave maestra, y respeta la privacidad entre clientes.
+
+Al construir la Fase 1 hay que ajustar las reglas para contemplar esto (el admin
+puede leer/escribir en las empresas donde figura como miembro, que ya lo permiten,
+más la capacidad de auto-agregarse al activar — este último punto necesita diseño
+cuidadoso para no volverlo explotable).
+
+## 7. Lo que ya existe y sirve de base
+
+- `indiceEmails` (colección): guarda `{email, uid}` de cada registro. Media pieza
+  de la Fase 1 ya hecha.
+- Modelo de empresa: `empresas/{id}/operaciones`, `empresas/{id}/miembros`,
+  `usuarios/{uid}.empresaId`. Funcional.
+- Roles definidos en código (`ROLES`): dueno, supervisor, encargado, cocina, cp.
+  Se podría sumar un rol "soporte" para el admin de Provatio.
+- Pantalla "Equipo y accesos" (`renderEquipo`): gestión de miembros de UNA empresa.
+  Funciona. NO confundir con el panel de administración de Provatio (Nivel 2).
+
+## 8. Pendientes relacionados (de sesiones anteriores)
+
+- Sacar del menú la pantalla vieja "Clientes" (causa confusión: parece hacer lo mismo
+  que "Equipo y accesos" pero usa código muerto).
+- Limpiar el bloque `demoData` de datos ficticios (34 ingredientes de "Javier Reynoso"
+  / "op-patagonia") que hoy aparece cuando Firestore no carga y confunde. Podría
+  reconvertirse en la operación de ejemplo del modo demo (Fase 2).
+- Terminar de validar el multiusuario con una segunda cuenta (prueba que quedó a medias).
+
+---
+
+*Documento de especificación. No es código. Guardar junto al repositorio para retomar
+la construcción del Nivel 2 (administración de clientes de Provatio) cuando corresponda.*
