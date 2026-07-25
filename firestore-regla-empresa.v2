@@ -1,0 +1,85 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROVATIO — Reglas del modelo de empresa (versión 2)
+//
+// Cambio respecto de la versión anterior: se agrega la colección
+// "indiceEmails", que permite invitar a alguien buscándolo por su correo
+// sin necesidad de listar todos los usuarios del sistema.
+// ═══════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function fichaMiembro(empresaId) {
+      return get(/databases/$(database)/documents/empresas/$(empresaId)/miembros/$(request.auth.uid)).data;
+    }
+
+    function esMiembroActivo(empresaId) {
+      return autenticado()
+        && exists(/databases/$(database)/documents/empresas/$(empresaId)/miembros/$(request.auth.uid))
+        && fichaMiembro(empresaId).activo == true;
+    }
+
+    function esDueno(empresaId) {
+      return esMiembroActivo(empresaId) && fichaMiembro(empresaId).rol == 'dueno';
+    }
+
+    function tieneAccesoAOperacion(empresaId, opId) {
+      return esDueno(empresaId)
+        || (esMiembroActivo(empresaId)
+            && fichaMiembro(empresaId).operacionesAsignadas.hasAny([opId]));
+    }
+
+    match /empresas/{empresaId} {
+      allow read:   if esMiembroActivo(empresaId);
+      allow create: if autenticado();
+      allow update: if esDueno(empresaId);
+      allow delete: if false;
+
+      match /miembros/{uid} {
+        allow read:   if autenticado() && (request.auth.uid == uid || esDueno(empresaId));
+        allow create: if autenticado() && (request.auth.uid == uid || esDueno(empresaId));
+        allow update, delete: if esDueno(empresaId);
+      }
+
+      match /operaciones/{opId} {
+        allow read, write: if tieneAccesoAOperacion(empresaId, opId);
+        match /{sub=**} {
+          allow read, write: if tieneAccesoAOperacion(empresaId, opId);
+        }
+      }
+    }
+
+    // Índice de correos: sirve para encontrar a quién invitar.
+    // Guarda solamente el correo y el identificador de la cuenta; nunca
+    // datos de la operación. Cada persona da de alta el suyo.
+    match /indiceEmails/{email} {
+      allow read:   if autenticado();
+      allow create, update: if autenticado()
+                            && request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /usuarios/{uid} {
+      allow read:   if autenticado() && request.auth.uid == uid;
+      allow create: if autenticado() && request.auth.uid == uid;
+      allow update: if autenticado()
+                    && (request.auth.uid == uid
+                        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['empresaId']));
+      allow delete: if false;
+
+      match /{documento=**} {
+        allow read, write: if autenticado() && request.auth.uid == uid;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
