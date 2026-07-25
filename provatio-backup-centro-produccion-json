@@ -1,0 +1,8608 @@
+{
+ "version": "1.0",
+ "timestamp": "cp-onboarding-19-jul-2026",
+ "operacion": {
+  "nombre": "Centro de Producción",
+  "tipo": "centro de produccion",
+  "responsable": "Javier",
+  "notas": "Catálogo maestro del CP: 300+ insumos con mermas de arranque por técnica. Precios mayoristas estimados jul-2026 (AMBA) para ajustar con lista real. Porcentajes de merma editables según medición propia."
+ },
+ "ingredientes": [
+  {
+   "id": "cp1",
+   "nombre": "Lomo",
+   "categoria": "Carnes vacunas",
+   "precio": 185000,
+   "bulto": 10
+  },
+  {
+   "id": "cp2",
+   "nombre": "Bife ancho",
+   "categoria": "Carnes vacunas",
+   "precio": 140000,
+   "bulto": 10
+  },
+  {
+   "id": "cp3",
+   "nombre": "Bife angosto",
+   "categoria": "Carnes vacunas",
+   "precio": 150000,
+   "bulto": 10
+  },
+  {
+   "id": "cp4",
+   "nombre": "Ojo de bife",
+   "categoria": "Carnes vacunas",
+   "precio": 170000,
+   "bulto": 10
+  },
+  {
+   "id": "cp5",
+   "nombre": "Tomahawk",
+   "categoria": "Carnes vacunas",
+   "precio": 190000,
+   "bulto": 10
+  },
+  {
+   "id": "cp6",
+   "nombre": "Entraña",
+   "categoria": "Carnes vacunas",
+   "precio": 160000,
+   "bulto": 10
+  },
+  {
+   "id": "cp7",
+   "nombre": "Vacío",
+   "categoria": "Carnes vacunas",
+   "precio": 130000,
+   "bulto": 10
+  },
+  {
+   "id": "cp8",
+   "nombre": "Asado",
+   "categoria": "Carnes vacunas",
+   "precio": 110000,
+   "bulto": 10
+  },
+  {
+   "id": "cp9",
+   "nombre": "Tapa de asado",
+   "categoria": "Carnes vacunas",
+   "precio": 105000,
+   "bulto": 10
+  },
+  {
+   "id": "cp10",
+   "nombre": "Matambre",
+   "categoria": "Carnes vacunas",
+   "precio": 120000,
+   "bulto": 10
+  },
+  {
+   "id": "cp11",
+   "nombre": "Colita de cuadril",
+   "categoria": "Carnes vacunas",
+   "precio": 140000,
+   "bulto": 10
+  },
+  {
+   "id": "cp12",
+   "nombre": "Cuadril",
+   "categoria": "Carnes vacunas",
+   "precio": 135000,
+   "bulto": 10
+  },
+  {
+   "id": "cp13",
+   "nombre": "Nalga",
+   "categoria": "Carnes vacunas",
+   "precio": 125000,
+   "bulto": 10
+  },
+  {
+   "id": "cp14",
+   "nombre": "Bola de lomo",
+   "categoria": "Carnes vacunas",
+   "precio": 120000,
+   "bulto": 10
+  },
+  {
+   "id": "cp15",
+   "nombre": "Peceto",
+   "categoria": "Carnes vacunas",
+   "precio": 145000,
+   "bulto": 10
+  },
+  {
+   "id": "cp16",
+   "nombre": "Roast beef",
+   "categoria": "Carnes vacunas",
+   "precio": 95000,
+   "bulto": 10
+  },
+  {
+   "id": "cp17",
+   "nombre": "Paleta",
+   "categoria": "Carnes vacunas",
+   "precio": 90000,
+   "bulto": 10
+  },
+  {
+   "id": "cp18",
+   "nombre": "Osobuco",
+   "categoria": "Carnes vacunas",
+   "precio": 75000,
+   "bulto": 10
+  },
+  {
+   "id": "cp19",
+   "nombre": "Falda",
+   "categoria": "Carnes vacunas",
+   "precio": 80000,
+   "bulto": 10
+  },
+  {
+   "id": "cp20",
+   "nombre": "Carne picada común",
+   "categoria": "Carnes vacunas",
+   "precio": 85000,
+   "bulto": 10
+  },
+  {
+   "id": "cp21",
+   "nombre": "Carne picada especial",
+   "categoria": "Carnes vacunas",
+   "precio": 105000,
+   "bulto": 10
+  },
+  {
+   "id": "cp22",
+   "nombre": "Mondongo",
+   "categoria": "Carnes vacunas",
+   "precio": 55000,
+   "bulto": 10
+  },
+  {
+   "id": "cp23",
+   "nombre": "Riñón",
+   "categoria": "Carnes vacunas",
+   "precio": 45000,
+   "bulto": 10
+  },
+  {
+   "id": "cp24",
+   "nombre": "Molleja",
+   "categoria": "Carnes vacunas",
+   "precio": 165000,
+   "bulto": 10
+  },
+  {
+   "id": "cp25",
+   "nombre": "Chinchulín",
+   "categoria": "Carnes vacunas",
+   "precio": 65000,
+   "bulto": 10
+  },
+  {
+   "id": "cp26",
+   "nombre": "Morcilla",
+   "categoria": "Carnes vacunas",
+   "precio": 55000,
+   "bulto": 10
+  },
+  {
+   "id": "cp27",
+   "nombre": "Chorizo parrillero",
+   "categoria": "Carnes vacunas",
+   "precio": 75000,
+   "bulto": 10
+  },
+  {
+   "id": "cp28",
+   "nombre": "Bondiola",
+   "categoria": "Cerdo",
+   "precio": 76000,
+   "bulto": 8
+  },
+  {
+   "id": "cp29",
+   "nombre": "Carré de cerdo",
+   "categoria": "Cerdo",
+   "precio": 68000,
+   "bulto": 8
+  },
+  {
+   "id": "cp30",
+   "nombre": "Pechito de cerdo",
+   "categoria": "Cerdo",
+   "precio": 64000,
+   "bulto": 8
+  },
+  {
+   "id": "cp31",
+   "nombre": "Matambrito de cerdo",
+   "categoria": "Cerdo",
+   "precio": 84000,
+   "bulto": 8
+  },
+  {
+   "id": "cp32",
+   "nombre": "Solomillo de cerdo",
+   "categoria": "Cerdo",
+   "precio": 92000,
+   "bulto": 8
+  },
+  {
+   "id": "cp33",
+   "nombre": "Panceta fresca",
+   "categoria": "Cerdo",
+   "precio": 38400,
+   "bulto": 8
+  },
+  {
+   "id": "cp34",
+   "nombre": "Panceta ahumada",
+   "categoria": "Cerdo",
+   "precio": 96000,
+   "bulto": 8
+  },
+  {
+   "id": "cp35",
+   "nombre": "Costillar de cerdo",
+   "categoria": "Cerdo",
+   "precio": 65600,
+   "bulto": 8
+  },
+  {
+   "id": "cp36",
+   "nombre": "Codillo",
+   "categoria": "Cerdo",
+   "precio": 52000,
+   "bulto": 8
+  },
+  {
+   "id": "cp37",
+   "nombre": "Chorizo de cerdo puro",
+   "categoria": "Cerdo",
+   "precio": 68000,
+   "bulto": 8
+  },
+  {
+   "id": "cp38",
+   "nombre": "Lechón",
+   "categoria": "Cerdo",
+   "precio": 78400,
+   "bulto": 8
+  },
+  {
+   "id": "cp39",
+   "nombre": "Grasa de pella",
+   "categoria": "Cerdo",
+   "precio": 22400,
+   "bulto": 8
+  },
+  {
+   "id": "cp40",
+   "nombre": "Pollo entero",
+   "categoria": "Aves",
+   "precio": 39000,
+   "bulto": 10
+  },
+  {
+   "id": "cp41",
+   "nombre": "Suprema de pollo",
+   "categoria": "Aves",
+   "precio": 65000,
+   "bulto": 10
+  },
+  {
+   "id": "cp42",
+   "nombre": "Pata muslo",
+   "categoria": "Aves",
+   "precio": 35000,
+   "bulto": 10
+  },
+  {
+   "id": "cp43",
+   "nombre": "Alitas de pollo",
+   "categoria": "Aves",
+   "precio": 32000,
+   "bulto": 10
+  },
+  {
+   "id": "cp44",
+   "nombre": "Pollo deshuesado",
+   "categoria": "Aves",
+   "precio": 58000,
+   "bulto": 10
+  },
+  {
+   "id": "cp45",
+   "nombre": "Menudos de pollo",
+   "categoria": "Aves",
+   "precio": 22000,
+   "bulto": 10
+  },
+  {
+   "id": "cp46",
+   "nombre": "Pavo",
+   "categoria": "Aves",
+   "precio": 85000,
+   "bulto": 10
+  },
+  {
+   "id": "cp47",
+   "nombre": "Pato",
+   "categoria": "Aves",
+   "precio": 145000,
+   "bulto": 10
+  },
+  {
+   "id": "cp48",
+   "nombre": "Codorniz",
+   "categoria": "Aves",
+   "precio": 160000,
+   "bulto": 10
+  },
+  {
+   "id": "cp49",
+   "nombre": "Huevo de codorniz",
+   "categoria": "Aves",
+   "precio": 120000,
+   "bulto": 10
+  },
+  {
+   "id": "cp50",
+   "nombre": "Filet de merluza",
+   "categoria": "Pescados y mariscos",
+   "precio": 42500,
+   "bulto": 5
+  },
+  {
+   "id": "cp51",
+   "nombre": "Salmón rosado",
+   "categoria": "Pescados y mariscos",
+   "precio": 110000,
+   "bulto": 5
+  },
+  {
+   "id": "cp52",
+   "nombre": "Brótola",
+   "categoria": "Pescados y mariscos",
+   "precio": 45000,
+   "bulto": 5
+  },
+  {
+   "id": "cp53",
+   "nombre": "Lenguado",
+   "categoria": "Pescados y mariscos",
+   "precio": 80000,
+   "bulto": 5
+  },
+  {
+   "id": "cp54",
+   "nombre": "Atún fresco",
+   "categoria": "Pescados y mariscos",
+   "precio": 100000,
+   "bulto": 5
+  },
+  {
+   "id": "cp55",
+   "nombre": "Trucha patagónica",
+   "categoria": "Pescados y mariscos",
+   "precio": 70000,
+   "bulto": 5
+  },
+  {
+   "id": "cp56",
+   "nombre": "Corvina",
+   "categoria": "Pescados y mariscos",
+   "precio": 37500,
+   "bulto": 5
+  },
+  {
+   "id": "cp57",
+   "nombre": "Pacú",
+   "categoria": "Pescados y mariscos",
+   "precio": 42500,
+   "bulto": 5
+  },
+  {
+   "id": "cp58",
+   "nombre": "Surubí",
+   "categoria": "Pescados y mariscos",
+   "precio": 60000,
+   "bulto": 5
+  },
+  {
+   "id": "cp59",
+   "nombre": "Abadejo",
+   "categoria": "Pescados y mariscos",
+   "precio": 52500,
+   "bulto": 5
+  },
+  {
+   "id": "cp60",
+   "nombre": "Bacalao",
+   "categoria": "Pescados y mariscos",
+   "precio": 120000,
+   "bulto": 5
+  },
+  {
+   "id": "cp61",
+   "nombre": "Langostinos",
+   "categoria": "Pescados y mariscos",
+   "precio": 90000,
+   "bulto": 5
+  },
+  {
+   "id": "cp62",
+   "nombre": "Camarones",
+   "categoria": "Pescados y mariscos",
+   "precio": 80000,
+   "bulto": 5
+  },
+  {
+   "id": "cp63",
+   "nombre": "Calamar",
+   "categoria": "Pescados y mariscos",
+   "precio": 47500,
+   "bulto": 5
+  },
+  {
+   "id": "cp64",
+   "nombre": "Rabas",
+   "categoria": "Pescados y mariscos",
+   "precio": 55000,
+   "bulto": 5
+  },
+  {
+   "id": "cp65",
+   "nombre": "Pulpo español",
+   "categoria": "Pescados y mariscos",
+   "precio": 140000,
+   "bulto": 5
+  },
+  {
+   "id": "cp66",
+   "nombre": "Mejillones",
+   "categoria": "Pescados y mariscos",
+   "precio": 32500,
+   "bulto": 5
+  },
+  {
+   "id": "cp67",
+   "nombre": "Vieiras",
+   "categoria": "Pescados y mariscos",
+   "precio": 130000,
+   "bulto": 5
+  },
+  {
+   "id": "cp68",
+   "nombre": "Kanikama",
+   "categoria": "Pescados y mariscos",
+   "precio": 35000,
+   "bulto": 5
+  },
+  {
+   "id": "cp69",
+   "nombre": "Anchoas en salmuera",
+   "categoria": "Pescados y mariscos",
+   "precio": 75000,
+   "bulto": 5
+  },
+  {
+   "id": "cp70",
+   "nombre": "Centolla",
+   "categoria": "Pescados y mariscos",
+   "precio": 225000,
+   "bulto": 5
+  },
+  {
+   "id": "cp71",
+   "nombre": "Papa",
+   "categoria": "Verduras",
+   "precio": 30000,
+   "bulto": 25
+  },
+  {
+   "id": "cp72",
+   "nombre": "Papa para bastón",
+   "categoria": "Verduras",
+   "precio": 32500,
+   "bulto": 25
+  },
+  {
+   "id": "cp73",
+   "nombre": "Batata",
+   "categoria": "Verduras",
+   "precio": 28000,
+   "bulto": 20
+  },
+  {
+   "id": "cp74",
+   "nombre": "Cebolla",
+   "categoria": "Verduras",
+   "precio": 20000,
+   "bulto": 20
+  },
+  {
+   "id": "cp75",
+   "nombre": "Cebolla morada",
+   "categoria": "Verduras",
+   "precio": 16000,
+   "bulto": 10
+  },
+  {
+   "id": "cp76",
+   "nombre": "Cebolla de verdeo",
+   "categoria": "Verduras",
+   "precio": 17500,
+   "bulto": 5
+  },
+  {
+   "id": "cp77",
+   "nombre": "Puerro",
+   "categoria": "Verduras",
+   "precio": 16000,
+   "bulto": 5
+  },
+  {
+   "id": "cp78",
+   "nombre": "Echalote",
+   "categoria": "Verduras",
+   "precio": 19500,
+   "bulto": 3
+  },
+  {
+   "id": "cp79",
+   "nombre": "Ajo",
+   "categoria": "Verduras",
+   "precio": 32500,
+   "bulto": 5
+  },
+  {
+   "id": "cp80",
+   "nombre": "Zanahoria",
+   "categoria": "Verduras",
+   "precio": 19800,
+   "bulto": 18
+  },
+  {
+   "id": "cp81",
+   "nombre": "Zapallo anco",
+   "categoria": "Verduras",
+   "precio": 13500,
+   "bulto": 15
+  },
+  {
+   "id": "cp82",
+   "nombre": "Zapallo cabutia",
+   "categoria": "Verduras",
+   "precio": 14250,
+   "bulto": 15
+  },
+  {
+   "id": "cp83",
+   "nombre": "Zapallito",
+   "categoria": "Verduras",
+   "precio": 14400,
+   "bulto": 8
+  },
+  {
+   "id": "cp84",
+   "nombre": "Zucchini",
+   "categoria": "Verduras",
+   "precio": 17600,
+   "bulto": 8
+  },
+  {
+   "id": "cp85",
+   "nombre": "Berenjena",
+   "categoria": "Verduras",
+   "precio": 19200,
+   "bulto": 8
+  },
+  {
+   "id": "cp86",
+   "nombre": "Tomate redondo",
+   "categoria": "Verduras",
+   "precio": 45000,
+   "bulto": 18
+  },
+  {
+   "id": "cp87",
+   "nombre": "Tomate perita fresco",
+   "categoria": "Verduras",
+   "precio": 41400,
+   "bulto": 18
+  },
+  {
+   "id": "cp88",
+   "nombre": "Tomate cherry",
+   "categoria": "Verduras",
+   "precio": 18000,
+   "bulto": 4
+  },
+  {
+   "id": "cp89",
+   "nombre": "Morrón rojo",
+   "categoria": "Verduras",
+   "precio": 30400,
+   "bulto": 8
+  },
+  {
+   "id": "cp90",
+   "nombre": "Morrón verde",
+   "categoria": "Verduras",
+   "precio": 25600,
+   "bulto": 8
+  },
+  {
+   "id": "cp91",
+   "nombre": "Morrón amarillo",
+   "categoria": "Verduras",
+   "precio": 33600,
+   "bulto": 8
+  },
+  {
+   "id": "cp92",
+   "nombre": "Lechuga criolla",
+   "categoria": "Verduras",
+   "precio": 14000,
+   "bulto": 5
+  },
+  {
+   "id": "cp93",
+   "nombre": "Lechuga capuchina",
+   "categoria": "Verduras",
+   "precio": 15000,
+   "bulto": 5
+  },
+  {
+   "id": "cp94",
+   "nombre": "Rúcula",
+   "categoria": "Verduras",
+   "precio": 13000,
+   "bulto": 2
+  },
+  {
+   "id": "cp95",
+   "nombre": "Espinaca",
+   "categoria": "Verduras",
+   "precio": 15200,
+   "bulto": 4
+  },
+  {
+   "id": "cp96",
+   "nombre": "Acelga",
+   "categoria": "Verduras",
+   "precio": 13200,
+   "bulto": 6
+  },
+  {
+   "id": "cp97",
+   "nombre": "Kale",
+   "categoria": "Verduras",
+   "precio": 11000,
+   "bulto": 2
+  },
+  {
+   "id": "cp98",
+   "nombre": "Radicheta",
+   "categoria": "Verduras",
+   "precio": 8400,
+   "bulto": 2
+  },
+  {
+   "id": "cp99",
+   "nombre": "Repollo blanco",
+   "categoria": "Verduras",
+   "precio": 14000,
+   "bulto": 10
+  },
+  {
+   "id": "cp100",
+   "nombre": "Repollo colorado",
+   "categoria": "Verduras",
+   "precio": 17000,
+   "bulto": 10
+  },
+  {
+   "id": "cp101",
+   "nombre": "Coliflor",
+   "categoria": "Verduras",
+   "precio": 20800,
+   "bulto": 8
+  },
+  {
+   "id": "cp102",
+   "nombre": "Brócoli",
+   "categoria": "Verduras",
+   "precio": 19200,
+   "bulto": 6
+  },
+  {
+   "id": "cp103",
+   "nombre": "Apio",
+   "categoria": "Verduras",
+   "precio": 12000,
+   "bulto": 5
+  },
+  {
+   "id": "cp104",
+   "nombre": "Hinojo",
+   "categoria": "Verduras",
+   "precio": 14000,
+   "bulto": 5
+  },
+  {
+   "id": "cp105",
+   "nombre": "Remolacha",
+   "categoria": "Verduras",
+   "precio": 12800,
+   "bulto": 8
+  },
+  {
+   "id": "cp106",
+   "nombre": "Rabanito",
+   "categoria": "Verduras",
+   "precio": 8700,
+   "bulto": 3
+  },
+  {
+   "id": "cp107",
+   "nombre": "Pepino",
+   "categoria": "Verduras",
+   "precio": 12600,
+   "bulto": 6
+  },
+  {
+   "id": "cp108",
+   "nombre": "Chaucha",
+   "categoria": "Verduras",
+   "precio": 18000,
+   "bulto": 5
+  },
+  {
+   "id": "cp109",
+   "nombre": "Espárragos",
+   "categoria": "Verduras",
+   "precio": 19000,
+   "bulto": 2
+  },
+  {
+   "id": "cp110",
+   "nombre": "Alcaucil",
+   "categoria": "Verduras",
+   "precio": 22000,
+   "bulto": 4
+  },
+  {
+   "id": "cp111",
+   "nombre": "Champiñones",
+   "categoria": "Verduras",
+   "precio": 22500,
+   "bulto": 3
+  },
+  {
+   "id": "cp112",
+   "nombre": "Portobello",
+   "categoria": "Verduras",
+   "precio": 28500,
+   "bulto": 3
+  },
+  {
+   "id": "cp113",
+   "nombre": "Gírgolas",
+   "categoria": "Verduras",
+   "precio": 17000,
+   "bulto": 2
+  },
+  {
+   "id": "cp114",
+   "nombre": "Choclo",
+   "categoria": "Verduras",
+   "precio": 15200,
+   "bulto": 8
+  },
+  {
+   "id": "cp115",
+   "nombre": "Palta",
+   "categoria": "Verduras",
+   "precio": 39000,
+   "bulto": 6
+  },
+  {
+   "id": "cp116",
+   "nombre": "Jengibre fresco",
+   "categoria": "Verduras",
+   "precio": 16000,
+   "bulto": 2
+  },
+  {
+   "id": "cp117",
+   "nombre": "Perejil",
+   "categoria": "Verduras",
+   "precio": 7000,
+   "bulto": 2
+  },
+  {
+   "id": "cp118",
+   "nombre": "Cilantro",
+   "categoria": "Verduras",
+   "precio": 4200,
+   "bulto": 1
+  },
+  {
+   "id": "cp119",
+   "nombre": "Albahaca fresca",
+   "categoria": "Verduras",
+   "precio": 6000,
+   "bulto": 1
+  },
+  {
+   "id": "cp120",
+   "nombre": "Menta fresca",
+   "categoria": "Verduras",
+   "precio": 5500,
+   "bulto": 1
+  },
+  {
+   "id": "cp121",
+   "nombre": "Romero fresco",
+   "categoria": "Verduras",
+   "precio": 5000,
+   "bulto": 1
+  },
+  {
+   "id": "cp122",
+   "nombre": "Tomillo fresco",
+   "categoria": "Verduras",
+   "precio": 6500,
+   "bulto": 1
+  },
+  {
+   "id": "cp123",
+   "nombre": "Limón",
+   "categoria": "Frutas",
+   "precio": 27000,
+   "bulto": 15
+  },
+  {
+   "id": "cp124",
+   "nombre": "Naranja",
+   "categoria": "Frutas",
+   "precio": 23400,
+   "bulto": 18
+  },
+  {
+   "id": "cp125",
+   "nombre": "Mandarina",
+   "categoria": "Frutas",
+   "precio": 22500,
+   "bulto": 15
+  },
+  {
+   "id": "cp126",
+   "nombre": "Pomelo",
+   "categoria": "Frutas",
+   "precio": 19200,
+   "bulto": 12
+  },
+  {
+   "id": "cp127",
+   "nombre": "Manzana roja",
+   "categoria": "Frutas",
+   "precio": 39600,
+   "bulto": 18
+  },
+  {
+   "id": "cp128",
+   "nombre": "Manzana verde",
+   "categoria": "Frutas",
+   "precio": 43200,
+   "bulto": 18
+  },
+  {
+   "id": "cp129",
+   "nombre": "Pera",
+   "categoria": "Frutas",
+   "precio": 34500,
+   "bulto": 15
+  },
+  {
+   "id": "cp130",
+   "nombre": "Banana",
+   "categoria": "Frutas",
+   "precio": 34200,
+   "bulto": 18
+  },
+  {
+   "id": "cp131",
+   "nombre": "Frutilla",
+   "categoria": "Frutas",
+   "precio": 26000,
+   "bulto": 4
+  },
+  {
+   "id": "cp132",
+   "nombre": "Arándanos",
+   "categoria": "Frutas",
+   "precio": 24000,
+   "bulto": 2
+  },
+  {
+   "id": "cp133",
+   "nombre": "Frambuesa",
+   "categoria": "Frutas",
+   "precio": 16000,
+   "bulto": 1
+  },
+  {
+   "id": "cp134",
+   "nombre": "Kiwi",
+   "categoria": "Frutas",
+   "precio": 33600,
+   "bulto": 8
+  },
+  {
+   "id": "cp135",
+   "nombre": "Ananá",
+   "categoria": "Frutas",
+   "precio": 32000,
+   "bulto": 10
+  },
+  {
+   "id": "cp136",
+   "nombre": "Melón",
+   "categoria": "Frutas",
+   "precio": 21000,
+   "bulto": 10
+  },
+  {
+   "id": "cp137",
+   "nombre": "Sandía",
+   "categoria": "Frutas",
+   "precio": 16500,
+   "bulto": 15
+  },
+  {
+   "id": "cp138",
+   "nombre": "Durazno",
+   "categoria": "Frutas",
+   "precio": 28000,
+   "bulto": 10
+  },
+  {
+   "id": "cp139",
+   "nombre": "Ciruela",
+   "categoria": "Frutas",
+   "precio": 26000,
+   "bulto": 10
+  },
+  {
+   "id": "cp140",
+   "nombre": "Uva",
+   "categoria": "Frutas",
+   "precio": 30400,
+   "bulto": 8
+  },
+  {
+   "id": "cp141",
+   "nombre": "Mango",
+   "categoria": "Frutas",
+   "precio": 44000,
+   "bulto": 8
+  },
+  {
+   "id": "cp142",
+   "nombre": "Maracuyá",
+   "categoria": "Frutas",
+   "precio": 28500,
+   "bulto": 3
+  },
+  {
+   "id": "cp143",
+   "nombre": "Coco fresco",
+   "categoria": "Frutas",
+   "precio": 28800,
+   "bulto": 6
+  },
+  {
+   "id": "cp144",
+   "nombre": "Higo",
+   "categoria": "Frutas",
+   "precio": 22500,
+   "bulto": 3
+  },
+  {
+   "id": "cp145",
+   "nombre": "Cereza",
+   "categoria": "Frutas",
+   "precio": 28000,
+   "bulto": 2
+  },
+  {
+   "id": "cp146",
+   "nombre": "Membrillo fresco",
+   "categoria": "Frutas",
+   "precio": 24000,
+   "bulto": 10
+  },
+  {
+   "id": "cp147",
+   "nombre": "Arroz largo fino",
+   "categoria": "Almacén y secos",
+   "precio": 16000,
+   "bulto": 10
+  },
+  {
+   "id": "cp148",
+   "nombre": "Arroz carnaroli",
+   "categoria": "Almacén y secos",
+   "precio": 27500,
+   "bulto": 5
+  },
+  {
+   "id": "cp149",
+   "nombre": "Arroz yamaní",
+   "categoria": "Almacén y secos",
+   "precio": 16000,
+   "bulto": 5
+  },
+  {
+   "id": "cp150",
+   "nombre": "Fideos secos guiseros",
+   "categoria": "Almacén y secos",
+   "precio": 19000,
+   "bulto": 10
+  },
+  {
+   "id": "cp151",
+   "nombre": "Fideos spaghetti",
+   "categoria": "Almacén y secos",
+   "precio": 21000,
+   "bulto": 10
+  },
+  {
+   "id": "cp152",
+   "nombre": "Fideo moñito",
+   "categoria": "Almacén y secos",
+   "precio": 22000,
+   "bulto": 10
+  },
+  {
+   "id": "cp153",
+   "nombre": "Lentejas",
+   "categoria": "Almacén y secos",
+   "precio": 28000,
+   "bulto": 10
+  },
+  {
+   "id": "cp154",
+   "nombre": "Garbanzos",
+   "categoria": "Almacén y secos",
+   "precio": 32000,
+   "bulto": 10
+  },
+  {
+   "id": "cp155",
+   "nombre": "Porotos negros",
+   "categoria": "Almacén y secos",
+   "precio": 34000,
+   "bulto": 10
+  },
+  {
+   "id": "cp156",
+   "nombre": "Porotos alubia",
+   "categoria": "Almacén y secos",
+   "precio": 31000,
+   "bulto": 10
+  },
+  {
+   "id": "cp157",
+   "nombre": "Arvejas secas",
+   "categoria": "Almacén y secos",
+   "precio": 24000,
+   "bulto": 10
+  },
+  {
+   "id": "cp158",
+   "nombre": "Quinoa",
+   "categoria": "Almacén y secos",
+   "precio": 42500,
+   "bulto": 5
+  },
+  {
+   "id": "cp159",
+   "nombre": "Cous cous",
+   "categoria": "Almacén y secos",
+   "precio": 32500,
+   "bulto": 5
+  },
+  {
+   "id": "cp160",
+   "nombre": "Polenta",
+   "categoria": "Almacén y secos",
+   "precio": 16000,
+   "bulto": 10
+  },
+  {
+   "id": "cp161",
+   "nombre": "Avena arrollada",
+   "categoria": "Almacén y secos",
+   "precio": 32000,
+   "bulto": 10
+  },
+  {
+   "id": "cp162",
+   "nombre": "Pan rallado",
+   "categoria": "Almacén y secos",
+   "precio": 24000,
+   "bulto": 10
+  },
+  {
+   "id": "cp163",
+   "nombre": "Rebozador",
+   "categoria": "Almacén y secos",
+   "precio": 26000,
+   "bulto": 10
+  },
+  {
+   "id": "cp164",
+   "nombre": "Panko",
+   "categoria": "Almacén y secos",
+   "precio": 37500,
+   "bulto": 5
+  },
+  {
+   "id": "cp165",
+   "nombre": "Puré de tomate",
+   "categoria": "Almacén y secos",
+   "precio": 14400,
+   "bulto": 8
+  },
+  {
+   "id": "cp166",
+   "nombre": "Tomate perita en lata",
+   "categoria": "Almacén y secos",
+   "precio": 26000,
+   "bulto": 10
+  },
+  {
+   "id": "cp167",
+   "nombre": "Extracto de tomate",
+   "categoria": "Almacén y secos",
+   "precio": 24000,
+   "bulto": 5
+  },
+  {
+   "id": "cp168",
+   "nombre": "Atún en lata",
+   "categoria": "Almacén y secos",
+   "precio": 62500,
+   "bulto": 5
+  },
+  {
+   "id": "cp169",
+   "nombre": "Aceitunas verdes",
+   "categoria": "Almacén y secos",
+   "precio": 27500,
+   "bulto": 5
+  },
+  {
+   "id": "cp170",
+   "nombre": "Aceitunas negras",
+   "categoria": "Almacén y secos",
+   "precio": 32500,
+   "bulto": 5
+  },
+  {
+   "id": "cp171",
+   "nombre": "Alcaparras",
+   "categoria": "Almacén y secos",
+   "precio": 28000,
+   "bulto": 2
+  },
+  {
+   "id": "cp172",
+   "nombre": "Pepinillos",
+   "categoria": "Almacén y secos",
+   "precio": 22500,
+   "bulto": 3
+  },
+  {
+   "id": "cp173",
+   "nombre": "Choclo en lata",
+   "categoria": "Almacén y secos",
+   "precio": 22800,
+   "bulto": 6
+  },
+  {
+   "id": "cp174",
+   "nombre": "Arvejas en lata",
+   "categoria": "Almacén y secos",
+   "precio": 19200,
+   "bulto": 6
+  },
+  {
+   "id": "cp175",
+   "nombre": "Palmitos",
+   "categoria": "Almacén y secos",
+   "precio": 28500,
+   "bulto": 3
+  },
+  {
+   "id": "cp176",
+   "nombre": "Garbanzos cocidos en lata",
+   "categoria": "Almacén y secos",
+   "precio": 25200,
+   "bulto": 6
+  },
+  {
+   "id": "cp177",
+   "nombre": "Leche de coco",
+   "categoria": "Almacén y secos",
+   "precio": 34000,
+   "bulto": 4
+  },
+  {
+   "id": "cp178",
+   "nombre": "Salsa de tomate lista",
+   "categoria": "Almacén y secos",
+   "precio": 25600,
+   "bulto": 8
+  },
+  {
+   "id": "cp179",
+   "nombre": "Caldo en polvo",
+   "categoria": "Almacén y secos",
+   "precio": 19000,
+   "bulto": 2
+  },
+  {
+   "id": "cp180",
+   "nombre": "Sopa crema base",
+   "categoria": "Almacén y secos",
+   "precio": 17000,
+   "bulto": 2
+  },
+  {
+   "id": "cp181",
+   "nombre": "Puré instantáneo",
+   "categoria": "Almacén y secos",
+   "precio": 26000,
+   "bulto": 4
+  },
+  {
+   "id": "cp182",
+   "nombre": "Leche entera",
+   "categoria": "Lácteos y huevos",
+   "precio": 18000,
+   "bulto": 12
+  },
+  {
+   "id": "cp183",
+   "nombre": "Leche descremada",
+   "categoria": "Lácteos y huevos",
+   "precio": 18600,
+   "bulto": 12
+  },
+  {
+   "id": "cp184",
+   "nombre": "Crema de leche",
+   "categoria": "Lácteos y huevos",
+   "precio": 22500,
+   "bulto": 5
+  },
+  {
+   "id": "cp185",
+   "nombre": "Manteca",
+   "categoria": "Lácteos y huevos",
+   "precio": 45000,
+   "bulto": 5
+  },
+  {
+   "id": "cp186",
+   "nombre": "Queso cremoso",
+   "categoria": "Lácteos y huevos",
+   "precio": 30000,
+   "bulto": 4
+  },
+  {
+   "id": "cp187",
+   "nombre": "Muzzarella",
+   "categoria": "Lácteos y huevos",
+   "precio": 80000,
+   "bulto": 10
+  },
+  {
+   "id": "cp188",
+   "nombre": "Queso tybo",
+   "categoria": "Lácteos y huevos",
+   "precio": 34000,
+   "bulto": 4
+  },
+  {
+   "id": "cp189",
+   "nombre": "Queso reggianito",
+   "categoria": "Lácteos y huevos",
+   "precio": 64000,
+   "bulto": 4
+  },
+  {
+   "id": "cp190",
+   "nombre": "Queso sardo",
+   "categoria": "Lácteos y huevos",
+   "precio": 52000,
+   "bulto": 4
+  },
+  {
+   "id": "cp191",
+   "nombre": "Queso provolone",
+   "categoria": "Lácteos y huevos",
+   "precio": 48000,
+   "bulto": 4
+  },
+  {
+   "id": "cp192",
+   "nombre": "Queso azul",
+   "categoria": "Lácteos y huevos",
+   "precio": 28000,
+   "bulto": 2
+  },
+  {
+   "id": "cp193",
+   "nombre": "Queso brie",
+   "categoria": "Lácteos y huevos",
+   "precio": 36000,
+   "bulto": 2
+  },
+  {
+   "id": "cp194",
+   "nombre": "Queso de cabra",
+   "categoria": "Lácteos y huevos",
+   "precio": 30000,
+   "bulto": 2
+  },
+  {
+   "id": "cp195",
+   "nombre": "Ricota",
+   "categoria": "Lácteos y huevos",
+   "precio": 18000,
+   "bulto": 4
+  },
+  {
+   "id": "cp196",
+   "nombre": "Queso crema",
+   "categoria": "Lácteos y huevos",
+   "precio": 26000,
+   "bulto": 4
+  },
+  {
+   "id": "cp197",
+   "nombre": "Yogur natural",
+   "categoria": "Lácteos y huevos",
+   "precio": 14000,
+   "bulto": 5
+  },
+  {
+   "id": "cp198",
+   "nombre": "Dulce de leche repostero",
+   "categoria": "Lácteos y huevos",
+   "precio": 55000,
+   "bulto": 10
+  },
+  {
+   "id": "cp199",
+   "nombre": "Leche condensada",
+   "categoria": "Lácteos y huevos",
+   "precio": 26000,
+   "bulto": 4
+  },
+  {
+   "id": "cp200",
+   "nombre": "Queso rallado",
+   "categoria": "Lácteos y huevos",
+   "precio": 30000,
+   "bulto": 2
+  },
+  {
+   "id": "cp201",
+   "nombre": "Queso fresco light",
+   "categoria": "Lácteos y huevos",
+   "precio": 32800,
+   "bulto": 4
+  },
+  {
+   "id": "cp202",
+   "nombre": "Huevo",
+   "categoria": "Lácteos y huevos",
+   "precio": 6500,
+   "bulto": 30,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 60
+  },
+  {
+   "id": "cp203",
+   "nombre": "Huevo de campo",
+   "categoria": "Lácteos y huevos",
+   "precio": 9500,
+   "bulto": 30,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 62
+  },
+  {
+   "id": "cp204",
+   "nombre": "Jamón cocido",
+   "categoria": "Fiambres",
+   "precio": 44000,
+   "bulto": 4
+  },
+  {
+   "id": "cp205",
+   "nombre": "Jamón crudo",
+   "categoria": "Fiambres",
+   "precio": 88000,
+   "bulto": 4
+  },
+  {
+   "id": "cp206",
+   "nombre": "Salame Milán",
+   "categoria": "Fiambres",
+   "precio": 39000,
+   "bulto": 3
+  },
+  {
+   "id": "cp207",
+   "nombre": "Bondiola curada",
+   "categoria": "Fiambres",
+   "precio": 48000,
+   "bulto": 3
+  },
+  {
+   "id": "cp208",
+   "nombre": "Mortadela",
+   "categoria": "Fiambres",
+   "precio": 26000,
+   "bulto": 4
+  },
+  {
+   "id": "cp209",
+   "nombre": "Longaniza",
+   "categoria": "Fiambres",
+   "precio": 36000,
+   "bulto": 3
+  },
+  {
+   "id": "cp210",
+   "nombre": "Lomito ahumado",
+   "categoria": "Fiambres",
+   "precio": 45000,
+   "bulto": 3
+  },
+  {
+   "id": "cp211",
+   "nombre": "Leberwurst",
+   "categoria": "Fiambres",
+   "precio": 15000,
+   "bulto": 2
+  },
+  {
+   "id": "cp212",
+   "nombre": "Salamín picado grueso",
+   "categoria": "Fiambres",
+   "precio": 37500,
+   "bulto": 3
+  },
+  {
+   "id": "cp213",
+   "nombre": "Jamón serrano",
+   "categoria": "Fiambres",
+   "precio": 78000,
+   "bulto": 3
+  },
+  {
+   "id": "cp214",
+   "nombre": "Harina 000",
+   "categoria": "Panificación",
+   "precio": 25000,
+   "bulto": 25
+  },
+  {
+   "id": "cp215",
+   "nombre": "Harina 0000",
+   "categoria": "Panificación",
+   "precio": 27500,
+   "bulto": 25
+  },
+  {
+   "id": "cp216",
+   "nombre": "Harina integral",
+   "categoria": "Panificación",
+   "precio": 32500,
+   "bulto": 25
+  },
+  {
+   "id": "cp217",
+   "nombre": "Harina de centeno",
+   "categoria": "Panificación",
+   "precio": 28000,
+   "bulto": 10
+  },
+  {
+   "id": "cp218",
+   "nombre": "Semolín",
+   "categoria": "Panificación",
+   "precio": 19000,
+   "bulto": 10
+  },
+  {
+   "id": "cp219",
+   "nombre": "Harina leudante",
+   "categoria": "Panificación",
+   "precio": 14000,
+   "bulto": 10
+  },
+  {
+   "id": "cp220",
+   "nombre": "Premezcla sin gluten",
+   "categoria": "Panificación",
+   "precio": 32500,
+   "bulto": 5
+  },
+  {
+   "id": "cp221",
+   "nombre": "Harina de garbanzos",
+   "categoria": "Panificación",
+   "precio": 21000,
+   "bulto": 5
+  },
+  {
+   "id": "cp222",
+   "nombre": "Harina de maíz",
+   "categoria": "Panificación",
+   "precio": 17000,
+   "bulto": 10
+  },
+  {
+   "id": "cp223",
+   "nombre": "Levadura fresca",
+   "categoria": "Panificación",
+   "precio": 9000,
+   "bulto": 2
+  },
+  {
+   "id": "cp224",
+   "nombre": "Levadura seca instantánea",
+   "categoria": "Panificación",
+   "precio": 12000,
+   "bulto": 1
+  },
+  {
+   "id": "cp225",
+   "nombre": "Masa madre deshidratada",
+   "categoria": "Panificación",
+   "precio": 9500,
+   "bulto": 1
+  },
+  {
+   "id": "cp226",
+   "nombre": "Mejorador de masas",
+   "categoria": "Panificación",
+   "precio": 12000,
+   "bulto": 2
+  },
+  {
+   "id": "cp227",
+   "nombre": "Gluten vital",
+   "categoria": "Panificación",
+   "precio": 15000,
+   "bulto": 2
+  },
+  {
+   "id": "cp228",
+   "nombre": "Salvado de trigo",
+   "categoria": "Panificación",
+   "precio": 9000,
+   "bulto": 5
+  },
+  {
+   "id": "cp229",
+   "nombre": "Semillas de sésamo",
+   "categoria": "Panificación",
+   "precio": 24000,
+   "bulto": 3
+  },
+  {
+   "id": "cp230",
+   "nombre": "Semillas de chía",
+   "categoria": "Panificación",
+   "precio": 21000,
+   "bulto": 3
+  },
+  {
+   "id": "cp231",
+   "nombre": "Semillas de lino",
+   "categoria": "Panificación",
+   "precio": 13500,
+   "bulto": 3
+  },
+  {
+   "id": "cp232",
+   "nombre": "Semillas de girasol peladas",
+   "categoria": "Panificación",
+   "precio": 16500,
+   "bulto": 3
+  },
+  {
+   "id": "cp233",
+   "nombre": "Semillas de amapola",
+   "categoria": "Panificación",
+   "precio": 15000,
+   "bulto": 1
+  },
+  {
+   "id": "cp234",
+   "nombre": "Semillas de zapallo",
+   "categoria": "Panificación",
+   "precio": 19000,
+   "bulto": 2
+  },
+  {
+   "id": "cp235",
+   "nombre": "Extracto de malta",
+   "categoria": "Panificación",
+   "precio": 17000,
+   "bulto": 2
+  },
+  {
+   "id": "cp236",
+   "nombre": "Margarina para hojaldre",
+   "categoria": "Panificación",
+   "precio": 55000,
+   "bulto": 10
+  },
+  {
+   "id": "cp237",
+   "nombre": "Grasa vacuna refinada",
+   "categoria": "Panificación",
+   "precio": 32000,
+   "bulto": 10
+  },
+  {
+   "id": "cp238",
+   "nombre": "Azúcar",
+   "categoria": "Pastelería",
+   "precio": 35000,
+   "bulto": 25
+  },
+  {
+   "id": "cp239",
+   "nombre": "Azúcar impalpable",
+   "categoria": "Pastelería",
+   "precio": 22000,
+   "bulto": 10
+  },
+  {
+   "id": "cp240",
+   "nombre": "Azúcar rubia",
+   "categoria": "Pastelería",
+   "precio": 19000,
+   "bulto": 10
+  },
+  {
+   "id": "cp241",
+   "nombre": "Miel",
+   "categoria": "Pastelería",
+   "precio": 32500,
+   "bulto": 5
+  },
+  {
+   "id": "cp242",
+   "nombre": "Glucosa",
+   "categoria": "Pastelería",
+   "precio": 21000,
+   "bulto": 5
+  },
+  {
+   "id": "cp243",
+   "nombre": "Chocolate cobertura semiamargo",
+   "categoria": "Pastelería",
+   "precio": 70000,
+   "bulto": 5
+  },
+  {
+   "id": "cp244",
+   "nombre": "Chocolate cobertura con leche",
+   "categoria": "Pastelería",
+   "precio": 72500,
+   "bulto": 5
+  },
+  {
+   "id": "cp245",
+   "nombre": "Chocolate blanco",
+   "categoria": "Pastelería",
+   "precio": 75000,
+   "bulto": 5
+  },
+  {
+   "id": "cp246",
+   "nombre": "Cacao amargo",
+   "categoria": "Pastelería",
+   "precio": 47500,
+   "bulto": 5
+  },
+  {
+   "id": "cp247",
+   "nombre": "Gelatina sin sabor",
+   "categoria": "Pastelería",
+   "precio": 18000,
+   "bulto": 1
+  },
+  {
+   "id": "cp248",
+   "nombre": "Esencia de vainilla",
+   "categoria": "Pastelería",
+   "precio": 12000,
+   "bulto": 1
+  },
+  {
+   "id": "cp249",
+   "nombre": "Polvo de hornear",
+   "categoria": "Pastelería",
+   "precio": 9600,
+   "bulto": 2
+  },
+  {
+   "id": "cp250",
+   "nombre": "Bicarbonato de sodio",
+   "categoria": "Pastelería",
+   "precio": 5000,
+   "bulto": 2
+  },
+  {
+   "id": "cp251",
+   "nombre": "Crémor tártaro",
+   "categoria": "Pastelería",
+   "precio": 22000,
+   "bulto": 1
+  },
+  {
+   "id": "cp252",
+   "nombre": "Nuez pelada",
+   "categoria": "Pastelería",
+   "precio": 48000,
+   "bulto": 3
+  },
+  {
+   "id": "cp253",
+   "nombre": "Almendras",
+   "categoria": "Pastelería",
+   "precio": 42000,
+   "bulto": 3
+  },
+  {
+   "id": "cp254",
+   "nombre": "Avellanas",
+   "categoria": "Pastelería",
+   "precio": 44000,
+   "bulto": 2
+  },
+  {
+   "id": "cp255",
+   "nombre": "Castañas de cajú",
+   "categoria": "Pastelería",
+   "precio": 39000,
+   "bulto": 3
+  },
+  {
+   "id": "cp256",
+   "nombre": "Pistacho",
+   "categoria": "Pastelería",
+   "precio": 28000,
+   "bulto": 1
+  },
+  {
+   "id": "cp257",
+   "nombre": "Maní tostado",
+   "categoria": "Pastelería",
+   "precio": 20000,
+   "bulto": 5
+  },
+  {
+   "id": "cp258",
+   "nombre": "Pasas de uva",
+   "categoria": "Pastelería",
+   "precio": 30000,
+   "bulto": 5
+  },
+  {
+   "id": "cp259",
+   "nombre": "Coco rallado",
+   "categoria": "Pastelería",
+   "precio": 22500,
+   "bulto": 3
+  },
+  {
+   "id": "cp260",
+   "nombre": "Dulce de membrillo",
+   "categoria": "Pastelería",
+   "precio": 22500,
+   "bulto": 5
+  },
+  {
+   "id": "cp261",
+   "nombre": "Dulce de batata",
+   "categoria": "Pastelería",
+   "precio": 21000,
+   "bulto": 5
+  },
+  {
+   "id": "cp262",
+   "nombre": "Mermelada de frutilla",
+   "categoria": "Pastelería",
+   "precio": 26000,
+   "bulto": 5
+  },
+  {
+   "id": "cp263",
+   "nombre": "Mermelada de durazno",
+   "categoria": "Pastelería",
+   "precio": 24500,
+   "bulto": 5
+  },
+  {
+   "id": "cp264",
+   "nombre": "Frutas confitadas",
+   "categoria": "Pastelería",
+   "precio": 25500,
+   "bulto": 3
+  },
+  {
+   "id": "cp265",
+   "nombre": "Café en grano",
+   "categoria": "Pastelería",
+   "precio": 90000,
+   "bulto": 5
+  },
+  {
+   "id": "cp266",
+   "nombre": "Café molido",
+   "categoria": "Pastelería",
+   "precio": 82500,
+   "bulto": 5
+  },
+  {
+   "id": "cp267",
+   "nombre": "Cacao dulce en polvo",
+   "categoria": "Pastelería",
+   "precio": 19500,
+   "bulto": 3
+  },
+  {
+   "id": "cp268",
+   "nombre": "Baño de repostería",
+   "categoria": "Pastelería",
+   "precio": 28500,
+   "bulto": 3
+  },
+  {
+   "id": "cp269",
+   "nombre": "Granas y confites",
+   "categoria": "Pastelería",
+   "precio": 17000,
+   "bulto": 2
+  },
+  {
+   "id": "cp270",
+   "nombre": "Vainillas",
+   "categoria": "Pastelería",
+   "precio": 15000,
+   "bulto": 2
+  },
+  {
+   "id": "cp271",
+   "nombre": "Galletitas de chocolate para base",
+   "categoria": "Pastelería",
+   "precio": 20400,
+   "bulto": 3
+  },
+  {
+   "id": "cp272",
+   "nombre": "Queso crema para cheesecake",
+   "categoria": "Pastelería",
+   "precio": 28800,
+   "bulto": 4
+  },
+  {
+   "id": "cp273",
+   "nombre": "Barril cerveza rubia",
+   "categoria": "Bebidas",
+   "precio": 130000,
+   "bulto": 50
+  },
+  {
+   "id": "cp274",
+   "nombre": "Barril cerveza IPA",
+   "categoria": "Bebidas",
+   "precio": 150000,
+   "bulto": 50
+  },
+  {
+   "id": "cp275",
+   "nombre": "Barril cerveza roja",
+   "categoria": "Bebidas",
+   "precio": 91500,
+   "bulto": 30
+  },
+  {
+   "id": "cp276",
+   "nombre": "Barril cerveza negra stout",
+   "categoria": "Bebidas",
+   "precio": 97500,
+   "bulto": 30
+  },
+  {
+   "id": "cp277",
+   "nombre": "Barril cerveza honey",
+   "categoria": "Bebidas",
+   "precio": 94500,
+   "bulto": 30
+  },
+  {
+   "id": "cp278",
+   "nombre": "Barril sidra tirada",
+   "categoria": "Bebidas",
+   "precio": 75000,
+   "bulto": 30
+  },
+  {
+   "id": "cp279",
+   "nombre": "Vermouth rosso",
+   "categoria": "Bebidas",
+   "precio": 9500,
+   "bulto": 1
+  },
+  {
+   "id": "cp280",
+   "nombre": "Vermouth bianco",
+   "categoria": "Bebidas",
+   "precio": 9500,
+   "bulto": 1
+  },
+  {
+   "id": "cp281",
+   "nombre": "Vermouth dry",
+   "categoria": "Bebidas",
+   "precio": 10500,
+   "bulto": 1
+  },
+  {
+   "id": "cp282",
+   "nombre": "Sidra botella 720cc",
+   "categoria": "Bebidas",
+   "precio": 42000,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 720
+  },
+  {
+   "id": "cp283",
+   "nombre": "Cerveza porrón 330cc",
+   "categoria": "Bebidas",
+   "precio": 52800,
+   "bulto": 24,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 330
+  },
+  {
+   "id": "cp284",
+   "nombre": "Vino malbec botella",
+   "categoria": "Bebidas",
+   "precio": 78000,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 750
+  },
+  {
+   "id": "cp285",
+   "nombre": "Vino cabernet botella",
+   "categoria": "Bebidas",
+   "precio": 82000,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 750
+  },
+  {
+   "id": "cp286",
+   "nombre": "Vino blanco chardonnay botella",
+   "categoria": "Bebidas",
+   "precio": 69600,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 750
+  },
+  {
+   "id": "cp287",
+   "nombre": "Vino rosado botella",
+   "categoria": "Bebidas",
+   "precio": 66000,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 750
+  },
+  {
+   "id": "cp288",
+   "nombre": "Espumante extra brut botella",
+   "categoria": "Bebidas",
+   "precio": 108000,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 750
+  },
+  {
+   "id": "cp289",
+   "nombre": "Gaseosa cola 2.25L",
+   "categoria": "Bebidas",
+   "precio": 19200,
+   "bulto": 6,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 2250
+  },
+  {
+   "id": "cp290",
+   "nombre": "Gaseosa lima-limón 2.25L",
+   "categoria": "Bebidas",
+   "precio": 18000,
+   "bulto": 6,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 2250
+  },
+  {
+   "id": "cp291",
+   "nombre": "Gaseosa pomelo 2.25L",
+   "categoria": "Bebidas",
+   "precio": 18000,
+   "bulto": 6,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 2250
+  },
+  {
+   "id": "cp292",
+   "nombre": "Agua mineral 2L",
+   "categoria": "Bebidas",
+   "precio": 9000,
+   "bulto": 6,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 2000
+  },
+  {
+   "id": "cp293",
+   "nombre": "Agua con gas 2L",
+   "categoria": "Bebidas",
+   "precio": 9600,
+   "bulto": 6,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 2000
+  },
+  {
+   "id": "cp294",
+   "nombre": "Agua tónica 1.5L",
+   "categoria": "Bebidas",
+   "precio": 16800,
+   "bulto": 6,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 1500
+  },
+  {
+   "id": "cp295",
+   "nombre": "Fernet",
+   "categoria": "Bebidas",
+   "precio": 12500,
+   "bulto": 1
+  },
+  {
+   "id": "cp296",
+   "nombre": "Aperitivo Aperol",
+   "categoria": "Bebidas",
+   "precio": 8500,
+   "bulto": 1
+  },
+  {
+   "id": "cp297",
+   "nombre": "Gin",
+   "categoria": "Bebidas",
+   "precio": 15000,
+   "bulto": 1
+  },
+  {
+   "id": "cp298",
+   "nombre": "Vodka",
+   "categoria": "Bebidas",
+   "precio": 11000,
+   "bulto": 1
+  },
+  {
+   "id": "cp299",
+   "nombre": "Ron",
+   "categoria": "Bebidas",
+   "precio": 10500,
+   "bulto": 1
+  },
+  {
+   "id": "cp300",
+   "nombre": "Whisky",
+   "categoria": "Bebidas",
+   "precio": 22000,
+   "bulto": 1
+  },
+  {
+   "id": "cp301",
+   "nombre": "Tequila",
+   "categoria": "Bebidas",
+   "precio": 18500,
+   "bulto": 1
+  },
+  {
+   "id": "cp302",
+   "nombre": "Licor de café",
+   "categoria": "Bebidas",
+   "precio": 9500,
+   "bulto": 1
+  },
+  {
+   "id": "cp303",
+   "nombre": "Cachaça",
+   "categoria": "Bebidas",
+   "precio": 8500,
+   "bulto": 1
+  },
+  {
+   "id": "cp304",
+   "nombre": "Jugo de naranja exprimido",
+   "categoria": "Bebidas",
+   "precio": 22500,
+   "bulto": 5
+  },
+  {
+   "id": "cp305",
+   "nombre": "Jugo de limón natural",
+   "categoria": "Bebidas",
+   "precio": 26000,
+   "bulto": 5
+  },
+  {
+   "id": "cp306",
+   "nombre": "Granadina",
+   "categoria": "Bebidas",
+   "precio": 6500,
+   "bulto": 1
+  },
+  {
+   "id": "cp307",
+   "nombre": "Almíbar de goma",
+   "categoria": "Bebidas",
+   "precio": 7600,
+   "bulto": 2
+  },
+  {
+   "id": "cp308",
+   "nombre": "Leche de almendras",
+   "categoria": "Bebidas",
+   "precio": 28800,
+   "bulto": 6
+  },
+  {
+   "id": "cp309",
+   "nombre": "Yerba mate",
+   "categoria": "Bebidas",
+   "precio": 55000,
+   "bulto": 10
+  },
+  {
+   "id": "cp310",
+   "nombre": "Té en hebras",
+   "categoria": "Bebidas",
+   "precio": 24000,
+   "bulto": 1
+  },
+  {
+   "id": "cp311",
+   "nombre": "Aceite de girasol",
+   "categoria": "Aceites y condimentos",
+   "precio": 18000,
+   "bulto": 10
+  },
+  {
+   "id": "cp312",
+   "nombre": "Aceite de oliva extra virgen",
+   "categoria": "Aceites y condimentos",
+   "precio": 60000,
+   "bulto": 5
+  },
+  {
+   "id": "cp313",
+   "nombre": "Aceite mezcla",
+   "categoria": "Aceites y condimentos",
+   "precio": 16000,
+   "bulto": 10
+  },
+  {
+   "id": "cp314",
+   "nombre": "Aceite de maíz",
+   "categoria": "Aceites y condimentos",
+   "precio": 22000,
+   "bulto": 10
+  },
+  {
+   "id": "cp315",
+   "nombre": "Aceto balsámico",
+   "categoria": "Aceites y condimentos",
+   "precio": 32500,
+   "bulto": 5
+  },
+  {
+   "id": "cp316",
+   "nombre": "Vinagre de alcohol",
+   "categoria": "Aceites y condimentos",
+   "precio": 8000,
+   "bulto": 5
+  },
+  {
+   "id": "cp317",
+   "nombre": "Vinagre de vino",
+   "categoria": "Aceites y condimentos",
+   "precio": 11000,
+   "bulto": 5
+  },
+  {
+   "id": "cp318",
+   "nombre": "Vinagre de manzana",
+   "categoria": "Aceites y condimentos",
+   "precio": 16000,
+   "bulto": 5
+  },
+  {
+   "id": "cp319",
+   "nombre": "Sal fina",
+   "categoria": "Aceites y condimentos",
+   "precio": 22500,
+   "bulto": 25
+  },
+  {
+   "id": "cp320",
+   "nombre": "Sal gruesa",
+   "categoria": "Aceites y condimentos",
+   "precio": 21250,
+   "bulto": 25
+  },
+  {
+   "id": "cp321",
+   "nombre": "Sal marina en escamas",
+   "categoria": "Aceites y condimentos",
+   "precio": 12000,
+   "bulto": 1
+  },
+  {
+   "id": "cp322",
+   "nombre": "Pimienta negra en grano",
+   "categoria": "Aceites y condimentos",
+   "precio": 18000,
+   "bulto": 1
+  },
+  {
+   "id": "cp323",
+   "nombre": "Pimienta blanca molida",
+   "categoria": "Aceites y condimentos",
+   "precio": 19500,
+   "bulto": 1
+  },
+  {
+   "id": "cp324",
+   "nombre": "Pimentón dulce",
+   "categoria": "Aceites y condimentos",
+   "precio": 17000,
+   "bulto": 2
+  },
+  {
+   "id": "cp325",
+   "nombre": "Pimentón ahumado",
+   "categoria": "Aceites y condimentos",
+   "precio": 13500,
+   "bulto": 1
+  },
+  {
+   "id": "cp326",
+   "nombre": "Ají molido",
+   "categoria": "Aceites y condimentos",
+   "precio": 16000,
+   "bulto": 2
+  },
+  {
+   "id": "cp327",
+   "nombre": "Orégano",
+   "categoria": "Aceites y condimentos",
+   "precio": 18000,
+   "bulto": 2
+  },
+  {
+   "id": "cp328",
+   "nombre": "Provenzal deshidratada",
+   "categoria": "Aceites y condimentos",
+   "precio": 9500,
+   "bulto": 1
+  },
+  {
+   "id": "cp329",
+   "nombre": "Laurel",
+   "categoria": "Aceites y condimentos",
+   "precio": 11000,
+   "bulto": 1
+  },
+  {
+   "id": "cp330",
+   "nombre": "Comino molido",
+   "categoria": "Aceites y condimentos",
+   "precio": 12000,
+   "bulto": 1
+  },
+  {
+   "id": "cp331",
+   "nombre": "Curry",
+   "categoria": "Aceites y condimentos",
+   "precio": 14000,
+   "bulto": 1
+  },
+  {
+   "id": "cp332",
+   "nombre": "Cúrcuma",
+   "categoria": "Aceites y condimentos",
+   "precio": 12000,
+   "bulto": 1
+  },
+  {
+   "id": "cp333",
+   "nombre": "Nuez moscada",
+   "categoria": "Aceites y condimentos",
+   "precio": 26000,
+   "bulto": 1
+  },
+  {
+   "id": "cp334",
+   "nombre": "Canela molida",
+   "categoria": "Aceites y condimentos",
+   "precio": 14500,
+   "bulto": 1
+  },
+  {
+   "id": "cp335",
+   "nombre": "Canela en rama",
+   "categoria": "Aceites y condimentos",
+   "precio": 19000,
+   "bulto": 1
+  },
+  {
+   "id": "cp336",
+   "nombre": "Clavo de olor",
+   "categoria": "Aceites y condimentos",
+   "precio": 22000,
+   "bulto": 1
+  },
+  {
+   "id": "cp337",
+   "nombre": "Anís estrellado",
+   "categoria": "Aceites y condimentos",
+   "precio": 24000,
+   "bulto": 1
+  },
+  {
+   "id": "cp338",
+   "nombre": "Mostaza",
+   "categoria": "Aceites y condimentos",
+   "precio": 22500,
+   "bulto": 5
+  },
+  {
+   "id": "cp339",
+   "nombre": "Mostaza de Dijon",
+   "categoria": "Aceites y condimentos",
+   "precio": 23000,
+   "bulto": 2
+  },
+  {
+   "id": "cp340",
+   "nombre": "Ketchup",
+   "categoria": "Aceites y condimentos",
+   "precio": 19000,
+   "bulto": 5
+  },
+  {
+   "id": "cp341",
+   "nombre": "Mayonesa",
+   "categoria": "Aceites y condimentos",
+   "precio": 42000,
+   "bulto": 10
+  },
+  {
+   "id": "cp342",
+   "nombre": "Salsa de soja",
+   "categoria": "Aceites y condimentos",
+   "precio": 27500,
+   "bulto": 5
+  },
+  {
+   "id": "cp343",
+   "nombre": "Salsa inglesa",
+   "categoria": "Aceites y condimentos",
+   "precio": 17000,
+   "bulto": 2
+  },
+  {
+   "id": "cp344",
+   "nombre": "Salsa tabasco",
+   "categoria": "Aceites y condimentos",
+   "precio": 28000,
+   "bulto": 1
+  },
+  {
+   "id": "cp345",
+   "nombre": "Salsa barbacoa",
+   "categoria": "Aceites y condimentos",
+   "precio": 27200,
+   "bulto": 4
+  },
+  {
+   "id": "cp346",
+   "nombre": "Mostaza en grano",
+   "categoria": "Aceites y condimentos",
+   "precio": 9500,
+   "bulto": 1
+  },
+  {
+   "id": "cp347",
+   "nombre": "Wasabi en polvo",
+   "categoria": "Aceites y condimentos",
+   "precio": 32000,
+   "bulto": 1
+  },
+  {
+   "id": "cp348",
+   "nombre": "Panca / ají amarillo en pasta",
+   "categoria": "Aceites y condimentos",
+   "precio": 16000,
+   "bulto": 1
+  },
+  {
+   "id": "cp349",
+   "nombre": "Papas bastón congeladas",
+   "categoria": "Congelados",
+   "precio": 38000,
+   "bulto": 10
+  },
+  {
+   "id": "cp350",
+   "nombre": "Papas noisette congeladas",
+   "categoria": "Congelados",
+   "precio": 42000,
+   "bulto": 10
+  },
+  {
+   "id": "cp351",
+   "nombre": "Arvejas congeladas",
+   "categoria": "Congelados",
+   "precio": 35000,
+   "bulto": 10
+  },
+  {
+   "id": "cp352",
+   "nombre": "Espinaca congelada",
+   "categoria": "Congelados",
+   "precio": 42000,
+   "bulto": 10
+  },
+  {
+   "id": "cp353",
+   "nombre": "Brócoli congelado",
+   "categoria": "Congelados",
+   "precio": 45000,
+   "bulto": 10
+  },
+  {
+   "id": "cp354",
+   "nombre": "Frutilla congelada",
+   "categoria": "Congelados",
+   "precio": 42500,
+   "bulto": 5
+  },
+  {
+   "id": "cp355",
+   "nombre": "Frutos rojos congelados",
+   "categoria": "Congelados",
+   "precio": 47500,
+   "bulto": 5
+  },
+  {
+   "id": "cp356",
+   "nombre": "Mango congelado",
+   "categoria": "Congelados",
+   "precio": 44000,
+   "bulto": 5
+  },
+  {
+   "id": "cp357",
+   "nombre": "Langostinos congelados",
+   "categoria": "Congelados",
+   "precio": 77500,
+   "bulto": 5
+  },
+  {
+   "id": "cp358",
+   "nombre": "Rabas congeladas",
+   "categoria": "Congelados",
+   "precio": 49000,
+   "bulto": 5
+  },
+  {
+   "id": "cp359",
+   "nombre": "Masa de hojaldre congelada",
+   "categoria": "Congelados",
+   "precio": 55000,
+   "bulto": 10
+  },
+  {
+   "id": "cp360",
+   "nombre": "Hielo en bolsa",
+   "categoria": "Congelados",
+   "precio": 12000,
+   "bulto": 15
+  },
+  {
+   "id": "cp361",
+   "nombre": "Pan de hamburguesa CP",
+   "categoria": "Elaborados CP",
+   "precio": 8400,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 90
+  },
+  {
+   "id": "cp362",
+   "nombre": "Pan de lomito CP",
+   "categoria": "Elaborados CP",
+   "precio": 9600,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 120
+  },
+  {
+   "id": "cp363",
+   "nombre": "Pan de campo CP",
+   "categoria": "Elaborados CP",
+   "precio": 4200,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 800
+  },
+  {
+   "id": "cp364",
+   "nombre": "Baguette CP",
+   "categoria": "Elaborados CP",
+   "precio": 2800,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 280
+  },
+  {
+   "id": "cp365",
+   "nombre": "Pan lactal CP",
+   "categoria": "Elaborados CP",
+   "precio": 3900,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 600
+  },
+  {
+   "id": "cp366",
+   "nombre": "Medialunas de manteca CP",
+   "categoria": "Elaborados CP",
+   "precio": 9000,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 45
+  },
+  {
+   "id": "cp367",
+   "nombre": "Factura surtida CP",
+   "categoria": "Elaborados CP",
+   "precio": 8400,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 55
+  },
+  {
+   "id": "cp368",
+   "nombre": "Chipá CP",
+   "categoria": "Elaborados CP",
+   "precio": 8500,
+   "bulto": 1
+  },
+  {
+   "id": "cp369",
+   "nombre": "Tapas de empanada CP",
+   "categoria": "Elaborados CP",
+   "precio": 3600,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 30
+  },
+  {
+   "id": "cp370",
+   "nombre": "Empanada de carne CP",
+   "categoria": "Elaborados CP",
+   "precio": 14400,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 120
+  },
+  {
+   "id": "cp371",
+   "nombre": "Empanada de jamón y queso CP",
+   "categoria": "Elaborados CP",
+   "precio": 13800,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 115
+  },
+  {
+   "id": "cp372",
+   "nombre": "Empanada de pollo CP",
+   "categoria": "Elaborados CP",
+   "precio": 13800,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 118
+  },
+  {
+   "id": "cp373",
+   "nombre": "Prepizza CP",
+   "categoria": "Elaborados CP",
+   "precio": 3200,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 450
+  },
+  {
+   "id": "cp374",
+   "nombre": "Ñoquis de papa CP",
+   "categoria": "Elaborados CP",
+   "precio": 6500,
+   "bulto": 1
+  },
+  {
+   "id": "cp375",
+   "nombre": "Ravioles plancha CP",
+   "categoria": "Elaborados CP",
+   "precio": 5800,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 650
+  },
+  {
+   "id": "cp376",
+   "nombre": "Tallarines frescos CP",
+   "categoria": "Elaborados CP",
+   "precio": 5200,
+   "bulto": 1
+  },
+  {
+   "id": "cp377",
+   "nombre": "Sorrentinos plancha CP",
+   "categoria": "Elaborados CP",
+   "precio": 7200,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 700
+  },
+  {
+   "id": "cp378",
+   "nombre": "Salsa fileto CP",
+   "categoria": "Elaborados CP",
+   "precio": 19000,
+   "bulto": 5
+  },
+  {
+   "id": "cp379",
+   "nombre": "Salsa bolognesa CP",
+   "categoria": "Elaborados CP",
+   "precio": 37500,
+   "bulto": 5
+  },
+  {
+   "id": "cp380",
+   "nombre": "Salsa blanca CP",
+   "categoria": "Elaborados CP",
+   "precio": 21000,
+   "bulto": 5
+  },
+  {
+   "id": "cp381",
+   "nombre": "Caldo concentrado de verduras CP",
+   "categoria": "Elaborados CP",
+   "precio": 17500,
+   "bulto": 5
+  },
+  {
+   "id": "cp382",
+   "nombre": "Caldo concentrado de carne CP",
+   "categoria": "Elaborados CP",
+   "precio": 27500,
+   "bulto": 5
+  },
+  {
+   "id": "cp383",
+   "nombre": "Chimichurri CP",
+   "categoria": "Elaborados CP",
+   "precio": 17000,
+   "bulto": 2
+  },
+  {
+   "id": "cp384",
+   "nombre": "Mayonesa casera CP",
+   "categoria": "Elaborados CP",
+   "precio": 23200,
+   "bulto": 4
+  },
+  {
+   "id": "cp385",
+   "nombre": "Hummus CP",
+   "categoria": "Elaborados CP",
+   "precio": 14400,
+   "bulto": 2
+  },
+  {
+   "id": "cp386",
+   "nombre": "Cheesecake entero CP",
+   "categoria": "Elaborados CP",
+   "precio": 28000,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 1600
+  },
+  {
+   "id": "cp387",
+   "nombre": "Torta de chocolate entera CP",
+   "categoria": "Elaborados CP",
+   "precio": 26000,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 1800
+  },
+  {
+   "id": "cp388",
+   "nombre": "Tarta frutal entera CP",
+   "categoria": "Elaborados CP",
+   "precio": 24000,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 1500
+  },
+  {
+   "id": "cp389",
+   "nombre": "Lemon pie entero CP",
+   "categoria": "Elaborados CP",
+   "precio": 22000,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 1400
+  },
+  {
+   "id": "cp390",
+   "nombre": "Flan grande CP",
+   "categoria": "Elaborados CP",
+   "precio": 12500,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 1200
+  },
+  {
+   "id": "cp391",
+   "nombre": "Budín de limón CP",
+   "categoria": "Elaborados CP",
+   "precio": 6500,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 550
+  },
+  {
+   "id": "cp392",
+   "nombre": "Plancha de brownie CP",
+   "categoria": "Elaborados CP",
+   "precio": 18500,
+   "bulto": 1,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 1600
+  },
+  {
+   "id": "cp393",
+   "nombre": "Alfajor de maicena CP",
+   "categoria": "Elaborados CP",
+   "precio": 9600,
+   "bulto": 12,
+   "unidadMedida": "unidades",
+   "pesoUnitario": 60
+  },
+  {
+   "id": "cp394",
+   "nombre": "Crema pastelera CP",
+   "categoria": "Elaborados CP",
+   "precio": 27500,
+   "bulto": 5
+  },
+  {
+   "id": "cp395",
+   "nombre": "Dulce de leche pastelero CP",
+   "categoria": "Elaborados CP",
+   "precio": 62000,
+   "bulto": 10
+  }
+ ],
+ "mermas": [
+  {
+   "id": "cpm1",
+   "ingrediente": "Lomo",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm2",
+   "ingrediente": "Lomo",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm3",
+   "ingrediente": "Lomo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm4",
+   "ingrediente": "Lomo",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm5",
+   "ingrediente": "Lomo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm6",
+   "ingrediente": "Bife ancho",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm7",
+   "ingrediente": "Bife ancho",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm8",
+   "ingrediente": "Bife ancho",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm9",
+   "ingrediente": "Bife ancho",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm10",
+   "ingrediente": "Bife ancho",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm11",
+   "ingrediente": "Bife angosto",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm12",
+   "ingrediente": "Bife angosto",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm13",
+   "ingrediente": "Bife angosto",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm14",
+   "ingrediente": "Bife angosto",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm15",
+   "ingrediente": "Bife angosto",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm16",
+   "ingrediente": "Ojo de bife",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm17",
+   "ingrediente": "Ojo de bife",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm18",
+   "ingrediente": "Ojo de bife",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm19",
+   "ingrediente": "Ojo de bife",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm20",
+   "ingrediente": "Ojo de bife",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm21",
+   "ingrediente": "Tomahawk",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm22",
+   "ingrediente": "Tomahawk",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm23",
+   "ingrediente": "Tomahawk",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm24",
+   "ingrediente": "Tomahawk",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm25",
+   "ingrediente": "Tomahawk",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm26",
+   "ingrediente": "Entraña",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm27",
+   "ingrediente": "Entraña",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm28",
+   "ingrediente": "Entraña",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm29",
+   "ingrediente": "Entraña",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm30",
+   "ingrediente": "Entraña",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm31",
+   "ingrediente": "Vacío",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm32",
+   "ingrediente": "Vacío",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm33",
+   "ingrediente": "Vacío",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm34",
+   "ingrediente": "Vacío",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm35",
+   "ingrediente": "Vacío",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm36",
+   "ingrediente": "Asado",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm37",
+   "ingrediente": "Asado",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm38",
+   "ingrediente": "Asado",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm39",
+   "ingrediente": "Asado",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm40",
+   "ingrediente": "Asado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm41",
+   "ingrediente": "Tapa de asado",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm42",
+   "ingrediente": "Tapa de asado",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm43",
+   "ingrediente": "Tapa de asado",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm44",
+   "ingrediente": "Tapa de asado",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm45",
+   "ingrediente": "Tapa de asado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm46",
+   "ingrediente": "Matambre",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm47",
+   "ingrediente": "Matambre",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm48",
+   "ingrediente": "Matambre",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm49",
+   "ingrediente": "Matambre",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm50",
+   "ingrediente": "Matambre",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm51",
+   "ingrediente": "Colita de cuadril",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm52",
+   "ingrediente": "Colita de cuadril",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm53",
+   "ingrediente": "Colita de cuadril",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm54",
+   "ingrediente": "Colita de cuadril",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm55",
+   "ingrediente": "Colita de cuadril",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm56",
+   "ingrediente": "Cuadril",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm57",
+   "ingrediente": "Cuadril",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm58",
+   "ingrediente": "Cuadril",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm59",
+   "ingrediente": "Cuadril",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm60",
+   "ingrediente": "Cuadril",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm61",
+   "ingrediente": "Nalga",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm62",
+   "ingrediente": "Nalga",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm63",
+   "ingrediente": "Nalga",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm64",
+   "ingrediente": "Nalga",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm65",
+   "ingrediente": "Nalga",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm66",
+   "ingrediente": "Bola de lomo",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm67",
+   "ingrediente": "Bola de lomo",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm68",
+   "ingrediente": "Bola de lomo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm69",
+   "ingrediente": "Bola de lomo",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm70",
+   "ingrediente": "Bola de lomo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm71",
+   "ingrediente": "Peceto",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm72",
+   "ingrediente": "Peceto",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm73",
+   "ingrediente": "Peceto",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm74",
+   "ingrediente": "Peceto",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm75",
+   "ingrediente": "Peceto",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm76",
+   "ingrediente": "Roast beef",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm77",
+   "ingrediente": "Roast beef",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm78",
+   "ingrediente": "Roast beef",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm79",
+   "ingrediente": "Roast beef",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm80",
+   "ingrediente": "Roast beef",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm81",
+   "ingrediente": "Paleta",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm82",
+   "ingrediente": "Paleta",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm83",
+   "ingrediente": "Paleta",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm84",
+   "ingrediente": "Paleta",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm85",
+   "ingrediente": "Paleta",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm86",
+   "ingrediente": "Osobuco",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm87",
+   "ingrediente": "Osobuco",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm88",
+   "ingrediente": "Osobuco",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm89",
+   "ingrediente": "Osobuco",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm90",
+   "ingrediente": "Osobuco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm91",
+   "ingrediente": "Falda",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm92",
+   "ingrediente": "Falda",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm93",
+   "ingrediente": "Falda",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm94",
+   "ingrediente": "Falda",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm95",
+   "ingrediente": "Falda",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm96",
+   "ingrediente": "Carne picada común",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm97",
+   "ingrediente": "Carne picada común",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm98",
+   "ingrediente": "Carne picada común",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm99",
+   "ingrediente": "Carne picada común",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm100",
+   "ingrediente": "Carne picada común",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm101",
+   "ingrediente": "Carne picada especial",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm102",
+   "ingrediente": "Carne picada especial",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm103",
+   "ingrediente": "Carne picada especial",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm104",
+   "ingrediente": "Carne picada especial",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm105",
+   "ingrediente": "Carne picada especial",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm106",
+   "ingrediente": "Mondongo",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm107",
+   "ingrediente": "Mondongo",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm108",
+   "ingrediente": "Mondongo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm109",
+   "ingrediente": "Mondongo",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm110",
+   "ingrediente": "Mondongo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm111",
+   "ingrediente": "Riñón",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm112",
+   "ingrediente": "Riñón",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm113",
+   "ingrediente": "Riñón",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm114",
+   "ingrediente": "Riñón",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm115",
+   "ingrediente": "Riñón",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm116",
+   "ingrediente": "Molleja",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm117",
+   "ingrediente": "Molleja",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm118",
+   "ingrediente": "Molleja",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm119",
+   "ingrediente": "Molleja",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm120",
+   "ingrediente": "Molleja",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm121",
+   "ingrediente": "Chinchulín",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm122",
+   "ingrediente": "Chinchulín",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm123",
+   "ingrediente": "Chinchulín",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm124",
+   "ingrediente": "Chinchulín",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm125",
+   "ingrediente": "Chinchulín",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm126",
+   "ingrediente": "Morcilla",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm127",
+   "ingrediente": "Morcilla",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm128",
+   "ingrediente": "Morcilla",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm129",
+   "ingrediente": "Morcilla",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm130",
+   "ingrediente": "Morcilla",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm131",
+   "ingrediente": "Chorizo parrillero",
+   "tecnica": "Parrilla",
+   "pct": 22
+  },
+  {
+   "id": "cpm132",
+   "ingrediente": "Chorizo parrillero",
+   "tecnica": "Plancha",
+   "pct": 15
+  },
+  {
+   "id": "cpm133",
+   "ingrediente": "Chorizo parrillero",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm134",
+   "ingrediente": "Chorizo parrillero",
+   "tecnica": "Braseado",
+   "pct": 28
+  },
+  {
+   "id": "cpm135",
+   "ingrediente": "Chorizo parrillero",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm136",
+   "ingrediente": "Bondiola",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm137",
+   "ingrediente": "Bondiola",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm138",
+   "ingrediente": "Bondiola",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm139",
+   "ingrediente": "Bondiola",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm140",
+   "ingrediente": "Bondiola",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm141",
+   "ingrediente": "Carré de cerdo",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm142",
+   "ingrediente": "Carré de cerdo",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm143",
+   "ingrediente": "Carré de cerdo",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm144",
+   "ingrediente": "Carré de cerdo",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm145",
+   "ingrediente": "Carré de cerdo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm146",
+   "ingrediente": "Pechito de cerdo",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm147",
+   "ingrediente": "Pechito de cerdo",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm148",
+   "ingrediente": "Pechito de cerdo",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm149",
+   "ingrediente": "Pechito de cerdo",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm150",
+   "ingrediente": "Pechito de cerdo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm151",
+   "ingrediente": "Matambrito de cerdo",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm152",
+   "ingrediente": "Matambrito de cerdo",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm153",
+   "ingrediente": "Matambrito de cerdo",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm154",
+   "ingrediente": "Matambrito de cerdo",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm155",
+   "ingrediente": "Matambrito de cerdo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm156",
+   "ingrediente": "Solomillo de cerdo",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm157",
+   "ingrediente": "Solomillo de cerdo",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm158",
+   "ingrediente": "Solomillo de cerdo",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm159",
+   "ingrediente": "Solomillo de cerdo",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm160",
+   "ingrediente": "Solomillo de cerdo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm161",
+   "ingrediente": "Panceta fresca",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm162",
+   "ingrediente": "Panceta fresca",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm163",
+   "ingrediente": "Panceta fresca",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm164",
+   "ingrediente": "Panceta fresca",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm165",
+   "ingrediente": "Panceta fresca",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm166",
+   "ingrediente": "Panceta ahumada",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm167",
+   "ingrediente": "Panceta ahumada",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm168",
+   "ingrediente": "Panceta ahumada",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm169",
+   "ingrediente": "Panceta ahumada",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm170",
+   "ingrediente": "Panceta ahumada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm171",
+   "ingrediente": "Costillar de cerdo",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm172",
+   "ingrediente": "Costillar de cerdo",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm173",
+   "ingrediente": "Costillar de cerdo",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm174",
+   "ingrediente": "Costillar de cerdo",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm175",
+   "ingrediente": "Costillar de cerdo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm176",
+   "ingrediente": "Codillo",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm177",
+   "ingrediente": "Codillo",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm178",
+   "ingrediente": "Codillo",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm179",
+   "ingrediente": "Codillo",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm180",
+   "ingrediente": "Codillo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm181",
+   "ingrediente": "Chorizo de cerdo puro",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm182",
+   "ingrediente": "Chorizo de cerdo puro",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm183",
+   "ingrediente": "Chorizo de cerdo puro",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm184",
+   "ingrediente": "Chorizo de cerdo puro",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm185",
+   "ingrediente": "Chorizo de cerdo puro",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm186",
+   "ingrediente": "Lechón",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm187",
+   "ingrediente": "Lechón",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm188",
+   "ingrediente": "Lechón",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm189",
+   "ingrediente": "Lechón",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm190",
+   "ingrediente": "Lechón",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm191",
+   "ingrediente": "Grasa de pella",
+   "tecnica": "Parrilla",
+   "pct": 24
+  },
+  {
+   "id": "cpm192",
+   "ingrediente": "Grasa de pella",
+   "tecnica": "Plancha",
+   "pct": 16
+  },
+  {
+   "id": "cpm193",
+   "ingrediente": "Grasa de pella",
+   "tecnica": "Horno",
+   "pct": 20
+  },
+  {
+   "id": "cpm194",
+   "ingrediente": "Grasa de pella",
+   "tecnica": "Braseado",
+   "pct": 30
+  },
+  {
+   "id": "cpm195",
+   "ingrediente": "Grasa de pella",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm196",
+   "ingrediente": "Pollo entero",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm197",
+   "ingrediente": "Pollo entero",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm198",
+   "ingrediente": "Pollo entero",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm199",
+   "ingrediente": "Pollo entero",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm200",
+   "ingrediente": "Pollo entero",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm201",
+   "ingrediente": "Suprema de pollo",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm202",
+   "ingrediente": "Suprema de pollo",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm203",
+   "ingrediente": "Suprema de pollo",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm204",
+   "ingrediente": "Suprema de pollo",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm205",
+   "ingrediente": "Suprema de pollo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm206",
+   "ingrediente": "Pata muslo",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm207",
+   "ingrediente": "Pata muslo",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm208",
+   "ingrediente": "Pata muslo",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm209",
+   "ingrediente": "Pata muslo",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm210",
+   "ingrediente": "Pata muslo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm211",
+   "ingrediente": "Alitas de pollo",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm212",
+   "ingrediente": "Alitas de pollo",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm213",
+   "ingrediente": "Alitas de pollo",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm214",
+   "ingrediente": "Alitas de pollo",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm215",
+   "ingrediente": "Alitas de pollo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm216",
+   "ingrediente": "Pollo deshuesado",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm217",
+   "ingrediente": "Pollo deshuesado",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm218",
+   "ingrediente": "Pollo deshuesado",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm219",
+   "ingrediente": "Pollo deshuesado",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm220",
+   "ingrediente": "Pollo deshuesado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm221",
+   "ingrediente": "Menudos de pollo",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm222",
+   "ingrediente": "Menudos de pollo",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm223",
+   "ingrediente": "Menudos de pollo",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm224",
+   "ingrediente": "Menudos de pollo",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm225",
+   "ingrediente": "Menudos de pollo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm226",
+   "ingrediente": "Pavo",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm227",
+   "ingrediente": "Pavo",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm228",
+   "ingrediente": "Pavo",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm229",
+   "ingrediente": "Pavo",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm230",
+   "ingrediente": "Pavo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm231",
+   "ingrediente": "Pato",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm232",
+   "ingrediente": "Pato",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm233",
+   "ingrediente": "Pato",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm234",
+   "ingrediente": "Pato",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm235",
+   "ingrediente": "Pato",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm236",
+   "ingrediente": "Codorniz",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm237",
+   "ingrediente": "Codorniz",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm238",
+   "ingrediente": "Codorniz",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm239",
+   "ingrediente": "Codorniz",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm240",
+   "ingrediente": "Codorniz",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm241",
+   "ingrediente": "Huevo de codorniz",
+   "tecnica": "Parrilla",
+   "pct": 20
+  },
+  {
+   "id": "cpm242",
+   "ingrediente": "Huevo de codorniz",
+   "tecnica": "Plancha",
+   "pct": 14
+  },
+  {
+   "id": "cpm243",
+   "ingrediente": "Huevo de codorniz",
+   "tecnica": "Horno",
+   "pct": 22
+  },
+  {
+   "id": "cpm244",
+   "ingrediente": "Huevo de codorniz",
+   "tecnica": "Frito",
+   "pct": 12
+  },
+  {
+   "id": "cpm245",
+   "ingrediente": "Huevo de codorniz",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm246",
+   "ingrediente": "Filet de merluza",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm247",
+   "ingrediente": "Filet de merluza",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm248",
+   "ingrediente": "Filet de merluza",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm249",
+   "ingrediente": "Filet de merluza",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm250",
+   "ingrediente": "Filet de merluza",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm251",
+   "ingrediente": "Salmón rosado",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm252",
+   "ingrediente": "Salmón rosado",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm253",
+   "ingrediente": "Salmón rosado",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm254",
+   "ingrediente": "Salmón rosado",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm255",
+   "ingrediente": "Salmón rosado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm256",
+   "ingrediente": "Brótola",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm257",
+   "ingrediente": "Brótola",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm258",
+   "ingrediente": "Brótola",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm259",
+   "ingrediente": "Brótola",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm260",
+   "ingrediente": "Brótola",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm261",
+   "ingrediente": "Lenguado",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm262",
+   "ingrediente": "Lenguado",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm263",
+   "ingrediente": "Lenguado",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm264",
+   "ingrediente": "Lenguado",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm265",
+   "ingrediente": "Lenguado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm266",
+   "ingrediente": "Atún fresco",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm267",
+   "ingrediente": "Atún fresco",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm268",
+   "ingrediente": "Atún fresco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm269",
+   "ingrediente": "Atún fresco",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm270",
+   "ingrediente": "Atún fresco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm271",
+   "ingrediente": "Trucha patagónica",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm272",
+   "ingrediente": "Trucha patagónica",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm273",
+   "ingrediente": "Trucha patagónica",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm274",
+   "ingrediente": "Trucha patagónica",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm275",
+   "ingrediente": "Trucha patagónica",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm276",
+   "ingrediente": "Corvina",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm277",
+   "ingrediente": "Corvina",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm278",
+   "ingrediente": "Corvina",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm279",
+   "ingrediente": "Corvina",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm280",
+   "ingrediente": "Corvina",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm281",
+   "ingrediente": "Pacú",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm282",
+   "ingrediente": "Pacú",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm283",
+   "ingrediente": "Pacú",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm284",
+   "ingrediente": "Pacú",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm285",
+   "ingrediente": "Pacú",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm286",
+   "ingrediente": "Surubí",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm287",
+   "ingrediente": "Surubí",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm288",
+   "ingrediente": "Surubí",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm289",
+   "ingrediente": "Surubí",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm290",
+   "ingrediente": "Surubí",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm291",
+   "ingrediente": "Abadejo",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm292",
+   "ingrediente": "Abadejo",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm293",
+   "ingrediente": "Abadejo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm294",
+   "ingrediente": "Abadejo",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm295",
+   "ingrediente": "Abadejo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm296",
+   "ingrediente": "Bacalao",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm297",
+   "ingrediente": "Bacalao",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm298",
+   "ingrediente": "Bacalao",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm299",
+   "ingrediente": "Bacalao",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm300",
+   "ingrediente": "Bacalao",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm301",
+   "ingrediente": "Langostinos",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm302",
+   "ingrediente": "Langostinos",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm303",
+   "ingrediente": "Langostinos",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm304",
+   "ingrediente": "Langostinos",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm305",
+   "ingrediente": "Langostinos",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm306",
+   "ingrediente": "Camarones",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm307",
+   "ingrediente": "Camarones",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm308",
+   "ingrediente": "Camarones",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm309",
+   "ingrediente": "Camarones",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm310",
+   "ingrediente": "Camarones",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm311",
+   "ingrediente": "Calamar",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm312",
+   "ingrediente": "Calamar",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm313",
+   "ingrediente": "Calamar",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm314",
+   "ingrediente": "Calamar",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm315",
+   "ingrediente": "Calamar",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm316",
+   "ingrediente": "Rabas",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm317",
+   "ingrediente": "Rabas",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm318",
+   "ingrediente": "Rabas",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm319",
+   "ingrediente": "Rabas",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm320",
+   "ingrediente": "Rabas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm321",
+   "ingrediente": "Pulpo español",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm322",
+   "ingrediente": "Pulpo español",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm323",
+   "ingrediente": "Pulpo español",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm324",
+   "ingrediente": "Pulpo español",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm325",
+   "ingrediente": "Pulpo español",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm326",
+   "ingrediente": "Mejillones",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm327",
+   "ingrediente": "Mejillones",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm328",
+   "ingrediente": "Mejillones",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm329",
+   "ingrediente": "Mejillones",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm330",
+   "ingrediente": "Mejillones",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm331",
+   "ingrediente": "Vieiras",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm332",
+   "ingrediente": "Vieiras",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm333",
+   "ingrediente": "Vieiras",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm334",
+   "ingrediente": "Vieiras",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm335",
+   "ingrediente": "Vieiras",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm336",
+   "ingrediente": "Kanikama",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm337",
+   "ingrediente": "Kanikama",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm338",
+   "ingrediente": "Kanikama",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm339",
+   "ingrediente": "Kanikama",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm340",
+   "ingrediente": "Kanikama",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm341",
+   "ingrediente": "Anchoas en salmuera",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm342",
+   "ingrediente": "Anchoas en salmuera",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm343",
+   "ingrediente": "Anchoas en salmuera",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm344",
+   "ingrediente": "Anchoas en salmuera",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm345",
+   "ingrediente": "Anchoas en salmuera",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm346",
+   "ingrediente": "Centolla",
+   "tecnica": "Plancha",
+   "pct": 12
+  },
+  {
+   "id": "cpm347",
+   "ingrediente": "Centolla",
+   "tecnica": "Horno",
+   "pct": 15
+  },
+  {
+   "id": "cpm348",
+   "ingrediente": "Centolla",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm349",
+   "ingrediente": "Centolla",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm350",
+   "ingrediente": "Centolla",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm351",
+   "ingrediente": "Papa",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm352",
+   "ingrediente": "Papa",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm353",
+   "ingrediente": "Papa",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm354",
+   "ingrediente": "Papa",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm355",
+   "ingrediente": "Papa",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm356",
+   "ingrediente": "Papa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm357",
+   "ingrediente": "Papa para bastón",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm358",
+   "ingrediente": "Papa para bastón",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm359",
+   "ingrediente": "Papa para bastón",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm360",
+   "ingrediente": "Papa para bastón",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm361",
+   "ingrediente": "Papa para bastón",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm362",
+   "ingrediente": "Papa para bastón",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm363",
+   "ingrediente": "Batata",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm364",
+   "ingrediente": "Batata",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm365",
+   "ingrediente": "Batata",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm366",
+   "ingrediente": "Batata",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm367",
+   "ingrediente": "Batata",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm368",
+   "ingrediente": "Batata",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm369",
+   "ingrediente": "Cebolla",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm370",
+   "ingrediente": "Cebolla",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm371",
+   "ingrediente": "Cebolla",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm372",
+   "ingrediente": "Cebolla",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm373",
+   "ingrediente": "Cebolla",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm374",
+   "ingrediente": "Cebolla",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm375",
+   "ingrediente": "Cebolla morada",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm376",
+   "ingrediente": "Cebolla morada",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm377",
+   "ingrediente": "Cebolla morada",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm378",
+   "ingrediente": "Cebolla morada",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm379",
+   "ingrediente": "Cebolla morada",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm380",
+   "ingrediente": "Cebolla morada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm381",
+   "ingrediente": "Cebolla de verdeo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 20
+  },
+  {
+   "id": "cpm382",
+   "ingrediente": "Cebolla de verdeo",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm383",
+   "ingrediente": "Cebolla de verdeo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm384",
+   "ingrediente": "Cebolla de verdeo",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm385",
+   "ingrediente": "Cebolla de verdeo",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm386",
+   "ingrediente": "Cebolla de verdeo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm387",
+   "ingrediente": "Puerro",
+   "tecnica": "Limpieza en crudo",
+   "pct": 25
+  },
+  {
+   "id": "cpm388",
+   "ingrediente": "Puerro",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm389",
+   "ingrediente": "Puerro",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm390",
+   "ingrediente": "Puerro",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm391",
+   "ingrediente": "Puerro",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm392",
+   "ingrediente": "Puerro",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm393",
+   "ingrediente": "Echalote",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm394",
+   "ingrediente": "Echalote",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm395",
+   "ingrediente": "Echalote",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm396",
+   "ingrediente": "Echalote",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm397",
+   "ingrediente": "Echalote",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm398",
+   "ingrediente": "Echalote",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm399",
+   "ingrediente": "Ajo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm400",
+   "ingrediente": "Ajo",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm401",
+   "ingrediente": "Ajo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm402",
+   "ingrediente": "Ajo",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm403",
+   "ingrediente": "Ajo",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm404",
+   "ingrediente": "Ajo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm405",
+   "ingrediente": "Zanahoria",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm406",
+   "ingrediente": "Zanahoria",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm407",
+   "ingrediente": "Zanahoria",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm408",
+   "ingrediente": "Zanahoria",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm409",
+   "ingrediente": "Zanahoria",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm410",
+   "ingrediente": "Zanahoria",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm411",
+   "ingrediente": "Zapallo anco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 20
+  },
+  {
+   "id": "cpm412",
+   "ingrediente": "Zapallo anco",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm413",
+   "ingrediente": "Zapallo anco",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm414",
+   "ingrediente": "Zapallo anco",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm415",
+   "ingrediente": "Zapallo anco",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm416",
+   "ingrediente": "Zapallo anco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm417",
+   "ingrediente": "Zapallo cabutia",
+   "tecnica": "Limpieza en crudo",
+   "pct": 22
+  },
+  {
+   "id": "cpm418",
+   "ingrediente": "Zapallo cabutia",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm419",
+   "ingrediente": "Zapallo cabutia",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm420",
+   "ingrediente": "Zapallo cabutia",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm421",
+   "ingrediente": "Zapallo cabutia",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm422",
+   "ingrediente": "Zapallo cabutia",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm423",
+   "ingrediente": "Zapallito",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm424",
+   "ingrediente": "Zapallito",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm425",
+   "ingrediente": "Zapallito",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm426",
+   "ingrediente": "Zapallito",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm427",
+   "ingrediente": "Zapallito",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm428",
+   "ingrediente": "Zapallito",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm429",
+   "ingrediente": "Zucchini",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm430",
+   "ingrediente": "Zucchini",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm431",
+   "ingrediente": "Zucchini",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm432",
+   "ingrediente": "Zucchini",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm433",
+   "ingrediente": "Zucchini",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm434",
+   "ingrediente": "Zucchini",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm435",
+   "ingrediente": "Berenjena",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm436",
+   "ingrediente": "Berenjena",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm437",
+   "ingrediente": "Berenjena",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm438",
+   "ingrediente": "Berenjena",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm439",
+   "ingrediente": "Berenjena",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm440",
+   "ingrediente": "Berenjena",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm441",
+   "ingrediente": "Tomate redondo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 5
+  },
+  {
+   "id": "cpm442",
+   "ingrediente": "Tomate redondo",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm443",
+   "ingrediente": "Tomate redondo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm444",
+   "ingrediente": "Tomate redondo",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm445",
+   "ingrediente": "Tomate redondo",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm446",
+   "ingrediente": "Tomate redondo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm447",
+   "ingrediente": "Tomate perita fresco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 5
+  },
+  {
+   "id": "cpm448",
+   "ingrediente": "Tomate perita fresco",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm449",
+   "ingrediente": "Tomate perita fresco",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm450",
+   "ingrediente": "Tomate perita fresco",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm451",
+   "ingrediente": "Tomate perita fresco",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm452",
+   "ingrediente": "Tomate perita fresco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm453",
+   "ingrediente": "Tomate cherry",
+   "tecnica": "Limpieza en crudo",
+   "pct": 3
+  },
+  {
+   "id": "cpm454",
+   "ingrediente": "Tomate cherry",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm455",
+   "ingrediente": "Tomate cherry",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm456",
+   "ingrediente": "Tomate cherry",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm457",
+   "ingrediente": "Tomate cherry",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm458",
+   "ingrediente": "Tomate cherry",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm459",
+   "ingrediente": "Morrón rojo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm460",
+   "ingrediente": "Morrón rojo",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm461",
+   "ingrediente": "Morrón rojo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm462",
+   "ingrediente": "Morrón rojo",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm463",
+   "ingrediente": "Morrón rojo",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm464",
+   "ingrediente": "Morrón rojo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm465",
+   "ingrediente": "Morrón verde",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm466",
+   "ingrediente": "Morrón verde",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm467",
+   "ingrediente": "Morrón verde",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm468",
+   "ingrediente": "Morrón verde",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm469",
+   "ingrediente": "Morrón verde",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm470",
+   "ingrediente": "Morrón verde",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm471",
+   "ingrediente": "Morrón amarillo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm472",
+   "ingrediente": "Morrón amarillo",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm473",
+   "ingrediente": "Morrón amarillo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm474",
+   "ingrediente": "Morrón amarillo",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm475",
+   "ingrediente": "Morrón amarillo",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm476",
+   "ingrediente": "Morrón amarillo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm477",
+   "ingrediente": "Lechuga criolla",
+   "tecnica": "Limpieza en crudo",
+   "pct": 25
+  },
+  {
+   "id": "cpm478",
+   "ingrediente": "Lechuga criolla",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm479",
+   "ingrediente": "Lechuga criolla",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm480",
+   "ingrediente": "Lechuga criolla",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm481",
+   "ingrediente": "Lechuga criolla",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm482",
+   "ingrediente": "Lechuga criolla",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm483",
+   "ingrediente": "Lechuga capuchina",
+   "tecnica": "Limpieza en crudo",
+   "pct": 25
+  },
+  {
+   "id": "cpm484",
+   "ingrediente": "Lechuga capuchina",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm485",
+   "ingrediente": "Lechuga capuchina",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm486",
+   "ingrediente": "Lechuga capuchina",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm487",
+   "ingrediente": "Lechuga capuchina",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm488",
+   "ingrediente": "Lechuga capuchina",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm489",
+   "ingrediente": "Rúcula",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm490",
+   "ingrediente": "Rúcula",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm491",
+   "ingrediente": "Rúcula",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm492",
+   "ingrediente": "Rúcula",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm493",
+   "ingrediente": "Rúcula",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm494",
+   "ingrediente": "Rúcula",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm495",
+   "ingrediente": "Espinaca",
+   "tecnica": "Limpieza en crudo",
+   "pct": 20
+  },
+  {
+   "id": "cpm496",
+   "ingrediente": "Espinaca",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm497",
+   "ingrediente": "Espinaca",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm498",
+   "ingrediente": "Espinaca",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm499",
+   "ingrediente": "Espinaca",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm500",
+   "ingrediente": "Espinaca",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm501",
+   "ingrediente": "Acelga",
+   "tecnica": "Limpieza en crudo",
+   "pct": 25
+  },
+  {
+   "id": "cpm502",
+   "ingrediente": "Acelga",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm503",
+   "ingrediente": "Acelga",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm504",
+   "ingrediente": "Acelga",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm505",
+   "ingrediente": "Acelga",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm506",
+   "ingrediente": "Acelga",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm507",
+   "ingrediente": "Kale",
+   "tecnica": "Limpieza en crudo",
+   "pct": 18
+  },
+  {
+   "id": "cpm508",
+   "ingrediente": "Kale",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm509",
+   "ingrediente": "Kale",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm510",
+   "ingrediente": "Kale",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm511",
+   "ingrediente": "Kale",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm512",
+   "ingrediente": "Kale",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm513",
+   "ingrediente": "Radicheta",
+   "tecnica": "Limpieza en crudo",
+   "pct": 20
+  },
+  {
+   "id": "cpm514",
+   "ingrediente": "Radicheta",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm515",
+   "ingrediente": "Radicheta",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm516",
+   "ingrediente": "Radicheta",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm517",
+   "ingrediente": "Radicheta",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm518",
+   "ingrediente": "Radicheta",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm519",
+   "ingrediente": "Repollo blanco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm520",
+   "ingrediente": "Repollo blanco",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm521",
+   "ingrediente": "Repollo blanco",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm522",
+   "ingrediente": "Repollo blanco",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm523",
+   "ingrediente": "Repollo blanco",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm524",
+   "ingrediente": "Repollo blanco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm525",
+   "ingrediente": "Repollo colorado",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm526",
+   "ingrediente": "Repollo colorado",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm527",
+   "ingrediente": "Repollo colorado",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm528",
+   "ingrediente": "Repollo colorado",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm529",
+   "ingrediente": "Repollo colorado",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm530",
+   "ingrediente": "Repollo colorado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm531",
+   "ingrediente": "Coliflor",
+   "tecnica": "Limpieza en crudo",
+   "pct": 30
+  },
+  {
+   "id": "cpm532",
+   "ingrediente": "Coliflor",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm533",
+   "ingrediente": "Coliflor",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm534",
+   "ingrediente": "Coliflor",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm535",
+   "ingrediente": "Coliflor",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm536",
+   "ingrediente": "Coliflor",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm537",
+   "ingrediente": "Brócoli",
+   "tecnica": "Limpieza en crudo",
+   "pct": 30
+  },
+  {
+   "id": "cpm538",
+   "ingrediente": "Brócoli",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm539",
+   "ingrediente": "Brócoli",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm540",
+   "ingrediente": "Brócoli",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm541",
+   "ingrediente": "Brócoli",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm542",
+   "ingrediente": "Brócoli",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm543",
+   "ingrediente": "Apio",
+   "tecnica": "Limpieza en crudo",
+   "pct": 25
+  },
+  {
+   "id": "cpm544",
+   "ingrediente": "Apio",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm545",
+   "ingrediente": "Apio",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm546",
+   "ingrediente": "Apio",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm547",
+   "ingrediente": "Apio",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm548",
+   "ingrediente": "Apio",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm549",
+   "ingrediente": "Hinojo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 20
+  },
+  {
+   "id": "cpm550",
+   "ingrediente": "Hinojo",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm551",
+   "ingrediente": "Hinojo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm552",
+   "ingrediente": "Hinojo",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm553",
+   "ingrediente": "Hinojo",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm554",
+   "ingrediente": "Hinojo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm555",
+   "ingrediente": "Remolacha",
+   "tecnica": "Limpieza en crudo",
+   "pct": 18
+  },
+  {
+   "id": "cpm556",
+   "ingrediente": "Remolacha",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm557",
+   "ingrediente": "Remolacha",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm558",
+   "ingrediente": "Remolacha",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm559",
+   "ingrediente": "Remolacha",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm560",
+   "ingrediente": "Remolacha",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm561",
+   "ingrediente": "Rabanito",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm562",
+   "ingrediente": "Rabanito",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm563",
+   "ingrediente": "Rabanito",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm564",
+   "ingrediente": "Rabanito",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm565",
+   "ingrediente": "Rabanito",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm566",
+   "ingrediente": "Rabanito",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm567",
+   "ingrediente": "Pepino",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm568",
+   "ingrediente": "Pepino",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm569",
+   "ingrediente": "Pepino",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm570",
+   "ingrediente": "Pepino",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm571",
+   "ingrediente": "Pepino",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm572",
+   "ingrediente": "Pepino",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm573",
+   "ingrediente": "Chaucha",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm574",
+   "ingrediente": "Chaucha",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm575",
+   "ingrediente": "Chaucha",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm576",
+   "ingrediente": "Chaucha",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm577",
+   "ingrediente": "Chaucha",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm578",
+   "ingrediente": "Chaucha",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm579",
+   "ingrediente": "Espárragos",
+   "tecnica": "Limpieza en crudo",
+   "pct": 25
+  },
+  {
+   "id": "cpm580",
+   "ingrediente": "Espárragos",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm581",
+   "ingrediente": "Espárragos",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm582",
+   "ingrediente": "Espárragos",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm583",
+   "ingrediente": "Espárragos",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm584",
+   "ingrediente": "Espárragos",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm585",
+   "ingrediente": "Alcaucil",
+   "tecnica": "Limpieza en crudo",
+   "pct": 45
+  },
+  {
+   "id": "cpm586",
+   "ingrediente": "Alcaucil",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm587",
+   "ingrediente": "Alcaucil",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm588",
+   "ingrediente": "Alcaucil",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm589",
+   "ingrediente": "Alcaucil",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm590",
+   "ingrediente": "Alcaucil",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm591",
+   "ingrediente": "Champiñones",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm592",
+   "ingrediente": "Champiñones",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm593",
+   "ingrediente": "Champiñones",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm594",
+   "ingrediente": "Champiñones",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm595",
+   "ingrediente": "Champiñones",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm596",
+   "ingrediente": "Champiñones",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm597",
+   "ingrediente": "Portobello",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm598",
+   "ingrediente": "Portobello",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm599",
+   "ingrediente": "Portobello",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm600",
+   "ingrediente": "Portobello",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm601",
+   "ingrediente": "Portobello",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm602",
+   "ingrediente": "Portobello",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm603",
+   "ingrediente": "Gírgolas",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm604",
+   "ingrediente": "Gírgolas",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm605",
+   "ingrediente": "Gírgolas",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm606",
+   "ingrediente": "Gírgolas",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm607",
+   "ingrediente": "Gírgolas",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm608",
+   "ingrediente": "Gírgolas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm609",
+   "ingrediente": "Choclo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 35
+  },
+  {
+   "id": "cpm610",
+   "ingrediente": "Choclo",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm611",
+   "ingrediente": "Choclo",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm612",
+   "ingrediente": "Choclo",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm613",
+   "ingrediente": "Choclo",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm614",
+   "ingrediente": "Choclo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm615",
+   "ingrediente": "Palta",
+   "tecnica": "Limpieza en crudo",
+   "pct": 28
+  },
+  {
+   "id": "cpm616",
+   "ingrediente": "Palta",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm617",
+   "ingrediente": "Palta",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm618",
+   "ingrediente": "Palta",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm619",
+   "ingrediente": "Palta",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm620",
+   "ingrediente": "Palta",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm621",
+   "ingrediente": "Jengibre fresco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm622",
+   "ingrediente": "Jengibre fresco",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm623",
+   "ingrediente": "Jengibre fresco",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm624",
+   "ingrediente": "Jengibre fresco",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm625",
+   "ingrediente": "Jengibre fresco",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm626",
+   "ingrediente": "Jengibre fresco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm627",
+   "ingrediente": "Perejil",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm628",
+   "ingrediente": "Perejil",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm629",
+   "ingrediente": "Perejil",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm630",
+   "ingrediente": "Perejil",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm631",
+   "ingrediente": "Perejil",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm632",
+   "ingrediente": "Perejil",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm633",
+   "ingrediente": "Cilantro",
+   "tecnica": "Limpieza en crudo",
+   "pct": 15
+  },
+  {
+   "id": "cpm634",
+   "ingrediente": "Cilantro",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm635",
+   "ingrediente": "Cilantro",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm636",
+   "ingrediente": "Cilantro",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm637",
+   "ingrediente": "Cilantro",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm638",
+   "ingrediente": "Cilantro",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm639",
+   "ingrediente": "Albahaca fresca",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm640",
+   "ingrediente": "Albahaca fresca",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm641",
+   "ingrediente": "Albahaca fresca",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm642",
+   "ingrediente": "Albahaca fresca",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm643",
+   "ingrediente": "Albahaca fresca",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm644",
+   "ingrediente": "Albahaca fresca",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm645",
+   "ingrediente": "Menta fresca",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm646",
+   "ingrediente": "Menta fresca",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm647",
+   "ingrediente": "Menta fresca",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm648",
+   "ingrediente": "Menta fresca",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm649",
+   "ingrediente": "Menta fresca",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm650",
+   "ingrediente": "Menta fresca",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm651",
+   "ingrediente": "Romero fresco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm652",
+   "ingrediente": "Romero fresco",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm653",
+   "ingrediente": "Romero fresco",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm654",
+   "ingrediente": "Romero fresco",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm655",
+   "ingrediente": "Romero fresco",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm656",
+   "ingrediente": "Romero fresco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm657",
+   "ingrediente": "Tomillo fresco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm658",
+   "ingrediente": "Tomillo fresco",
+   "tecnica": "Hervido",
+   "pct": 8
+  },
+  {
+   "id": "cpm659",
+   "ingrediente": "Tomillo fresco",
+   "tecnica": "Horno",
+   "pct": 18
+  },
+  {
+   "id": "cpm660",
+   "ingrediente": "Tomillo fresco",
+   "tecnica": "Salteado",
+   "pct": 12
+  },
+  {
+   "id": "cpm661",
+   "ingrediente": "Tomillo fresco",
+   "tecnica": "Frito",
+   "pct": 10
+  },
+  {
+   "id": "cpm662",
+   "ingrediente": "Tomillo fresco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm663",
+   "ingrediente": "Limón",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm664",
+   "ingrediente": "Limón",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm665",
+   "ingrediente": "Naranja",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm666",
+   "ingrediente": "Naranja",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm667",
+   "ingrediente": "Mandarina",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm668",
+   "ingrediente": "Mandarina",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm669",
+   "ingrediente": "Pomelo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm670",
+   "ingrediente": "Pomelo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm671",
+   "ingrediente": "Manzana roja",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm672",
+   "ingrediente": "Manzana roja",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm673",
+   "ingrediente": "Manzana verde",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm674",
+   "ingrediente": "Manzana verde",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm675",
+   "ingrediente": "Pera",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm676",
+   "ingrediente": "Pera",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm677",
+   "ingrediente": "Banana",
+   "tecnica": "Limpieza en crudo",
+   "pct": 30
+  },
+  {
+   "id": "cpm678",
+   "ingrediente": "Banana",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm679",
+   "ingrediente": "Frutilla",
+   "tecnica": "Limpieza en crudo",
+   "pct": 10
+  },
+  {
+   "id": "cpm680",
+   "ingrediente": "Frutilla",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm681",
+   "ingrediente": "Arándanos",
+   "tecnica": "Limpieza en crudo",
+   "pct": 3
+  },
+  {
+   "id": "cpm682",
+   "ingrediente": "Arándanos",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm683",
+   "ingrediente": "Frambuesa",
+   "tecnica": "Limpieza en crudo",
+   "pct": 3
+  },
+  {
+   "id": "cpm684",
+   "ingrediente": "Frambuesa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm685",
+   "ingrediente": "Kiwi",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm686",
+   "ingrediente": "Kiwi",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm687",
+   "ingrediente": "Ananá",
+   "tecnica": "Limpieza en crudo",
+   "pct": 40
+  },
+  {
+   "id": "cpm688",
+   "ingrediente": "Ananá",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm689",
+   "ingrediente": "Melón",
+   "tecnica": "Limpieza en crudo",
+   "pct": 35
+  },
+  {
+   "id": "cpm690",
+   "ingrediente": "Melón",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm691",
+   "ingrediente": "Sandía",
+   "tecnica": "Limpieza en crudo",
+   "pct": 40
+  },
+  {
+   "id": "cpm692",
+   "ingrediente": "Sandía",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm693",
+   "ingrediente": "Durazno",
+   "tecnica": "Limpieza en crudo",
+   "pct": 12
+  },
+  {
+   "id": "cpm694",
+   "ingrediente": "Durazno",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm695",
+   "ingrediente": "Ciruela",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm696",
+   "ingrediente": "Ciruela",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm697",
+   "ingrediente": "Uva",
+   "tecnica": "Limpieza en crudo",
+   "pct": 5
+  },
+  {
+   "id": "cpm698",
+   "ingrediente": "Uva",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm699",
+   "ingrediente": "Mango",
+   "tecnica": "Limpieza en crudo",
+   "pct": 30
+  },
+  {
+   "id": "cpm700",
+   "ingrediente": "Mango",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm701",
+   "ingrediente": "Maracuyá",
+   "tecnica": "Limpieza en crudo",
+   "pct": 45
+  },
+  {
+   "id": "cpm702",
+   "ingrediente": "Maracuyá",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm703",
+   "ingrediente": "Coco fresco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 50
+  },
+  {
+   "id": "cpm704",
+   "ingrediente": "Coco fresco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm705",
+   "ingrediente": "Higo",
+   "tecnica": "Limpieza en crudo",
+   "pct": 5
+  },
+  {
+   "id": "cpm706",
+   "ingrediente": "Higo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm707",
+   "ingrediente": "Cereza",
+   "tecnica": "Limpieza en crudo",
+   "pct": 8
+  },
+  {
+   "id": "cpm708",
+   "ingrediente": "Cereza",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm709",
+   "ingrediente": "Membrillo fresco",
+   "tecnica": "Limpieza en crudo",
+   "pct": 20
+  },
+  {
+   "id": "cpm710",
+   "ingrediente": "Membrillo fresco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm711",
+   "ingrediente": "Arroz largo fino",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm712",
+   "ingrediente": "Arroz carnaroli",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm713",
+   "ingrediente": "Arroz yamaní",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm714",
+   "ingrediente": "Fideos secos guiseros",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm715",
+   "ingrediente": "Fideos spaghetti",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm716",
+   "ingrediente": "Fideo moñito",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm717",
+   "ingrediente": "Lentejas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm718",
+   "ingrediente": "Garbanzos",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm719",
+   "ingrediente": "Porotos negros",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm720",
+   "ingrediente": "Porotos alubia",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm721",
+   "ingrediente": "Arvejas secas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm722",
+   "ingrediente": "Quinoa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm723",
+   "ingrediente": "Cous cous",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm724",
+   "ingrediente": "Polenta",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm725",
+   "ingrediente": "Avena arrollada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm726",
+   "ingrediente": "Pan rallado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm727",
+   "ingrediente": "Rebozador",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm728",
+   "ingrediente": "Panko",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm729",
+   "ingrediente": "Puré de tomate",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm730",
+   "ingrediente": "Tomate perita en lata",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm731",
+   "ingrediente": "Extracto de tomate",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm732",
+   "ingrediente": "Atún en lata",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm733",
+   "ingrediente": "Aceitunas verdes",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm734",
+   "ingrediente": "Aceitunas negras",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm735",
+   "ingrediente": "Alcaparras",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm736",
+   "ingrediente": "Pepinillos",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm737",
+   "ingrediente": "Choclo en lata",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm738",
+   "ingrediente": "Arvejas en lata",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm739",
+   "ingrediente": "Palmitos",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm740",
+   "ingrediente": "Garbanzos cocidos en lata",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm741",
+   "ingrediente": "Leche de coco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm742",
+   "ingrediente": "Salsa de tomate lista",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm743",
+   "ingrediente": "Caldo en polvo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm744",
+   "ingrediente": "Sopa crema base",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm745",
+   "ingrediente": "Puré instantáneo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm746",
+   "ingrediente": "Leche entera",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm747",
+   "ingrediente": "Leche descremada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm748",
+   "ingrediente": "Crema de leche",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm749",
+   "ingrediente": "Manteca",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm750",
+   "ingrediente": "Queso cremoso",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm751",
+   "ingrediente": "Muzzarella",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm752",
+   "ingrediente": "Queso tybo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm753",
+   "ingrediente": "Queso reggianito",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm754",
+   "ingrediente": "Queso sardo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm755",
+   "ingrediente": "Queso provolone",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm756",
+   "ingrediente": "Queso azul",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm757",
+   "ingrediente": "Queso brie",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm758",
+   "ingrediente": "Queso de cabra",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm759",
+   "ingrediente": "Ricota",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm760",
+   "ingrediente": "Queso crema",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm761",
+   "ingrediente": "Yogur natural",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm762",
+   "ingrediente": "Dulce de leche repostero",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm763",
+   "ingrediente": "Leche condensada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm764",
+   "ingrediente": "Queso rallado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm765",
+   "ingrediente": "Queso fresco light",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm766",
+   "ingrediente": "Huevo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm767",
+   "ingrediente": "Huevo de campo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm768",
+   "ingrediente": "Jamón cocido",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm769",
+   "ingrediente": "Jamón crudo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm770",
+   "ingrediente": "Salame Milán",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm771",
+   "ingrediente": "Bondiola curada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm772",
+   "ingrediente": "Mortadela",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm773",
+   "ingrediente": "Longaniza",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm774",
+   "ingrediente": "Lomito ahumado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm775",
+   "ingrediente": "Leberwurst",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm776",
+   "ingrediente": "Salamín picado grueso",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm777",
+   "ingrediente": "Jamón serrano",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm778",
+   "ingrediente": "Harina 000",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm779",
+   "ingrediente": "Harina 0000",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm780",
+   "ingrediente": "Harina integral",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm781",
+   "ingrediente": "Harina de centeno",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm782",
+   "ingrediente": "Semolín",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm783",
+   "ingrediente": "Harina leudante",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm784",
+   "ingrediente": "Premezcla sin gluten",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm785",
+   "ingrediente": "Harina de garbanzos",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm786",
+   "ingrediente": "Harina de maíz",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm787",
+   "ingrediente": "Levadura fresca",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm788",
+   "ingrediente": "Levadura seca instantánea",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm789",
+   "ingrediente": "Masa madre deshidratada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm790",
+   "ingrediente": "Mejorador de masas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm791",
+   "ingrediente": "Gluten vital",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm792",
+   "ingrediente": "Salvado de trigo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm793",
+   "ingrediente": "Semillas de sésamo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm794",
+   "ingrediente": "Semillas de chía",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm795",
+   "ingrediente": "Semillas de lino",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm796",
+   "ingrediente": "Semillas de girasol peladas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm797",
+   "ingrediente": "Semillas de amapola",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm798",
+   "ingrediente": "Semillas de zapallo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm799",
+   "ingrediente": "Extracto de malta",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm800",
+   "ingrediente": "Margarina para hojaldre",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm801",
+   "ingrediente": "Grasa vacuna refinada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm802",
+   "ingrediente": "Azúcar",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm803",
+   "ingrediente": "Azúcar impalpable",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm804",
+   "ingrediente": "Azúcar rubia",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm805",
+   "ingrediente": "Miel",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm806",
+   "ingrediente": "Glucosa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm807",
+   "ingrediente": "Chocolate cobertura semiamargo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm808",
+   "ingrediente": "Chocolate cobertura con leche",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm809",
+   "ingrediente": "Chocolate blanco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm810",
+   "ingrediente": "Cacao amargo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm811",
+   "ingrediente": "Gelatina sin sabor",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm812",
+   "ingrediente": "Esencia de vainilla",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm813",
+   "ingrediente": "Polvo de hornear",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm814",
+   "ingrediente": "Bicarbonato de sodio",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm815",
+   "ingrediente": "Crémor tártaro",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm816",
+   "ingrediente": "Nuez pelada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm817",
+   "ingrediente": "Almendras",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm818",
+   "ingrediente": "Avellanas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm819",
+   "ingrediente": "Castañas de cajú",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm820",
+   "ingrediente": "Pistacho",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm821",
+   "ingrediente": "Maní tostado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm822",
+   "ingrediente": "Pasas de uva",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm823",
+   "ingrediente": "Coco rallado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm824",
+   "ingrediente": "Dulce de membrillo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm825",
+   "ingrediente": "Dulce de batata",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm826",
+   "ingrediente": "Mermelada de frutilla",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm827",
+   "ingrediente": "Mermelada de durazno",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm828",
+   "ingrediente": "Frutas confitadas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm829",
+   "ingrediente": "Café en grano",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm830",
+   "ingrediente": "Café molido",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm831",
+   "ingrediente": "Cacao dulce en polvo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm832",
+   "ingrediente": "Baño de repostería",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm833",
+   "ingrediente": "Granas y confites",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm834",
+   "ingrediente": "Vainillas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm835",
+   "ingrediente": "Galletitas de chocolate para base",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm836",
+   "ingrediente": "Queso crema para cheesecake",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm837",
+   "ingrediente": "Barril cerveza rubia",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm838",
+   "ingrediente": "Barril cerveza IPA",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm839",
+   "ingrediente": "Barril cerveza roja",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm840",
+   "ingrediente": "Barril cerveza negra stout",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm841",
+   "ingrediente": "Barril cerveza honey",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm842",
+   "ingrediente": "Barril sidra tirada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm843",
+   "ingrediente": "Vermouth rosso",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm844",
+   "ingrediente": "Vermouth bianco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm845",
+   "ingrediente": "Vermouth dry",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm846",
+   "ingrediente": "Sidra botella 720cc",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm847",
+   "ingrediente": "Cerveza porrón 330cc",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm848",
+   "ingrediente": "Vino malbec botella",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm849",
+   "ingrediente": "Vino cabernet botella",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm850",
+   "ingrediente": "Vino blanco chardonnay botella",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm851",
+   "ingrediente": "Vino rosado botella",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm852",
+   "ingrediente": "Espumante extra brut botella",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm853",
+   "ingrediente": "Gaseosa cola 2.25L",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm854",
+   "ingrediente": "Gaseosa lima-limón 2.25L",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm855",
+   "ingrediente": "Gaseosa pomelo 2.25L",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm856",
+   "ingrediente": "Agua mineral 2L",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm857",
+   "ingrediente": "Agua con gas 2L",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm858",
+   "ingrediente": "Agua tónica 1.5L",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm859",
+   "ingrediente": "Fernet",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm860",
+   "ingrediente": "Aperitivo Aperol",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm861",
+   "ingrediente": "Gin",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm862",
+   "ingrediente": "Vodka",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm863",
+   "ingrediente": "Ron",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm864",
+   "ingrediente": "Whisky",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm865",
+   "ingrediente": "Tequila",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm866",
+   "ingrediente": "Licor de café",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm867",
+   "ingrediente": "Cachaça",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm868",
+   "ingrediente": "Jugo de naranja exprimido",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm869",
+   "ingrediente": "Jugo de limón natural",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm870",
+   "ingrediente": "Granadina",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm871",
+   "ingrediente": "Almíbar de goma",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm872",
+   "ingrediente": "Leche de almendras",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm873",
+   "ingrediente": "Yerba mate",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm874",
+   "ingrediente": "Té en hebras",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm875",
+   "ingrediente": "Aceite de girasol",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm876",
+   "ingrediente": "Aceite de oliva extra virgen",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm877",
+   "ingrediente": "Aceite mezcla",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm878",
+   "ingrediente": "Aceite de maíz",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm879",
+   "ingrediente": "Aceto balsámico",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm880",
+   "ingrediente": "Vinagre de alcohol",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm881",
+   "ingrediente": "Vinagre de vino",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm882",
+   "ingrediente": "Vinagre de manzana",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm883",
+   "ingrediente": "Sal fina",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm884",
+   "ingrediente": "Sal gruesa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm885",
+   "ingrediente": "Sal marina en escamas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm886",
+   "ingrediente": "Pimienta negra en grano",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm887",
+   "ingrediente": "Pimienta blanca molida",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm888",
+   "ingrediente": "Pimentón dulce",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm889",
+   "ingrediente": "Pimentón ahumado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm890",
+   "ingrediente": "Ají molido",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm891",
+   "ingrediente": "Orégano",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm892",
+   "ingrediente": "Provenzal deshidratada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm893",
+   "ingrediente": "Laurel",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm894",
+   "ingrediente": "Comino molido",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm895",
+   "ingrediente": "Curry",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm896",
+   "ingrediente": "Cúrcuma",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm897",
+   "ingrediente": "Nuez moscada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm898",
+   "ingrediente": "Canela molida",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm899",
+   "ingrediente": "Canela en rama",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm900",
+   "ingrediente": "Clavo de olor",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm901",
+   "ingrediente": "Anís estrellado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm902",
+   "ingrediente": "Mostaza",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm903",
+   "ingrediente": "Mostaza de Dijon",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm904",
+   "ingrediente": "Ketchup",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm905",
+   "ingrediente": "Mayonesa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm906",
+   "ingrediente": "Salsa de soja",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm907",
+   "ingrediente": "Salsa inglesa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm908",
+   "ingrediente": "Salsa tabasco",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm909",
+   "ingrediente": "Salsa barbacoa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm910",
+   "ingrediente": "Mostaza en grano",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm911",
+   "ingrediente": "Wasabi en polvo",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm912",
+   "ingrediente": "Panca / ají amarillo en pasta",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm913",
+   "ingrediente": "Papas bastón congeladas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm914",
+   "ingrediente": "Papas noisette congeladas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm915",
+   "ingrediente": "Arvejas congeladas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm916",
+   "ingrediente": "Espinaca congelada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm917",
+   "ingrediente": "Brócoli congelado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm918",
+   "ingrediente": "Frutilla congelada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm919",
+   "ingrediente": "Frutos rojos congelados",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm920",
+   "ingrediente": "Mango congelado",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm921",
+   "ingrediente": "Langostinos congelados",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm922",
+   "ingrediente": "Rabas congeladas",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm923",
+   "ingrediente": "Masa de hojaldre congelada",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm924",
+   "ingrediente": "Hielo en bolsa",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm925",
+   "ingrediente": "Pan de hamburguesa CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm926",
+   "ingrediente": "Pan de lomito CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm927",
+   "ingrediente": "Pan de campo CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm928",
+   "ingrediente": "Baguette CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm929",
+   "ingrediente": "Pan lactal CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm930",
+   "ingrediente": "Medialunas de manteca CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm931",
+   "ingrediente": "Factura surtida CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm932",
+   "ingrediente": "Chipá CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm933",
+   "ingrediente": "Tapas de empanada CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm934",
+   "ingrediente": "Empanada de carne CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm935",
+   "ingrediente": "Empanada de jamón y queso CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm936",
+   "ingrediente": "Empanada de pollo CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm937",
+   "ingrediente": "Prepizza CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm938",
+   "ingrediente": "Ñoquis de papa CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm939",
+   "ingrediente": "Ravioles plancha CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm940",
+   "ingrediente": "Tallarines frescos CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm941",
+   "ingrediente": "Sorrentinos plancha CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm942",
+   "ingrediente": "Salsa fileto CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm943",
+   "ingrediente": "Salsa bolognesa CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm944",
+   "ingrediente": "Salsa blanca CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm945",
+   "ingrediente": "Caldo concentrado de verduras CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm946",
+   "ingrediente": "Caldo concentrado de carne CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm947",
+   "ingrediente": "Chimichurri CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm948",
+   "ingrediente": "Mayonesa casera CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm949",
+   "ingrediente": "Hummus CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm950",
+   "ingrediente": "Cheesecake entero CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm951",
+   "ingrediente": "Torta de chocolate entera CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm952",
+   "ingrediente": "Tarta frutal entera CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm953",
+   "ingrediente": "Lemon pie entero CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm954",
+   "ingrediente": "Flan grande CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm955",
+   "ingrediente": "Budín de limón CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm956",
+   "ingrediente": "Plancha de brownie CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm957",
+   "ingrediente": "Alfajor de maicena CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm958",
+   "ingrediente": "Crema pastelera CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  },
+  {
+   "id": "cpm959",
+   "ingrediente": "Dulce de leche pastelero CP",
+   "tecnica": "Sin merma",
+   "pct": 0
+  }
+ ],
+ "recetas": []
+}
