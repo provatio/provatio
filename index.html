@@ -9904,12 +9904,12 @@ function mostrarPendienteActivacion(user){
 
       <!-- Ícono animado -->
       <div style="width:80px;height:80px;background:var(--dorado-c);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;border:2px solid var(--dorado)">
-        <span style="font-size:36px">⏳</span>
+        <span style="font-size:36px">👋</span>
       </div>
 
       <!-- Título -->
       <h2 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:var(--negro);margin-bottom:12px">
-        Tu cuenta está siendo activada
+        ¡Bienvenido a Provatio!
       </h2>
 
       <!-- Mensaje -->
@@ -9917,8 +9917,9 @@ function mostrarPendienteActivacion(user){
         Hola <strong>${user.displayName||user.email.split('@')[0]}</strong> — tu registro fue exitoso.
       </p>
       <p style="font-size:14px;color:#3A3A32;line-height:1.7;margin-bottom:32px">
-        En breve el administrador va a asignarte tu operación y vas a tener acceso completo al sistema. 
-        Esto suele tardar menos de 24 horas.
+        Tu cuenta ya está creada. El siguiente paso es armar juntos tu operación:
+        cargamos tus recetas, tus costos y tus mermas para que empieces a ver tus números reales.
+        Escribinos y coordinamos el arranque.
       </p>
 
       <!-- Card informativa -->
@@ -9932,7 +9933,7 @@ function mostrarPendienteActivacion(user){
           </div>
           <div>
             <div style="font-size:13px;font-weight:600;color:var(--negro)">${user.email}</div>
-            <div style="font-size:11px;color:#5A5A52">Cuenta registrada · Pendiente de activación</div>
+            <div style="font-size:11px;color:#5A5A52">Cuenta creada · Lista para el onboarding</div>
           </div>
         </div>
       </div>
@@ -9947,21 +9948,21 @@ function mostrarPendienteActivacion(user){
             <div style="width:24px;height:24px;background:var(--oliva-c);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--oliva);flex-shrink:0">✓</div>
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--negro)">Cuenta creada</div>
-              <div style="font-size:12px;color:#5A5A52">Tu acceso fue registrado correctamente</div>
+              <div style="font-size:12px;color:#5A5A52">Ya estás registrado en Provatio</div>
             </div>
           </div>
           <div style="display:flex;align-items:flex-start;gap:12px">
             <div style="width:24px;height:24px;background:var(--dorado-c);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--dorado);flex-shrink:0">2</div>
             <div>
-              <div style="font-size:13px;font-weight:600;color:var(--negro)">Asignación de operación</div>
-              <div style="font-size:12px;color:#5A5A52">El administrador está configurando tu acceso</div>
+              <div style="font-size:13px;font-weight:600;color:var(--negro)">Onboarding juntos</div>
+              <div style="font-size:12px;color:#5A5A52">Coordinamos y armamos tu operación paso a paso</div>
             </div>
           </div>
           <div style="display:flex;align-items:flex-start;gap:12px">
             <div style="width:24px;height:24px;background:var(--crema-2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#4A4A42;flex-shrink:0">3</div>
             <div>
-              <div style="font-size:13px;font-weight:600;color:#5A5A52">Acceso completo</div>
-              <div style="font-size:12px;color:#5A5A52">Vas a poder ingresar con todos los módulos activos</div>
+              <div style="font-size:13px;font-weight:600;color:#5A5A52">Empezás a gestionar</div>
+              <div style="font-size:12px;color:#5A5A52">Tus costos reales, al día, con todos los módulos</div>
             </div>
           </div>
         </div>
@@ -9969,9 +9970,13 @@ function mostrarPendienteActivacion(user){
 
       <!-- Botones -->
       <div style="display:flex;flex-direction:column;gap:10px">
+        <a href="https://wa.me/5492664728720?text=Hola!%20Me%20registré%20en%20Provatio%20y%20quiero%20coordinar%20el%20onboarding" target="_blank" rel="noopener"
+          style="width:100%;padding:13px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;text-decoration:none;display:block;box-sizing:border-box">
+          💬 Escribinos para arrancar
+        </a>
         <button onclick="verificarActivacion()" 
-          style="width:100%;padding:13px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif">
-          Verificar si ya tengo acceso
+          style="width:100%;padding:11px;background:transparent;color:#4A4A42;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif">
+          Ya coordiné — verificar mi acceso
         </button>
         <button onclick="auth.signOut().then(()=>{document.getElementById('pending-screen').style.display='none';document.getElementById('auth-screen').style.display='flex'})" 
           style="width:100%;padding:11px;background:transparent;color:#4A4A42;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif">
@@ -9995,7 +10000,8 @@ async function verificarActivacion(){
     const doc = await db.collection('usuarios').doc(currentUser.uid).get();
     if(doc.exists){
       const data = doc.data();
-      if(data.operacionId){
+      // Modelo nuevo: tiene empresa asignada. Modelo viejo: tiene operacionId.
+      if(data.empresaId || data.operacionId){
         // Ya tiene operación asignada — recargar
         currentUser = {...currentUser, ...data};
         document.getElementById('pending-screen').style.display = 'none';
