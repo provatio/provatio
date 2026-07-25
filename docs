@@ -1,0 +1,209 @@
+# Provatio — Estado del proyecto
+
+> **Qué es este documento:** una foto completa de dónde está Provatio hoy — qué es,
+> cómo está construido, qué funciona, qué decisiones de arquitectura se tomaron y qué
+> queda pendiente. Sirve para que cualquier persona (el propio Javier más adelante,
+> otra IA, o un programador contratado) entienda el proyecto sin tener que reconstruir
+> el contexto desde cero.
+>
+> **Fecha de esta foto:** 25 de julio de 2026
+> **Versión de código vigente:** `index_v31.html`
+> **Mantener actualizado:** cada vez que se cierre un bloque grande de trabajo.
+
+---
+
+## 1. Qué es Provatio
+
+Provatio es un **SaaS de gestión de costos gastronómicos**, pensado especialmente para
+operaciones con **centro de producción (CP) que abastece a varios locales** (cadenas).
+Responde con números las preguntas que en la industria se contestan "más o menos":
+cuánto cuesta realmente cada plato, a qué precio el CP entrega a los locales, y qué
+platos dejan margen y cuáles no.
+
+**Quién lo construye:** Javier, chef con 30 años de oficio (de bachero a gerente de
+hotel), autodidacta, sin formación formal en cocina ni en programación. La lógica de
+dominio (cómo funciona una cocina de verdad) es su gran diferencial y es lo que ningún
+competidor tiene.
+
+**Diferencial central:** entiende una cadena con centro de producción. La mayoría de
+los sistemas calculan un food cost simple; Provatio modela el circuito CP → locales
+con precios de transferencia y tres modos de insumo (ver sección 4).
+
+---
+
+## 2. Arquitectura técnica
+
+| Aspecto | Detalle |
+|---|---|
+| **Frontend** | Un único archivo HTML (~10.600 líneas, ~322 funciones). Sin build, sin framework, sin dependencias de compilación. |
+| **Backend de datos** | Firebase / Firestore (plan gratuito "Spark"). |
+| **Backend serverless** | Una función en Vercel (`api/factura.js`) que lee facturas con la API de Claude. |
+| **Repositorio** | GitHub: `github.com/provatio/provatio` (público). |
+| **Deploy** | Doble: GitHub Pages sirve `provatio.io` (vía archivo CNAME); Vercel sirve `provatio-tl36.vercel.app` (conectado al repo). Un commit actualiza ambos. |
+| **Versionado** | Se nombra el archivo `index_vNN.html` y se sube al repo como `index.html`. |
+
+**Decisión de arquitectura clave — documento único:** toda una operación (ingredientes,
+mermas, recetas, facturas, eventos) se guarda en UN documento de Firestore con un campo
+`_datos`. Esto resolvió un bug histórico de escrituras fallidas y hace que la app cargue
+de un saque. La operación del CP pesa ~125 KB, muy dentro del límite de 1 MB de Firestore
+(hay margen para ~8x los datos actuales).
+
+**Advertencia recurrente de trabajo:** NO abrir la app desde `file://` (Descargas).
+Ahí Firestore no carga y aparecen datos de ejemplo ("34 ingredientes", usuario ficticio
+"Javier Reynoso" / "op-patagonia"). Trabajar siempre desde `provatio.io` o Vercel. La IA
+de facturas solo funciona en la URL de Vercel (GitHub Pages no ejecuta serverless).
+
+---
+
+## 3. Modelo de datos (multiusuario / empresa)
+
+Migrado el 24/7/2026 desde un modelo viejo (datos colgando de la cuenta personal) al
+modelo de empresa:
+
+```
+empresas/{empresaId}
+  ├── (doc raíz: nombre, duenoUid, _rev para control de concurrencia)
+  ├── operaciones/{opId}     → cada local o CP, con su campo _datos
+  └── miembros/{uid}         → rol + operacionesAsignadas + activo
+usuarios/{uid}               → apunta a empresaId
+indiceEmails/{email}         → {email, uid}, para invitar sin listar usuarios
+```
+
+**Roles definidos** (`ROLES` en el código): `dueno` (todo + gestiona usuarios),
+`supervisor` (varios locales, sin gestión), `encargado` (su local con costos/precios),
+`cocina` (recetas/mermas sin dinero), `cp` (centro de producción).
+
+**Empresa real migrada:** "Elementos" (`emp-mryc7pb8`), con 2 operaciones (Los inmortales
+= CP, y La esquina de palermo = restaurante), 3 recetas, 402 ingredientes.
+
+---
+
+## 4. Módulos y estado de cada uno
+
+### ✅ Funcionando y probado
+- **Ingredientes**: catálogo por categorías (campo `cat`, no `categoria`; unidad de compra
+  en `unidad`), con acordeón y buscador.
+- **Mermas**: por ingrediente y técnica. Existe base de "mermas multifactoriales"
+  (estado + proceso + técnica) aún no explotada a fondo.
+- **Recetas**: costeo, agrupadas por tipo de plato.
+- **Circuito CP → locales**: el CP provee insumos a los locales. Tres modos de uso:
+  1. **Directo** (ej. alcaparras): se usan como vienen, sin merma.
+  2. **Granel con merma local** (ej. papa en bolsa): cada local aplica su merma.
+  3. **Porcionado** (ej. carnes): costo fijo por porción, merma de cocción informativa.
+  Las recetas del CP se costean **por unidad de despacho** (porción/kg/docena), NUNCA
+  por lote, porque un lote abastece a N locales. Precio de transferencia =
+  precioVenta ÷ rendimiento × 1000.
+- **Facturas**: carga manual + foto/PDF con IA (Claude). Historial con búsqueda y
+  agrupación por día/semana/mes/año, detalle por factura, borrador persistente.
+  **Matching ESTRICTO**: solo auto-matchea coincidencia real (`_facMismoProducto`);
+  lo parecido se ofrece como sugerencia clickeable, nunca auto-selecciona. Filosofía:
+  en gastronomía nombres parecidos son productos DISTINTOS ("tapa de nalga" ≠ "nalga";
+  "bife de chorizo" ≠ "bife angosto" ≠ "bife ancho"). Los ingredientes nuevos nacen
+  CON su merma "Sin merma 0%".
+- **Multiusuario / empresa**: migración, roles, pantalla "Equipo y accesos".
+- **Navegación de cadena**: bidireccional CP ↔ locales, sidebar con secciones plegables.
+- **Menu engineering (Kasavana & Smith)**, **rentabilidad**, **salud del negocio**,
+  **eventos**, **importador de Excel de ventas** con fuzzy matching, **reportes PDF**
+  (break-even, donut de gastos, waterfall), **identidad visual** (monograma P, Playfair
+  Display, dorado; distintivo patrio con bandera + 3 estrellas + Malvinas + "15 jul 2026").
+
+### 🟡 Existe base pero incompleto
+- **Subproductos / despiece**: la pantalla existe ("definí cómo se divide un corte en
+  partes, costo prorrateado") pero el caso real no está resuelto. Ver sección 6.
+- **Comida de personal**, **desvíos**, **compras**: pantallas presentes, profundidad variable.
+
+### ❌ Pendiente de construir
+- **Administración de clientes de Provatio (Nivel 2)**: ver documento aparte
+  `PROVATIO-modelo-clientes-onboarding.md`. Decidido, no construido.
+- **Onboarding con carta PDF → recetas**: hoy se hace asistido (Javier pasa la carta,
+  se genera un JSON, el cliente lo importa). No hay botón en la app.
+
+---
+
+## 5. Seguridad (Firestore)
+
+- Reglas cerradas por empresa, publicadas el 24/7/2026 (versión "modelo de empresa v2",
+  archivo `firestore-reglas-empresa-v2.txt`). Antes la base estaba ABIERTA
+  (`allow read, write: if true`) con vencimiento 26/7 — se cerró justo a tiempo.
+- Cada empresa accede solo a sus datos; nadie ve los de otra empresa.
+- **Limitación conocida y aceptada:** como todo está en un doc `_datos`, las reglas
+  controlan A QUÉ operación accede cada uno, pero NO qué campos ve dentro. Que "cocina
+  no vea precios" es restricción de pantalla, no de datos. Alguien técnico podría leer
+  los datos crudos de SU local. Riesgo bajo en una cocina real; NO prometer a un cliente
+  que el personal "no puede" ver costos, sino que "no los ve" en pantalla.
+
+---
+
+## 6. Pendientes técnicos priorizados
+
+1. **Validar multiusuario end-to-end**: registrar 2ª cuenta con alias, invitarla como
+   encargado de 1 local, verificar que vea solo ese local. (Quedó a medias.)
+2. **Despiece valorizado — caso tren de bife**: comprar la pieza entera → deshuesar con
+   merma → salen varios productos (ojo de bife = bife ancho s/hueso; bife de chorizo =
+   bife angosto s/hueso; huesos → base de demi-glace). Repartir el costo de compra entre
+   las partes con valorización de subproductos (el hueso tiene costo cero de compra pero
+   valor de uso). La pantalla Subproductos y las mermas multifactoriales son la base.
+3. **Administración de clientes de Provatio (Nivel 2)**: ver documento aparte.
+4. **Mover `provatio.io` a Vercel**: hoy lo sirve GitHub Pages (archivo CNAME). Unificar
+   en Vercel haría funcionar la IA en el dominio propio. Hacer en horario tranquilo por
+   propagación DNS.
+5. **Cambiar el modelo de IA a Haiku** para bajar el costo por factura (de ~2,5¢ a <1¢).
+6. **Memoria de matching por proveedor**: recordar correcciones para acertar en futuras
+   facturas del mismo proveedor.
+7. **Limpieza**: sacar del menú la pantalla vieja "Clientes" (confunde con "Equipo y
+   accesos"); limpiar el bloque `demoData` ficticio; auditar usos de `getOp()` (su
+   fallback a la primera operación puede causar comportamientos fantasma).
+
+---
+
+## 7. Estrategia comercial (resumen)
+
+- **Lanzamiento por fases con puertas.** Fase 0 (operación propia) → Fase 1 (3 a 5
+  clientes hand-picked, onboarding de alto contacto).
+- **Modelo de onboarding:** todas las configuraciones pasan por el administrador de
+  Provatio. Se cobran 3 meses de onboarding antes de la suscripción mensual. Da control,
+  justifica el cobro y sirve de backup. El cliente tiene cuenta desde el día 1 y hacen
+  el onboarding juntos (así el cliente aprende a usarlo).
+- **Planes por costo variable:** lo gratis de servir (recetas, mermas, food cost, cadena,
+  reportes) va en el plan base; lo que cuesta por uso (lectura de facturas con IA) es
+  candidato a plan superior o con cupo. Decidir precios recién con el piloto terminado.
+- **Carta de venta real (del roleplay con "Marcelo"):** los dueños preguntan por el
+  depósito/CP, las mermas de su gente y sus datos — NO por matrices ni gráficos. La
+  landing y el discurso deben ir por ahí.
+- **Argumento de confianza estrella:** exportación completa a JSON — "te vas con tus
+  datos cuando quieras, no quedás preso de nada".
+- **Semana Fundacional 12–19 de julio:** activo de marketing anual (descuento aniversario,
+  relato de origen, insignia de cliente fundacional). El 15/7 se cruza con la gesta
+  deportiva que inspiró el distintivo patrio.
+- **Documentos comerciales listos:** `Provatio-Propuesta-Piloto.docx` (piloto 3 meses),
+  `Provatio-Acuerdo-Confidencialidad.docx` (modelo, requiere revisión de abogado).
+
+---
+
+## 8. Archivos importantes del proyecto
+
+| Archivo | Qué es |
+|---|---|
+| `index_v31.html` | Versión de código vigente (subir al repo como `index.html`). |
+| `api-factura.js` | Función serverless de Vercel para leer facturas con IA. Va en `api/factura.js`. |
+| `firestore-reglas-empresa-v2.txt` | Reglas de seguridad vigentes (con índice de correos). |
+| `provatio-backup-centro-produccion.json` | Backup del catálogo maestro del CP (395 ingredientes, 959 mermas, 16 categorías). |
+| `PROVATIO-modelo-clientes-onboarding.md` | Especificación del Nivel 2 (administración de clientes), decidido y no construido. |
+| `Provatio-Propuesta-Piloto.docx` / `-Acuerdo-Confidencialidad.docx` | Documentos comerciales. |
+
+---
+
+## 9. Filosofía de trabajo
+
+- **Kaizen:** mejora incremental, verificar cada paso, no refactors heroicos.
+- **El humano manda:** la IA sugiere, Javier (que conoce la cocina) decide. Aplica al
+  matching de facturas, al despiece, a todo.
+- **Verificar antes de confiar:** varios bugs se cazaron porque Javier revisó paso a paso
+  en vez de asumir que estaba bien (incluidos errores introducidos durante correcciones).
+- **De construir a validar:** el producto está en un punto donde tiene más valor probarlo
+  con un cliente real que seguir agregando funciones.
+
+---
+
+*Documento de estado. Guardar en el repositorio (carpeta `/docs`) y actualizar al cerrar
+cada bloque grande de trabajo. Para retomar en otra sesión: leer este documento primero.*
