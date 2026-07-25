@@ -1565,6 +1565,16 @@ function getOp(){ return demoData.operaciones[currentOpId] || Object.values(demo
 //   empresas/{empresaId}/miembros/{uid}   → rol + operaciones asignadas
 //   usuarios/{uid}                        → a qué empresa pertenece
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// ADMIN DE PROVATIO — la(s) cuenta(s) que administran la PLATAFORMA
+// (distinto de ser "dueño" de una empresa cliente). Puede ver y activar
+// los registros pendientes de onboarding.
+// ═══════════════════════════════════════════════════════════════════════
+const ADMINS_PROVATIO = ['elementosfood@gmail.com'];
+function esAdminProvatio(){
+  return currentUser && ADMINS_PROVATIO.includes((currentUser.email||'').toLowerCase());
+}
+
 const ROLES = {
   dueno:      { nombre:'Dueño',            desc:'Todo: locales, CP, márgenes y usuarios' },
   supervisor: { nombre:'Supervisor',       desc:'Varios locales asignados, sin gestión de usuarios' },
@@ -2412,14 +2422,13 @@ async function cargarUsuarioFirebase(firebaseUser){
       // Cada cuenta nueva administra su propio espacio hasta que la inviten
       // a una empresa. (Antes se consultaba toda la colección de usuarios,
       // algo que las reglas de seguridad ya no permiten ni conviene permitir.)
-      const esElPrimero = true;
-      
       userData = {
         uid: firebaseUser.uid,
         email: firebaseUser.email,
         displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0],
-        rol: esElPrimero ? 'admin' : 'cliente',
+        rol: 'dueno',
         operacionId: null,
+        estadoCuenta: ADMINS_PROVATIO.includes((firebaseUser.email||'').toLowerCase()) ? 'activa' : 'pendiente',
       };
       await db.collection('usuarios').doc(firebaseUser.uid).set(userData);
     }
@@ -2623,9 +2632,6 @@ async function completarRegistro(email, pass){
     // Actualizar displayName
     await result.user.updateProfile({ displayName: nombre });
 
-    // Cada cuenta nueva administra su propio espacio (ver nota arriba)
-    const esElPrimero = true;
-
     // Guardar perfil completo en Firestore
     const userData = {
       uid: result.user.uid,
@@ -2635,8 +2641,11 @@ async function completarRegistro(email, pass){
       pais,
       ciudad,
       tipoOperacion: tipo,
-      rol: esElPrimero ? 'admin' : 'cliente',
+      rol: 'dueno',
       operacionId: null,
+      // Estado de la cuenta en Provatio: nace pendiente de onboarding.
+      // El admin de Provatio la activa; la suya propia nace activa.
+      estadoCuenta: ADMINS_PROVATIO.includes(email.toLowerCase()) ? 'activa' : 'pendiente',
       fechaRegistro: new Date().toISOString(),
     };
 
@@ -2690,11 +2699,9 @@ function initApp(user){
   }
   document.getElementById('auth-screen').style.display = 'none';
 
-  // Pantalla de espera: sin empresa (modelo nuevo) o sin operación (modelo viejo)
-  const sinAcceso = getEmpresaId()
-    ? false
-    : (user.rol === 'cliente' && !user.operacionId);
-  if(sinAcceso){
+  // El admin de Provatio siempre entra. El resto, solo si su cuenta está activada.
+  const cuentaActiva = esAdminProvatio() || (currentUser.estadoCuenta === 'activa');
+  if(!cuentaActiva){
     mostrarPendienteActivacion(user);
     return;
   }
@@ -3190,6 +3197,7 @@ function buildSidebar(rol){
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     {icon:'users', label:'Clientes', vista:'clientes'},
     ...(puedeGestionarUsuarios() || !getEmpresaId() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
+    ...(esAdminProvatio() ? [{icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'}] : []),
   ] : isDK ? [
     // Dark Kitchen activa
     {section:'Principal'},
@@ -3460,6 +3468,7 @@ function navigate(vista, params={}){
     mermas: renderMermas,
     facturas: ()=>{ window._facVer=null; renderFacturas(); },
     equipo: renderEquipo,
+    adminProvatio: renderAdminProvatio,
     recetas: renderRecetas,
     semanal: renderSemanal,
     evento: renderEvento,
@@ -7780,6 +7789,89 @@ function tipoBadgeHtml(tipo){
 // ═══════════════════════════════════════════════════════════════════════
 // EQUIPO — alta de miembros, roles y locales asignados
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// PANEL DE ADMINISTRACIÓN DE PROVATIO (solo para admin de la plataforma)
+// Lista las cuentas registradas y permite activarlas para el onboarding.
+// ═══════════════════════════════════════════════════════════════════════
+async function renderAdminProvatio(){
+  if(!esAdminProvatio()){
+    setContent('Administración', '<div class="alert alert-error">Esta sección es solo para el equipo de Provatio.</div>');
+    return;
+  }
+  setContent('Administración de Provatio', '<div style="padding:24px;color:var(--gris-2)">Cargando registros…</div>');
+
+  // Leer todas las cuentas registradas (el admin sí puede, por reglas)
+  let cuentas = [];
+  try{
+    const snap = await db.collection('usuarios').get();
+    snap.forEach(d => cuentas.push({ uid:d.id, ...d.data() }));
+  }catch(err){
+    setContent('Administración de Provatio',
+      '<div class="alert alert-error">No se pudieron leer los registros: ' + esc(err.message) + '</div>');
+    return;
+  }
+
+  // Ordenar: pendientes primero, después por fecha desc
+  cuentas.sort((a,b)=>{
+    const pa = (a.estadoCuenta === 'pendiente') ? 0 : 1;
+    const pb = (b.estadoCuenta === 'pendiente') ? 0 : 1;
+    if(pa !== pb) return pa - pb;
+    return (b.fechaRegistro||'').localeCompare(a.fechaRegistro||'');
+  });
+
+  const pendientes = cuentas.filter(c => c.estadoCuenta === 'pendiente').length;
+
+  const fmtFecha = (iso) => {
+    if(!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d) ? '—' : d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+  };
+
+  const filas = cuentas.map(c => {
+    const activa = c.estadoCuenta === 'activa';
+    const esAdmin = ADMINS_PROVATIO.includes((c.email||'').toLowerCase());
+    return `<tr${activa?'':' style="background:#FFF9F0"'}>
+      <td><strong>${esc(c.displayName || c.email)}</strong><br>
+          <span style="font-size:11px;color:var(--gris-2)">${esc(c.email||'')}</span></td>
+      <td style="font-size:13px">${esc(c.tipoOperacion||'—')}${c.ciudad?'<br><span style="font-size:11px;color:var(--gris-2)">'+esc(c.ciudad)+', '+esc(c.pais||'')+'</span>':''}</td>
+      <td style="font-size:12px;color:var(--gris-2)">${fmtFecha(c.fechaRegistro)}</td>
+      <td>${esAdmin
+            ? '<span style="font-size:11px;color:var(--dorado);font-weight:700">PROVATIO</span>'
+            : activa
+              ? '<span style="color:var(--verde);font-size:12px;font-weight:600">● Activa</span>'
+              : '<span style="color:#B8540A;font-size:12px;font-weight:600">● Pendiente</span>'}</td>
+      <td style="white-space:nowrap;text-align:right">${esAdmin ? '' : (activa
+          ? `<button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','pendiente')">Suspender</button>`
+          : `<button class="btn btn-primary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','activa')">✓ Activar</button>`)}</td>
+    </tr>`;
+  }).join('');
+
+  setContent('Administración de Provatio', `
+    <div class="alert ${pendientes?'alert-warn':'alert-info'}" style="margin-bottom:16px">
+      ${pendientes
+        ? '⏳ Tenés <strong>'+pendientes+'</strong> cuenta'+(pendientes>1?'s':'')+' esperando onboarding. Activalas cuando coordines el arranque.'
+        : '✓ No hay cuentas pendientes. Cuando alguien se registre, va a aparecer acá.'}
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Cuentas registradas (${cuentas.length})</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Persona</th><th>Operación</th><th>Registro</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${filas || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gris-3)">Sin registros todavía</td></tr>'}</tbody>
+      </table></div>
+    </div>`);
+}
+
+async function cambiarEstadoCuenta(uid, nuevoEstado){
+  if(!esAdminProvatio()){ showToast('Solo el equipo de Provatio puede hacer esto','error'); return; }
+  try{
+    await db.collection('usuarios').doc(uid).set({ estadoCuenta: nuevoEstado }, {merge:true});
+    showToast(nuevoEstado === 'activa' ? '✓ Cuenta activada' : 'Cuenta suspendida', 'success');
+    renderAdminProvatio();
+  }catch(err){
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
 async function renderEquipo(){
   const eid = getEmpresaId();
   if(!eid){
@@ -10000,13 +10092,15 @@ async function verificarActivacion(){
     const doc = await db.collection('usuarios').doc(currentUser.uid).get();
     if(doc.exists){
       const data = doc.data();
-      // Modelo nuevo: tiene empresa asignada. Modelo viejo: tiene operacionId.
-      if(data.empresaId || data.operacionId){
+      // La cuenta quedó activada por el admin de Provatio
+      if(data.estadoCuenta === 'activa' || data.empresaId || data.operacionId){
         // Ya tiene operación asignada — recargar
         currentUser = {...currentUser, ...data};
-        document.getElementById('pending-screen').style.display = 'none';
+        currentUser.estadoCuenta = 'activa';
+        const ps = document.getElementById('pending-screen');
+        if(ps) ps.style.display = 'none';
         const appEl = document.getElementById('app');
-  if(appEl) appEl.style.display = 'flex';
+        if(appEl) appEl.style.display = 'flex';
         
         // Cargar datos de Firebase
         await cargarDesdeFirestore(currentUser.uid);
