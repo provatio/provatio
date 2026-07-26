@@ -1471,11 +1471,25 @@ async function cargarDesdeFirestore(uid){
       return false;
     }
     const _origen = db.collection('empresas').doc(getEmpresaId()).collection('operaciones');
-    const opsSnap = await conTimeout(_origen.get(), 20000, 'La carga de operaciones');
     const _permitidas = misOperacionesPermitidas();   // null = todas (dueño)
-    
-    if(opsSnap.empty){
-      // Primera vez — usar datos demo como punto de partida
+
+    // El dueño puede LISTAR la colección completa (su permiso es uniforme).
+    // Un encargado/supervisor/cocina NO: su permiso depende de cada opId
+    // (operacionesAsignadas), y Firestore rechaza el listado entero.
+    // Por eso, para miembros con lista, se trae cada operación por su ID.
+    let _docs = [];
+    if(_permitidas === null){
+      const opsSnap = await conTimeout(_origen.get(), 20000, 'La carga de operaciones');
+      opsSnap.forEach(d => _docs.push(d));
+    } else if(_permitidas.length){
+      const snaps = await conTimeout(
+        Promise.all(_permitidas.map(id => _origen.doc(id).get())),
+        20000, 'La carga de operaciones');
+      _docs = snaps.filter(s => s.exists);
+    }
+
+    if(!_docs.length && _permitidas === null){
+      // Primera vez del dueño — usar datos demo como punto de partida
       hideLoading();
       navigate('dashboard');
       return false;
@@ -1483,12 +1497,9 @@ async function cargarDesdeFirestore(uid){
 
     // Limpiar datos demo
     demoData.operaciones = {};
-    
-    opsSnap.forEach(doc => {
-      // Solo las operaciones que este usuario tiene permitidas
-      if(_permitidas === null || _permitidas.includes(doc.id)){
-        demoData.operaciones[doc.id] = doc.data();
-      }
+
+    _docs.forEach(doc => {
+      demoData.operaciones[doc.id] = doc.data();
     });
 
     if(!Object.keys(demoData.operaciones).length){
@@ -1539,6 +1550,17 @@ async function cargarDesdeFirestore(uid){
     return true;
   } catch(err){
     console.error('Error cargando desde Firestore:', err);
+    // Con empresa, NUNCA dejar los datos demo en pantalla ante un error:
+    // el "Campamento Petrolero" ficticio aparecía como si fuera real.
+    // Mejor pantalla vacía + error honesto que datos inventados.
+    if(getEmpresaId()){
+      demoData.operaciones = {};
+      demoData.ingredientes = [];
+      demoData.mermas = [];
+      demoData.recetas = [];
+      demoData.facturas = [];
+      currentOpId = null;
+    }
     hideLoading();
     navigate('dashboard');
     showToast('No pude traer tus datos de la nube: ' + err.message + '. Podés seguir trabajando y reintentar con Guardar.', 'error');
