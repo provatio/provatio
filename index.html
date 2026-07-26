@@ -3864,7 +3864,10 @@ function renderDashboardAdmin(){
               <td style="text-align:right">${s.total}${s.sinPrecio?` <span style="color:#B8860B;font-size:11px">(${s.sinPrecio} sin precio)</span>`:''}</td>
               <td style="text-align:right">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : s.desdeMeta ? '<span style="color:var(--gris-3);font-size:11px" title="Abrí la operación para calcular">Abrir para ver</span>' : '<span style="color:var(--gris-3)">—</span>'}</td>
               <td>${s.pctProm!==null ? semaforo(s.pctProm) : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>
-              <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${op.id}')">Abrir →</button></td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${op.id}')">Abrir →</button>
+                <button class="btn btn-icon btn-sm" onclick="event.stopPropagation();delOperacion('${escJs(op.id)}')" title="Eliminar operación" style="color:#B03A2E;margin-left:4px">🗑</button>
+              </td>
             </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gris-3);padding:32px">Sin operaciones. Creá la primera.</td></tr>'}
           </tbody>
         </table>
@@ -8787,7 +8790,14 @@ async function guardarNuevaOperacion(){
 }
 
 async function delOperacion(id){
-  if(!confirm('¿Eliminar esta operación? Se perderán todos sus datos.')) return;
+  const op = demoData.operaciones[id];
+  const nombre = op ? op.nombre : 'esta operación';
+  // Doble confirmación: es destructivo e irreversible.
+  if(!confirm(`¿Eliminar "${nombre}"?\n\nSe borran TODAS sus recetas, ingredientes y datos. Esta acción no se puede deshacer.`)) return;
+  // Si tiene locales colgando (es cabecera), avisar
+  const colgantes = Object.values(demoData.operaciones||{}).filter(o=>o.grupoId===id);
+  if(colgantes.length && !confirm(`⚠ "${nombre}" tiene ${colgantes.length} local(es) vinculado(s) que quedarán sin cabecera. ¿Continuar igual?`)) return;
+
   delete demoData.operaciones[id];
   if(currentUser){
     try {
@@ -8797,11 +8807,11 @@ async function delOperacion(id){
       } else {
         await db.collection('usuarios').doc(currentUser.uid).collection('operaciones').doc(id).delete();
       }
-    } catch(err){ console.error(err); }
+    } catch(err){ showToast('No se pudo eliminar de la nube: '+err.message,'error'); return; }
   }
-  if(currentOpId===id) currentOpId = Object.keys(demoData.operaciones)[0]||null;
-  renderClientes();
-  showToast('Operación eliminada');
+  if(currentOpId===id) currentOpId = null;
+  navigate('dashboard');
+  showToast(`"${nombre}" eliminada`);
 }
 
 // ── PRÓXIMAMENTE ──
