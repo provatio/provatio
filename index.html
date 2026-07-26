@@ -944,10 +944,10 @@ input:focus, select:focus, textarea:focus {
       <div id="op-indicador-tipo" style="font-size:11px;color:#999;margin-top:1px"></div>
     </div>
     <div id="cp-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 6px;padding:8px 12px;background:#1A3A1A;border:1.5px solid #2D5016;border-radius:8px">
-      <span style="font-size:18px">🏭</span>
+      <span id="cp-badge-icono" style="font-size:18px">🏭</span>
       <div>
-        <div style="font-size:11px;font-weight:700;color:#6ABF6A;letter-spacing:.5px;text-transform:uppercase">Centro de Producción</div>
-        <div style="font-size:10px;color:#888">Provee insumos a los locales</div>
+        <div id="cp-badge-titulo" style="font-size:11px;font-weight:700;color:#6ABF6A;letter-spacing:.5px;text-transform:uppercase">Centro de Producción</div>
+        <div id="cp-badge-sub" style="font-size:10px;color:#888">Provee insumos a los locales</div>
       </div>
     </div>
     <div id="dk-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 8px;padding:8px 12px;background:#111;border:1.5px solid #C8A96E;border-radius:8px">
@@ -3254,10 +3254,12 @@ function buildSidebar(rol){
   const localesDeCadena = isCP ? Object.entries(demoData.operaciones||{})
     .filter(([id,op])=>op.grupoId===currentOpId)
     .map(([id,op])=>({ icon:'store', label:'🍽 '+op.nombre, vista:'local-'+id, onclick:`abrirOperacion('${id}')` })) : [];
+  const _opCab = getOp();
+  const _esMadreActiva = isCP && _opCab && !(_opCab.tipo==='Centro de Producción'||_opCab.tipo==='centroProduccion');
   const seccionCadena = isCP ? [
     {section:'Cadena'},
     {icon:'chart', label:'Vista ejecutiva', vista:'dashboardCadena'},
-    {icon:'store', label:'Centro de Producción', vista:'centroProduccion'},
+    {icon:'store', label: _esMadreActiva ? 'Producción para el grupo' : 'Centro de Producción', vista:'centroProduccion'},
     ...(localesDeCadena.length ? [{section:'🍽 Locales ('+localesDeCadena.length+')'}, ...localesDeCadena] : []),
   ] : [];
 
@@ -3293,7 +3295,7 @@ function buildSidebar(rol){
     ...seccionCadena,
     ...(estaVinculadaACP && cpDelLocal ? [{
       icon:'store',
-      label:'🏭 Ir al CP',
+      label: (cpDelLocal.tipo==='Centro de Producción'||cpDelLocal.tipo==='centroProduccion') ? '🏭 Ir al CP' : '🏠 Ir a la casa madre',
       vista:'centroProduccion',
     }] : []),
     {section: (()=>{
@@ -3403,9 +3405,22 @@ function buildSidebar(rol){
     <div style="display:${abierta?'block':'none'}">${itemsHtml}</div>`;
   }).join('');
 
-  // Badge Centro de Producción — solo si hay operación REALMENTE activa (sin fallback de getOp)
+  // Badge Centro de Producción / Casa madre — solo con operación REALMENTE activa
   const cpBadge = document.getElementById('cp-badge');
-  if(cpBadge) cpBadge.style.display = (currentOpId && esCentroProduccion()) ? 'flex' : 'none';
+  if(cpBadge){
+    const _activo = (currentOpId && esCentroProduccion());
+    cpBadge.style.display = _activo ? 'flex' : 'none';
+    if(_activo){
+      const _opb = getOp();
+      const _madre = _opb && !(_opb.tipo==='Centro de Producción'||_opb.tipo==='centroProduccion');
+      const _ic = document.getElementById('cp-badge-icono');
+      const _ti = document.getElementById('cp-badge-titulo');
+      const _su = document.getElementById('cp-badge-sub');
+      if(_ic) _ic.textContent = _madre ? '🏠' : '🏭';
+      if(_ti) _ti.textContent = _madre ? 'Casa madre' : 'Centro de Producción';
+      if(_su) _su.textContent = _madre ? 'Produce para el grupo' : 'Provee insumos a los locales';
+    }
+  }
 
   // Badge Dark Kitchen debajo del nav
   const dkBadge = document.getElementById('dk-badge');
@@ -3920,7 +3935,7 @@ function renderDashboardOperacion(){
         <button class="btn btn-secondary btn-sm" onclick="navigate('dashboard')">← Volver al panel general</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
-        <div class="metric"><div class="metric-label">Productos del CP</div><div class="metric-value">${productos.length}</div></div>
+        <div class="metric"><div class="metric-label">${(op.tipo==='Centro de Producción'||op.tipo==='centroProduccion')?'Productos del CP':'Producción para el grupo'}</div><div class="metric-value">${productos.length}</div></div>
         <div class="metric"><div class="metric-label">Elaborados propios</div><div class="metric-value">${elaborados}</div></div>
         <div class="metric"><div class="metric-label">Porcionados</div><div class="metric-value">${porcionados}</div></div>
         <div class="metric"><div class="metric-label">Redistribuidos</div><div class="metric-value">${redistribuidos}</div></div>
@@ -3930,7 +3945,7 @@ function renderDashboardOperacion(){
 
       <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="navigate('dashboardCadena')">${ico('chart',14)} Vista ejecutiva de la cadena</button>
-        <button class="btn btn-secondary" onclick="navigate('centroProduccion')">${ico('store',14)} Gestionar productos del CP</button>
+        <button class="btn btn-secondary" onclick="navigate('centroProduccion')">${ico('store',14)} ${(op.tipo==='Centro de Producción'||op.tipo==='centroProduccion')?'Gestionar productos del CP':'Gestionar la producción'}</button>
       </div>
 
       ${locales.length ? `
@@ -6209,8 +6224,9 @@ function renderCP(){
   if(!cp){
     setContent('Centro de Producción', `
       <div class="alert alert-warn">
-        No hay ninguna operación de tipo <strong>Centro de Producción</strong> creada todavía.
-        Creá una operación y elegí el tipo "Centro de Producción" para activar este módulo.
+        Todavía no hay quién produzca para el grupo. Dos caminos: creá una operación de tipo
+        <strong>Centro de Producción</strong>, o vinculá un local a otro existente — el que provee
+        se convierte en <strong>casa madre</strong> automáticamente.
       </div>`);
     return;
   }
@@ -6232,21 +6248,24 @@ function renderCP(){
     const costoDisplay = precioTransf;
 
     const selector = p.tipoProd==='elaborado'
-      ? `<select onchange="updProductoCP('${p.id}','recetaId',this.value)" style="font-size:12px;width:100%">
-           <option value="">— elegí receta del CP —</option>
+      ? `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Receta que lo produce:</div>
+         <select onchange="updProductoCP('${p.id}','recetaId',this.value)" style="font-size:12px;width:100%">
+           <option value="">— elegí la receta —</option>
            ${recetasCP.map(r=>`<option value="${esc(r.id)}"${r.id===p.recetaId?' selected':''}>${esc(r.nombre)}${r.rendimientoG?' ('+r.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
          </select>`
       : p.tipoProd==='porcionado'
-      ? `<div style="display:flex;gap:8px;align-items:center">
+      ? `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Pieza que comprás y fraccionás:</div>
+         <div style="display:flex;gap:8px;align-items:center">
            <select onchange="updProductoCP('${p.id}','ingId',this.value)" style="font-size:12px;flex:1">
-             <option value="">— ingrediente base —</option>
+             <option value="">— elegí la pieza —</option>
              ${ingsCP.map(i=>`<option value="${i.id}"${i.id===p.ingId?' selected':''}>${esc(i.nombre)}</option>`).join('')}
            </select>
-           <input type="number" value="${p.mermaPorcionado||0}" placeholder="% merma" style="width:80px;font-size:12px"
+           <input type="number" value="${p.mermaPorcionado||0}" placeholder="%" style="width:70px;font-size:12px"
              onchange="updProductoCP('${p.id}','mermaPorcionado',+this.value)">
-           <span style="font-size:11px;color:var(--gris-2)">% merma</span>
+           <span style="font-size:11px;color:var(--gris-2)">% se pierde al fraccionar</span>
          </div>`
-      : `<input type="number" value="${p.precioXkg||0}" placeholder="Precio por kg" style="font-size:12px;width:140px"
+      : `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Lo que te cuesta comprarlo:</div>
+         <input type="number" value="${p.precioXkg||0}" placeholder="Precio por kg" style="font-size:12px;width:140px"
            onchange="updProductoCP('${p.id}','precioXkg',+this.value)">
          <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg</span>`;
 
@@ -6274,15 +6293,25 @@ function renderCP(){
     </tr>`;
   }).join('');
 
-  setContent('Centro de Producción', `
-    <div class="alert alert-info" style="margin-bottom:20px">
-      ${ico('bulb',14)} Los productos del Centro de Producción se usan como insumos en los locales de la cadena.
-      Su costo se calcula automáticamente y se propaga a todas las recetas que los usen.
+  // ¿Cabecera formal (CP) o casa madre (local que produce para el grupo)?
+  const esMadre = !(cp.tipo==='Centro de Producción'||cp.tipo==='centroProduccion');
+  const tituloCP = esMadre ? 'Producción para el grupo' : 'Centro de Producción';
+
+  setContent(tituloCP, `
+    <div class="alert alert-info" style="margin-bottom:12px">
+      ${ico('bulb',14)} Lo que ${esMadre ? 'tu cocina produce acá' : 'el Centro de Producción produce'} se usa como insumo
+      en los locales del grupo. El costo se calcula solo y se propaga a todas las recetas que lo usen.
+    </div>
+
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#3A3A32;background:var(--blanco);border:1px solid var(--crema-2);border-radius:10px;padding:12px 14px;margin-bottom:20px;line-height:1.5">
+      <span>👨‍🍳 <strong>Elaborado:</strong> lo producís con una receta (salsas, pastas, chimichurri)</span>
+      <span>🔪 <strong>Porcionado:</strong> comprás la pieza entera y la fraccionás (vacío → porciones)</span>
+      <span>📦 <strong>Redistribuido:</strong> lo comprás hecho y lo repartís tal cual (aceite, latas)</span>
     </div>
 
     <div class="card" style="margin-bottom:20px">
       <div class="card-header">
-        <span class="card-title">🏭 ${cp.nombre || 'Centro de Producción'}</span>
+        <span class="card-title">${esMadre?'🏠':'🏭'} ${cp.nombre || tituloCP}</span>
         <button class="btn btn-primary btn-sm" onclick="addProductoCP()">+ Producto</button>
           <button class="btn btn-secondary btn-sm" onclick="limpiarProductosVacios()" title="Elimina las filas de producto que quedaron sin nombre ni receta">🧹 Limpiar vacíos</button>
       </div>
@@ -6292,7 +6321,7 @@ function renderCP(){
           <thead><tr>
             <th>Producto</th>
             <th style="width:130px">Tipo</th>
-            <th>Origen / Configuración</th>
+            <th>Cómo se arma su costo</th>
             <th style="text-align:right;width:120px">Costo prod.</th>
             <th style="text-align:right;width:130px">Precio transf.</th>
             <th style="text-align:right;width:100px">Margen/kg</th>
@@ -6415,7 +6444,7 @@ function renderDashboardCadena(){
         </div>
       </div>
       ${cp ? `<div class="metric">
-        <div class="metric-label">Productos del CP</div>
+        <div class="metric-label">${(cp.tipo==='Centro de Producción'||cp.tipo==='centroProduccion')?'Productos del CP':'Producción para el grupo'}</div>
         <div class="metric-value">${(cp._productos||[]).length}</div>
       </div>` : ''}
     </div>
