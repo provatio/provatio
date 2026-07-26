@@ -3539,8 +3539,146 @@ function setContent(titulo, html, acciones=''){
 // Dashboard: el admin ve el panel general (flota de clientes),
 // el cliente ve el resumen de su operación.
 function renderDashboard(){
+  // Cliente activado que todavía no tiene empresa: en vez del panel del admin
+  // (que le hablaba de "clientes en gestión"), ve su pantalla de arranque.
+  if(currentUser && !esAdminProvatio() && !getEmpresaId()
+     && !Object.keys(demoData.operaciones||{}).length){
+    renderArranque(); return;
+  }
   if(currentUser && currentUser.rol === 'admin') renderDashboardAdmin();
   else renderDashboardOperacion();
+}
+
+// ── ARRANQUE — bienvenida post-activación para el cliente nuevo ──
+// (Acá va después el video de bienvenida; por ahora, texto + acción.)
+function renderArranque(){
+  const nombre = (currentUser && (currentUser.displayName || currentUser.email||'').split('@')[0]) || '';
+  setContent('¡Bienvenido!', `
+    <div style="max-width:640px;margin:24px auto 0;text-align:center">
+      <div style="width:72px;height:72px;background:var(--dorado-c);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;border:2px solid var(--dorado)">
+        <span style="font-size:32px">🎉</span>
+      </div>
+      <h2 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:var(--negro);margin-bottom:8px">
+        ${esc(nombre)}, tu cuenta está activa
+      </h2>
+      <p style="font-size:14px;color:var(--gris-1);line-height:1.7;margin-bottom:28px">
+        Ya podés crear tu operación y empezar a cargar tus números reales.
+        El onboarding lo hacemos juntos: vos ponés el conocimiento de tu cocina,
+        nosotros te acompañamos paso a paso.
+      </p>
+
+      <div style="background:var(--blanco);border:1px solid var(--crema-2);border-radius:12px;padding:24px;margin-bottom:20px;text-align:left">
+        <div style="font-size:11px;font-weight:700;color:#3A3A32;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px">
+          Tu primer paso
+        </div>
+        <p style="font-size:13px;color:#3A3A32;line-height:1.6;margin-bottom:16px">
+          Creá tu operación: le ponés nombre a tu negocio y a tu local
+          (después podés sumar más locales, un centro de producción, tu equipo — todo).
+        </p>
+        <button class="btn btn-primary" style="width:100%;padding:13px;font-size:14px" onclick="modalCrearMiOperacion()">
+          + Crear mi operación
+        </button>
+      </div>
+
+      <a href="https://wa.me/5492664728720?text=Hola!%20Mi%20cuenta%20de%20Provatio%20ya%20est%C3%A1%20activa%20y%20quiero%20coordinar%20el%20onboarding" target="_blank" rel="noopener"
+        style="font-size:13px;color:var(--gris-1);text-decoration:underline">
+        💬 ¿Preferís que lo armemos juntos? Escribinos
+      </a>
+    </div>
+  `);
+}
+
+function modalCrearMiOperacion(){
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Crear mi operación</span>
+      <button class="btn btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nombre de tu negocio / empresa</label>
+        <input type="text" id="ae-empresa" placeholder="Ej: Parrillas de Marcelo" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label>Nombre de tu local u operación</label>
+        <input type="text" id="ae-operacion" placeholder="Ej: Sucursal Centro" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label>Tipo de operación</label>
+        <select id="ae-tipo" style="width:100%">
+          <option value="restaurante">Restaurante</option>
+          <option value="hotel">Hotel</option>
+          <option value="catering">Catering / Viandas industriales</option>
+          <option value="darkKitchen">Dark Kitchen</option>
+          <option value="comedor">Comedor empresarial</option>
+          <option value="Centro de Producción">Centro de Producción / Casa Matriz</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+      <div id="ae-log" style="margin-top:12px;font-size:12px;font-family:var(--mono,monospace);
+        background:var(--crema,#F5F0E8);padding:10px;border-radius:6px;max-height:180px;overflow:auto;display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="ae-btn" onclick="crearEmpresaYOperacion()">Crear y empezar →</button>
+    </div>
+  `);
+}
+
+async function crearEmpresaYOperacion(){
+  const nomEmp = (document.getElementById('ae-empresa').value||'').trim();
+  const nomOp  = (document.getElementById('ae-operacion').value||'').trim();
+  const tipo   = document.getElementById('ae-tipo').value;
+  if(!nomEmp){ showToast('Escribí el nombre de tu negocio','error'); return; }
+  if(!nomOp){ showToast('Escribí el nombre de tu local','error'); return; }
+  if(!currentUser || !currentUser.uid){ showToast('No hay sesión activa','error'); return; }
+
+  const uid = currentUser.uid;
+  const btn = document.getElementById('ae-btn');
+  const logEl = document.getElementById('ae-log');
+  logEl.style.display = 'block';
+  btn.disabled = true; btn.textContent = 'Creando…';
+  const log = [];
+  const paso = (t) => { log.push(t); logEl.innerHTML = log.map(x=>'<div style="padding:2px 0">'+esc(x)+'</div>').join(''); };
+
+  try{
+    const empresaId = 'emp-' + Date.now().toString(36);
+    const opId = 'op-' + Date.now();
+
+    paso('1/4 · Creando tu empresa…');
+    await db.collection('empresas').doc(empresaId).set({
+      nombre: nomEmp, duenoUid: uid, creadaEn: Date.now(),
+    });
+
+    // El alta como dueño va ANTES de crear la operación: las reglas exigen
+    // ser miembro de la empresa para poder escribir sus operaciones.
+    paso('2/4 · Registrándote como dueño…');
+    await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid).set({
+      uid, email: currentUser.email || '',
+      nombre: currentUser.displayName || currentUser.email || 'Dueño',
+      rol: 'dueno', operacionesAsignadas: [], activo: true, altaEn: Date.now(),
+    });
+
+    paso('3/4 · Creando "' + nomOp + '"…');
+    await db.collection('empresas').doc(empresaId).collection('operaciones').doc(opId).set({
+      id: opId, nombre: nomOp, tipo, grupoId: null, umbralAlerta: 3,
+      tiposServicio: ['Almuerzo','Cena'], tiposPlato: ['Entrada','Principal','Guarnición','Postre'],
+      _datos: { ingredientes: [], mermas: [], recetas: [], eventos: [], facturas: [] },
+      _rev: 0,
+    });
+
+    paso('4/4 · Vinculando tu cuenta…');
+    await db.collection('usuarios').doc(uid).set({ empresaId }, {merge:true});
+
+    paso('✓ Listo. Tu operación está creada.');
+    btn.disabled = false;
+    btn.textContent = 'Entrar a mi operación →';
+    btn.onclick = () => location.reload();
+  }catch(err){
+    console.error('Arranque fallido:', err);
+    paso('✗ ERROR: ' + err.message);
+    btn.disabled = false; btn.textContent = 'Reintentar';
+  }
 }
 
 // Estadísticas de una operación.
@@ -8392,6 +8530,16 @@ async function guardarNuevaOperacion(){
   const nombre = document.getElementById('no-nombre').value.trim();
   if(!nombre){ showToast('Escribí el nombre de la operación','error'); return; }
 
+  // Sin empresa no hay dónde guardar que la app vuelva a leer después.
+  // (Antes se escribía en el modelo viejo usuarios/{uid}/operaciones y la
+  // operación "desaparecía" en el próximo login.)
+  if(currentUser && !getEmpresaId()){
+    closeModal();
+    showToast('Primero creá tu empresa con "Crear mi operación"','error');
+    navigate('dashboard');
+    return;
+  }
+
   const id = 'op-'+Date.now();
   const grupoEl = document.getElementById('no-grupo');
   const nuevaOp = {
@@ -8402,6 +8550,10 @@ async function guardarNuevaOperacion(){
     umbralAlerta: +document.getElementById('no-umbral').value||3,
     tiposServicio: document.getElementById('no-servicios').value.split(',').map(s=>s.trim()).filter(Boolean),
     tiposPlato: document.getElementById('no-platos').value.split(',').map(s=>s.trim()).filter(Boolean),
+    // Nace con el formato nuevo (todo en el documento) para que
+    // cargarDesdeFirestore la lea sin caer en la compatibilidad vieja.
+    _datos: { ingredientes: [], mermas: [], recetas: [], eventos: [], facturas: [] },
+    _rev: 0,
   };
   demoData.operaciones[id] = nuevaOp;
   closeModal();
@@ -8415,10 +8567,10 @@ async function guardarNuevaOperacion(){
   showToast('Operación creada — ya podés cargar o importar sus datos','success');
   renderClientes();
 
-  // Guardar solo el documento de la operación (sin colecciones, que están vacías)
+  // Guardar el documento de la operación en la EMPRESA (modelo vigente)
   if(currentUser){
     try {
-      await db.collection('usuarios').doc(currentUser.uid)
+      await db.collection('empresas').doc(getEmpresaId())
         .collection('operaciones').doc(id).set(limpiarParaFirestore(nuevaOp), {merge:true});
     } catch(err){ showToast('No se pudo guardar la operación: '+err.message,'error'); }
   }
@@ -8429,7 +8581,12 @@ async function delOperacion(id){
   delete demoData.operaciones[id];
   if(currentUser){
     try {
-      await db.collection('usuarios').doc(currentUser.uid).collection('operaciones').doc(id).delete();
+      const eid = getEmpresaId();
+      if(eid){
+        await db.collection('empresas').doc(eid).collection('operaciones').doc(id).delete();
+      } else {
+        await db.collection('usuarios').doc(currentUser.uid).collection('operaciones').doc(id).delete();
+      }
     } catch(err){ console.error(err); }
   }
   if(currentOpId===id) currentOpId = Object.keys(demoData.operaciones)[0]||null;
@@ -10102,7 +10259,7 @@ function mostrarPendienteActivacion(user){
       <div style="display:flex;flex-direction:column;gap:10px">
         <a href="https://wa.me/5492664728720?text=${user.estadoCuenta==='suspendida' ? 'Hola!%20Mi%20cuenta%20de%20Provatio%20est%C3%A1%20suspendida%20y%20quiero%20reactivarla' : 'Hola!%20Me%20registré%20en%20Provatio%20y%20quiero%20coordinar%20el%20onboarding'}" target="_blank" rel="noopener"
           style="width:100%;padding:13px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;text-decoration:none;display:block;box-sizing:border-box">
-          💬 Escribinos para arrancar
+          💬 ${user.estadoCuenta==='suspendida' ? 'Escribinos para reactivar' : 'Escribinos para arrancar'}
         </a>
         <button onclick="verificarActivacion()" 
           style="width:100%;padding:11px;background:transparent;color:#4A4A42;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif">
@@ -10135,18 +10292,10 @@ async function verificarActivacion(){
       // siempre que no esté suspendida.
       if(data.estadoCuenta !== 'suspendida'
          && (data.estadoCuenta === 'activa' || data.empresaId || data.operacionId)){
-        // Ya tiene operación asignada — recargar
-        currentUser = {...currentUser, ...data};
-        currentUser.estadoCuenta = 'activa';
-        const ps = document.getElementById('pending-screen');
-        if(ps) ps.style.display = 'none';
-        const appEl = document.getElementById('app');
-        if(appEl) appEl.style.display = 'flex';
-        
-        // Cargar datos de Firebase
-        await cargarDesdeFirestore(currentUser.uid);
-        navigate('dashboard');
-        showToast('¡Acceso activado! Bienvenido a Provatio', 'success');
+        showToast('¡Acceso activado! Entrando…', 'success');
+        // Recargar por el camino completo de login (perfil, rol, sidebar y datos).
+        // Antes se mostraba la app "a mano" y quedaba el nombre en "Cargando…".
+        setTimeout(()=>location.reload(), 900);
       } else {
         if(btn){ btn.textContent = 'Verificar si ya tengo acceso'; btn.disabled = false; }
         showToast('Tu cuenta aún no fue activada. Pronto recibirás acceso.', 'error');
