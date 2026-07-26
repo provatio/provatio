@@ -2322,6 +2322,11 @@ function confirmarProductoCP(){
 function semaforo(pct){
   const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0"></span>';
   const tip = 'Costo de mercadería sobre precio de venta · Verde ≤30% · Amarillo 30–35% · Rojo >35%';
+  // Sin precio de venta (o sin costo) no hay nada que evaluar.
+  // La app guía al paso que falta en vez de aprobar en verde algo incompleto.
+  if(!isFinite(pct) || pct <= 0){
+    return `<span class="sem sem-a" title="La receta todavía no tiene precio de venta (o costo) cargado — sin eso no se puede evaluar">${dot} Cargá el precio de venta</span>`;
+  }
   if(pct<=30) return `<span class="sem sem-v" title="${tip}">${dot} ${fmtD(pct)}% · OK</span>`;
   if(pct<=35) return `<span class="sem sem-a" title="${tip}">${dot} ${fmtD(pct)}% · Atención</span>`;
   return `<span class="sem sem-r" title="${tip}">${dot} ${fmtD(pct)}% · Alto</span>`;
