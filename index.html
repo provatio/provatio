@@ -1460,7 +1460,12 @@ async function cargarDesdeFirestore(uid){
     // Sin empresa asignada, el usuario no tiene operaciones propias que cargar.
     // (No caer al modelo viejo usuarios/{uid}/operaciones: puede arrastrar datos ajenos.)
     if(!getEmpresaId()){
+      // Sin empresa: limpiar TODO dato demo para no mostrar ingredientes/recetas ajenos
       demoData.operaciones = {};
+      demoData.ingredientes = [];
+      demoData.mermas = [];
+      demoData.recetas = [];
+      demoData.facturas = [];
       currentOpId = null;
       hideLoading();
       return false;
@@ -2719,7 +2724,15 @@ function initApp(user){
   // User info
   document.getElementById('user-avatar').textContent = user.displayName?user.displayName[0].toUpperCase():'U';
   document.getElementById('user-name').textContent = user.displayName || user.email;
-  document.getElementById('user-role').textContent = user.rol==='admin'?'Administrador':'Cliente';
+  // Etiqueta clara: distingue al admin de PROVATIO del dueño de su propia operación
+  const _rol = esAdminProvatio() ? 'Equipo Provatio'
+             : getMiRol()==='dueno' ? 'Dueño'
+             : getMiRol()==='supervisor' ? 'Supervisor'
+             : getMiRol()==='encargado' ? 'Encargado'
+             : getMiRol()==='cocina' ? 'Cocina'
+             : getMiRol()==='cp' ? 'Centro de producción'
+             : 'Mi operación';
+  document.getElementById('user-role').textContent = _rol;
   
   // Sidebar nav
   buildSidebar(user.rol);
@@ -3202,14 +3215,12 @@ function buildSidebar(rol){
     // Sin operación activa — solo PRINCIPAL
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
-    {icon:'users', label:'Clientes', vista:'clientes'},
     ...(puedeGestionarUsuarios() || !getEmpresaId() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
     ...(esAdminProvatio() ? [{icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'}] : []),
   ] : isDK ? [
     // Dark Kitchen activa
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
-    {icon:'users', label:'Clientes', vista:'clientes'},
     {section:'🌑 '+(getOp()?.nombre||'Dark Kitchen')},
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
@@ -3229,7 +3240,6 @@ function buildSidebar(rol){
     // Operación normal activa
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
-    {icon:'users', label:'Clientes', vista:'clientes'},
     ...seccionCadena,
     ...(estaVinculadaACP && cpDelLocal ? [{
       icon:'store',
@@ -3657,10 +3667,10 @@ function renderDashboardAdmin(){
           <strong>Nueva operación</strong>
           <span style="font-size:12px;color:#5A5A52">Sumá un cliente</span>
         </button>
-        <button class="btn btn-secondary" onclick="navigate('clientes')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
+        <button class="btn btn-secondary" onclick="navigate('equipo')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
           <span style="opacity:.75">${ico('users', 26)}</span>
-          <strong>Gestión de clientes</strong>
-          <span style="font-size:12px;color:#5A5A52">Usuarios y accesos</span>
+          <strong>Equipo y accesos</strong>
+          <span style="font-size:12px;color:#5A5A52">Usuarios y permisos</span>
         </button>
         <button class="btn btn-secondary" onclick="navigate('ingredientes')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
           <span style="opacity:.75">${ico('clipboard', 26)}</span>
@@ -3685,7 +3695,7 @@ function renderDashboardAdmin(){
         cont.innerHTML = `<div style="background:#E8EFE0;color:#2D5016;border:1px solid #A9D8B2;border-radius:10px;padding:16px;margin-bottom:20px">
           <div style="font-weight:700;font-size:13px;margin-bottom:6px">${sinAsignar.length===1?'Registro nuevo':'Registros nuevos'} (${sinAsignar.length})</div>
           <div style="font-size:13px;margin-bottom:10px">${sinAsignar.map(u=>`<strong>${u.email||u.uid}</strong>`).join(' · ')} — esperando que le${sinAsignar.length>1?'s':''} asignes una operación y nivel de acceso.</div>
-          <button class="btn btn-primary btn-sm" onclick="navigate('clientes')">Ir a Clientes</button>
+          <button class="btn btn-primary btn-sm" onclick="navigate('equipo')">Ir a Equipo y accesos</button>
         </div>`;
       }
     }).catch(()=>{});
