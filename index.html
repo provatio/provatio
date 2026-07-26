@@ -1457,9 +1457,15 @@ async function cargarDesdeFirestore(uid){
     showLoading('Cargando tus datos...');
     
     // Cargar operaciones
-    const _origen = getEmpresaId()
-      ? db.collection('empresas').doc(getEmpresaId()).collection('operaciones')
-      : db.collection('usuarios').doc(uid).collection('operaciones');
+    // Sin empresa asignada, el usuario no tiene operaciones propias que cargar.
+    // (No caer al modelo viejo usuarios/{uid}/operaciones: puede arrastrar datos ajenos.)
+    if(!getEmpresaId()){
+      demoData.operaciones = {};
+      currentOpId = null;
+      hideLoading();
+      return false;
+    }
+    const _origen = db.collection('empresas').doc(getEmpresaId()).collection('operaciones');
     const opsSnap = await conTimeout(_origen.get(), 20000, 'La carga de operaciones');
     const _permitidas = misOperacionesPermitidas();   // null = todas (dueño)
     
@@ -2392,6 +2398,7 @@ function login(){
 
 async function cargarUsuarioFirebase(firebaseUser){
   try {
+    window._miembroEmpresa = null;   // limpiar estado de cualquier sesión anterior
     const userDoc = await conTimeout(db.collection('usuarios').doc(firebaseUser.uid).get(), 20000, 'La carga del perfil');
     _registrarEnIndiceEmails(firebaseUser.uid, firebaseUser.email);   // alta o refresco del índice
     // Si el usuario pertenece a una empresa, cargar su ficha de miembro (rol y locales)
