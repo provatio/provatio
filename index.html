@@ -3572,8 +3572,8 @@ function renderArranque(){
           Tu primer paso
         </div>
         <p style="font-size:13px;color:#3A3A32;line-height:1.6;margin-bottom:16px">
-          Creá tu operación: le ponés nombre a tu negocio y a tu local
-          (después podés sumar más locales, un centro de producción, tu equipo — todo).
+          Poné el nombre de tu negocio y listo — ya empezás a cargar ingredientes,
+          recetas y costos. Todo lo demás se suma después, a tu ritmo.
         </p>
         <button class="btn btn-primary" style="width:100%;padding:13px;font-size:14px" onclick="modalCrearMiOperacion()">
           + Crear mi operación
@@ -3596,12 +3596,11 @@ function modalCrearMiOperacion(){
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>Nombre de tu negocio / empresa</label>
+        <label>Nombre de tu negocio</label>
         <input type="text" id="ae-empresa" placeholder="Ej: Parrillas de Marcelo" style="width:100%">
-      </div>
-      <div class="form-group">
-        <label>Nombre de tu local u operación</label>
-        <input type="text" id="ae-operacion" placeholder="Ej: Sucursal Centro" style="width:100%">
+        <div style="font-size:12px;color:var(--gris-2);margin-top:6px">
+          Después vas a poder sumar más locales, un centro de producción y tu equipo.
+        </div>
       </div>
       <div class="form-group">
         <label>Tipo de operación</label>
@@ -3627,11 +3626,12 @@ function modalCrearMiOperacion(){
 
 async function crearEmpresaYOperacion(){
   const nomEmp = (document.getElementById('ae-empresa').value||'').trim();
-  const nomOp  = (document.getElementById('ae-operacion').value||'').trim();
   const tipo   = document.getElementById('ae-tipo').value;
   if(!nomEmp){ showToast('Escribí el nombre de tu negocio','error'); return; }
-  if(!nomOp){ showToast('Escribí el nombre de tu local','error'); return; }
   if(!currentUser || !currentUser.uid){ showToast('No hay sesión activa','error'); return; }
+  // Un solo nombre: la empresa y su primera operación nacen iguales.
+  // El día que sume un segundo local o un CP, ahí los nombres se diferencian.
+  const nomOp = nomEmp;
 
   const uid = currentUser.uid;
   const btn = document.getElementById('ae-btn');
