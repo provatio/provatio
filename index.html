@@ -9042,14 +9042,12 @@ async function confirmarImportacion(){
   window._importData = null;
   closeModal();
 
-  // Guardar en la nube y RECARGAR la operación desde cero, para que la pantalla
-  // muestre exactamente lo que quedó guardado (sin restos de la operación anterior).
+  // Guardar en la nube. Los datos ya están en memoria (recién importados y
+  // reemplazados), así que NO hace falta recargar: solo confirmamos y mostramos.
   showToast('Cargando los datos y guardando…', 'success');
   const ok = await guardarEnFirestore();
   if(ok){
-    const opActual = currentOpId;
-    currentOpId = null;              // forzar recarga real
-    await abrirOperacion(opActual);  // relee ingredientes/mermas/recetas limpios
+    navigate('recetas');
     showToast(`Listo ✓: ${importados.join(', ')}`, 'success');
   } else {
     navigate(vistaActual);
