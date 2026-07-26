@@ -3484,8 +3484,15 @@ async function abrirOperacion(opId){
     try {
       showLoading('Cargando la operación…');
       const uid = currentUser.uid;
+      // Leer del MISMO lugar donde guardarEnFirestore escribe:
+      // con empresa → empresas/{id}/operaciones ; sin empresa → usuarios/{uid}/operaciones.
+      // (Antes leía siempre de usuarios, y como los datos se guardan en empresas,
+      //  la operación aparecía vacía aunque estuviera bien guardada.)
+      const _refOps = getEmpresaId()
+        ? db.collection('empresas').doc(getEmpresaId()).collection('operaciones')
+        : db.collection('usuarios').doc(uid).collection('operaciones');
       const opDoc = await conTimeout(
-        db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).get(),
+        _refOps.doc(opId).get(),
         20000, 'La carga de la operación');
       const data = opDoc.data() || {};
       let ings, merm, rec, evs;
@@ -3497,7 +3504,7 @@ async function abrirOperacion(opId){
         evs = (data._datos.eventos || []).map(e=>({...e, opId}));
         var facturasCargadas = data._datos.facturas || [];
       } else {
-        // Formato viejo: subcolecciones (compatibilidad)
+        // Formato viejo: subcolecciones (compatibilidad, solo modelo usuarios)
         const [ingsSnap, mermasSnap, recetasSnap, eventosSnap] = await conTimeout(Promise.all([
           db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('ingredientes').get(),
           db.collection('usuarios').doc(uid).collection('operaciones').doc(opId).collection('mermas').get(),
