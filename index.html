@@ -3881,7 +3881,12 @@ function renderDashboardAdmin(){
   // Aviso de registros nuevos: usuarios sin operación asignada (async, no bloquea el render)
   if(typeof cargarUsuariosFirebase === 'function'){
     cargarUsuariosFirebase().then(usuarios => {
-      const sinAsignar = (usuarios||[]).filter(u => u.rol !== 'admin' && !u.operacionId);
+      // "Sin asignar" = ni operación del modelo viejo NI empresa del modelo
+      // vigente. Quien tiene empresaId ya es personal de un cliente: no está
+      // esperando nada del admin.
+      const sinAsignar = (usuarios||[]).filter(u =>
+        u.rol !== 'admin' && !u.operacionId && !u.empresaId
+        && !ADMINS_PROVATIO.includes((u.email||'').toLowerCase()));
       const cont = document.getElementById('alerta-registros');
       if(cont && sinAsignar.length){
         cont.innerHTML = `<div style="background:#E8EFE0;color:#2D5016;border:1px solid #A9D8B2;border-radius:10px;padding:16px;margin-bottom:20px">
@@ -8026,11 +8031,14 @@ async function renderAdminProvatio(){
   //   admin → cuenta del equipo Provatio
   //   activa → estadoCuenta 'activa'
   //   suspendida → estadoCuenta 'suspendida' (la suspendió el admin)
+  //   equipo → tiene empresaId: es PERSONAL de un cliente (entró por membresía,
+  //            no necesita activación del admin — no es un prospecto)
   //   pendiente → todo lo demás (campo faltante, valor viejo, etc.)
   const _estadoDe = (c) => {
     if(ADMINS_PROVATIO.includes((c.email||'').toLowerCase())) return 'admin';
     if(c.estadoCuenta === 'activa') return 'activa';
     if(c.estadoCuenta === 'suspendida') return 'suspendida';
+    if(c.empresaId) return 'equipo';
     return 'pendiente';
   };
 
@@ -8056,6 +8064,7 @@ async function renderAdminProvatio(){
       admin:      '<span style="font-size:11px;color:var(--dorado);font-weight:700">PROVATIO</span>',
       activa:     '<span style="color:var(--verde);font-size:12px;font-weight:600">● Activa</span>',
       suspendida: '<span style="color:#B03A2E;font-size:12px;font-weight:600">● Suspendida</span>',
+      equipo:     '<span style="color:#4A6B8A;font-size:12px;font-weight:600">● En equipo de un cliente</span>',
       pendiente:  '<span style="color:#B8540A;font-size:12px;font-weight:600">● Pendiente</span>',
     };
     return `<tr${est==='pendiente'?' style="background:#FFF9F0"':''}>
@@ -8064,7 +8073,7 @@ async function renderAdminProvatio(){
       <td style="font-size:13px">${esc(c.tipoOperacion||'—')}${c.ciudad?'<br><span style="font-size:11px;color:var(--gris-2)">'+esc(c.ciudad)+', '+esc(c.pais||'')+'</span>':''}</td>
       <td style="font-size:12px;color:var(--gris-2)">${fmtFecha(c.fechaRegistro)}</td>
       <td>${badges[est]}</td>
-      <td style="white-space:nowrap;text-align:right">${est==='admin' ? '' : (est==='activa'
+      <td style="white-space:nowrap;text-align:right">${est==='admin' ? '' : (est==='activa' || est==='equipo'
           ? `<button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','suspendida')">Suspender</button>`
           : `<button class="btn btn-primary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','activa')">✓ Activar</button>`)}</td>
     </tr>`;
