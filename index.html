@@ -8955,7 +8955,7 @@ function procesarImportacion(data){
         <tr><td style="padding:6px 0;color:var(--gris-3)">Ingredientes</td><td><strong>${(data.ingredientes||[]).length}</strong></td></tr>
         <tr><td style="padding:6px 0;color:var(--gris-3)">Mermas</td><td><strong>${(data.mermas||[]).length}</strong></td></tr>
         <tr><td style="padding:6px 0;color:var(--gris-3)">Recetas</td><td><strong>${(data.recetas||[]).length}</strong></td></tr>
-        <tr><td style="padding:6px 0;color:var(--gris-3)">Exportado el</td><td>${new Date(data.exportDate).toLocaleDateString('es-AR')}</td></tr>
+        <tr><td style="padding:6px 0;color:var(--gris-3)">Exportado el</td><td>${(()=>{const d=new Date(data.exportDate); return isNaN(d)?(data.timestamp||'—'):d.toLocaleDateString('es-AR');})()}</td></tr>
       </table>
       <div class="alert alert-warn">⚠ Elegí qué querés importar. Los datos existentes con el mismo ID se actualizarán.</div>
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -8989,30 +8989,44 @@ async function confirmarImportacion(){
   
   let importados = [];
 
+  // Al importar una operación completa, sus ingredientes y mermas REEMPLAZAN
+  // los que había en pantalla (que podían ser de otra operación). Antes se
+  // apilaban y se veían mezclados con categorías de otro local.
+  const _reemplazaTodo = document.getElementById('imp-ings').checked
+                       && document.getElementById('imp-mermas').checked;
+
   if(document.getElementById('imp-ings').checked && data.ingredientes){
-    data.ingredientes.forEach(ing=>{
-      const existing = demoData.ingredientes.findIndex(i=>i.id===ing.id);
-      if(existing>=0) demoData.ingredientes[existing]=ing;
-      else demoData.ingredientes.push(ing);
-    });
+    if(_reemplazaTodo){
+      demoData.ingredientes = data.ingredientes.slice();
+    } else {
+      data.ingredientes.forEach(ing=>{
+        const existing = demoData.ingredientes.findIndex(i=>i.id===ing.id);
+        if(existing>=0) demoData.ingredientes[existing]=ing;
+        else demoData.ingredientes.push(ing);
+      });
+    }
     importados.push(`${data.ingredientes.length} ingredientes`);
   }
 
   if(document.getElementById('imp-mermas').checked && data.mermas){
-    data.mermas.forEach(m=>{
-      const existing = demoData.mermas.findIndex(x=>x.id===m.id);
-      if(existing>=0) demoData.mermas[existing]=m;
-      else demoData.mermas.push(m);
-    });
+    if(_reemplazaTodo){
+      demoData.mermas = data.mermas.slice();
+    } else {
+      data.mermas.forEach(m=>{
+        const existing = demoData.mermas.findIndex(x=>x.id===m.id);
+        if(existing>=0) demoData.mermas[existing]=m;
+        else demoData.mermas.push(m);
+      });
+    }
     importados.push(`${data.mermas.length} mermas`);
   }
 
   if(document.getElementById('imp-recetas').checked && data.recetas){
+    // Reemplazar las recetas de ESTA operación por las importadas
+    demoData.recetas = demoData.recetas.filter(r=>r.opId!==currentOpId);
     data.recetas.forEach(r=>{
-      r.opId = currentOpId; // Asignar a operación activa
-      const existing = demoData.recetas.findIndex(x=>x.id===r.id);
-      if(existing>=0) demoData.recetas[existing]=r;
-      else demoData.recetas.push(r);
+      r.opId = currentOpId;
+      demoData.recetas.push(r);
     });
     importados.push(`${data.recetas.length} recetas`);
   }
@@ -9028,14 +9042,17 @@ async function confirmarImportacion(){
   window._importData = null;
   closeModal();
 
-  // CRÍTICO: persistir en la nube. Antes solo se cargaba en memoria y al
-  // navegar se releía Firestore (vacío) → parecía que "borraba" todo.
-  showToast('Datos cargados. Guardando en la nube…', 'success');
+  // Guardar en la nube y RECARGAR la operación desde cero, para que la pantalla
+  // muestre exactamente lo que quedó guardado (sin restos de la operación anterior).
+  showToast('Cargando los datos y guardando…', 'success');
   const ok = await guardarEnFirestore();
-  navigate(vistaActual);
   if(ok){
-    showToast(`Importado y guardado ✓: ${importados.join(', ')}`, 'success');
+    const opActual = currentOpId;
+    currentOpId = null;              // forzar recarga real
+    await abrirOperacion(opActual);  // relee ingredientes/mermas/recetas limpios
+    showToast(`Listo ✓: ${importados.join(', ')}`, 'success');
   } else {
+    navigate(vistaActual);
     showToast('Los datos están en pantalla pero NO se guardaron. Tocá Guardar cuando tengas buena conexión.', 'error');
   }
 }
