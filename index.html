@@ -8042,42 +8042,114 @@ async function renderAdminProvatio(){
     return 'pendiente';
   };
 
-  // Ordenar: pendientes primero, después por fecha desc
-  cuentas.sort((a,b)=>{
-    const pa = (_estadoDe(a) === 'pendiente') ? 0 : 1;
-    const pb = (_estadoDe(b) === 'pendiente') ? 0 : 1;
-    if(pa !== pb) return pa - pb;
-    return (b.fechaRegistro||'').localeCompare(a.fechaRegistro||'');
-  });
-
-  const pendientes = cuentas.filter(c => _estadoDe(c) === 'pendiente').length;
-
   const fmtFecha = (iso) => {
     if(!iso) return '—';
     const d = new Date(iso);
     return isNaN(d) ? '—' : d.toLocaleDateString('es-AR') + ' ' + d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
   };
 
-  const filas = cuentas.map(c => {
+  const badges = {
+    activa:     '<span style="color:var(--verde);font-size:12px;font-weight:600">● Activa</span>',
+    suspendida: '<span style="color:#B03A2E;font-size:12px;font-weight:600">● Suspendida</span>',
+    equipo:     '<span style="color:#4A6B8A;font-size:12px;font-weight:600">● Miembro</span>',
+    pendiente:  '<span style="color:#B8540A;font-size:12px;font-weight:600">● Pendiente</span>',
+  };
+  const btnDe = (c, est) => est==='admin' ? '' : (est==='activa' || est==='equipo'
+      ? `<button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','suspendida')">Suspender</button>`
+      : `<button class="btn btn-primary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','activa')">✓ Activar</button>`);
+
+  // ── Separar: equipo Provatio / cuentas de clientes (por empresa) / sueltas ──
+  const admins = [], sueltas = [], porEmpresa = {};
+  cuentas.forEach(c => {
+    if(_estadoDe(c) === 'admin'){ admins.push(c); return; }
+    if(c.empresaId){ (porEmpresa[c.empresaId] = porEmpresa[c.empresaId] || []).push(c); return; }
+    sueltas.push(c);
+  });
+
+  // Pendientes REALES: prospectos sin empresa (el personal de clientes no cuenta)
+  const pendientes = sueltas.filter(c => _estadoDe(c) === 'pendiente').length;
+
+  // Nombre y dueño de cada empresa (el admin puede leerlas por reglas)
+  const empIds = Object.keys(porEmpresa);
+  const empInfo = {};
+  if(empIds.length){
+    const docs = await Promise.all(empIds.map(id =>
+      db.collection('empresas').doc(id).get().catch(()=>null)));
+    docs.forEach((d,i)=>{
+      empInfo[empIds[i]] = (d && d.exists) ? d.data() : { nombre: '(empresa sin datos)' };
+    });
+  }
+
+  // Fila de persona. Las de equipo llevan viñeta (↳) para leerse como parte del cliente.
+  const filaPersona = (c, rolEnEmpresa) => {
     const est = _estadoDe(c);
-    const badges = {
-      admin:      '<span style="font-size:11px;color:var(--dorado);font-weight:700">PROVATIO</span>',
-      activa:     '<span style="color:var(--verde);font-size:12px;font-weight:600">● Activa</span>',
-      suspendida: '<span style="color:#B03A2E;font-size:12px;font-weight:600">● Suspendida</span>',
-      equipo:     '<span style="color:#4A6B8A;font-size:12px;font-weight:600">● En equipo de un cliente</span>',
-      pendiente:  '<span style="color:#B8540A;font-size:12px;font-weight:600">● Pendiente</span>',
-    };
+    const nombre = esc(c.displayName || c.email || c.uid);
     return `<tr${est==='pendiente'?' style="background:#FFF9F0"':''}>
-      <td><strong>${esc(c.displayName || c.email)}</strong><br>
-          <span style="font-size:11px;color:var(--gris-2)">${esc(c.email||'')}</span></td>
+      <td>${rolEnEmpresa==='dueno'
+            ? `<strong>👑 ${nombre}</strong> <span style="font-size:11px;color:var(--dorado);font-weight:700">DUEÑO</span>`
+            : rolEnEmpresa==='equipo'
+              ? `<span style="color:var(--gris-2)">↳</span> ${nombre}`
+              : `<strong>${nombre}</strong>`}<br>
+          <span style="font-size:11px;color:var(--gris-2);${rolEnEmpresa==='equipo'?'padding-left:18px':''}">${esc(c.email||'')}</span></td>
       <td style="font-size:13px">${esc(c.tipoOperacion||'—')}${c.ciudad?'<br><span style="font-size:11px;color:var(--gris-2)">'+esc(c.ciudad)+', '+esc(c.pais||'')+'</span>':''}</td>
       <td style="font-size:12px;color:var(--gris-2)">${fmtFecha(c.fechaRegistro)}</td>
-      <td>${badges[est]}</td>
-      <td style="white-space:nowrap;text-align:right">${est==='admin' ? '' : (est==='activa' || est==='equipo'
-          ? `<button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','suspendida')">Suspender</button>`
-          : `<button class="btn btn-primary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','activa')">✓ Activar</button>`)}</td>
+      <td>${badges[_estadoDe(c)]||''}</td>
+      <td style="white-space:nowrap;text-align:right">${btnDe(c, est)}</td>
     </tr>`;
-  }).join('');
+  };
+
+  // ── 1) Cuentas nuevas / sin empresa: lo que espera acción del admin ──
+  sueltas.sort((a,b)=>{
+    const pa = (_estadoDe(a) === 'pendiente') ? 0 : 1;
+    const pb = (_estadoDe(b) === 'pendiente') ? 0 : 1;
+    if(pa !== pb) return pa - pb;
+    return (b.fechaRegistro||'').localeCompare(a.fechaRegistro||'');
+  });
+  const htmlSueltas = sueltas.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Cuentas nuevas / sin empresa (${sueltas.length})</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Persona</th><th>Operación</th><th>Registro</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${sueltas.map(c => filaPersona(c, null)).join('')}</tbody>
+      </table></div>
+    </div>` : '';
+
+  // ── 2) Clientes (empresas) con su gente adentro: dueño primero ──
+  const htmlEmpresas = empIds
+    .sort((a,b)=>((empInfo[a]&&empInfo[a].nombre)||'').localeCompare((empInfo[b]&&empInfo[b].nombre)||''))
+    .map(eid => {
+      const info = empInfo[eid] || {};
+      const gente = porEmpresa[eid].slice().sort((a,b)=>{
+        const da = a.uid===info.duenoUid ? 0 : 1;
+        const db_ = b.uid===info.duenoUid ? 0 : 1;
+        if(da !== db_) return da - db_;
+        return (a.fechaRegistro||'').localeCompare(b.fechaRegistro||'');
+      });
+      return `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <span class="card-title">🏢 ${esc(info.nombre||eid)}</span>
+          <span style="font-size:12px;color:var(--gris-2)">${gente.length} persona${gente.length!==1?'s':''}</span>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Persona</th><th>Operación</th><th>Registro</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${gente.map(c => filaPersona(c, c.uid===info.duenoUid ? 'dueno' : 'equipo')).join('')}</tbody>
+        </table></div>
+      </div>`;
+    }).join('');
+
+  // ── 3) Equipo Provatio, al pie ──
+  const htmlAdmins = admins.length ? `
+    <div class="card">
+      <div class="card-header"><span class="card-title">Equipo Provatio</span></div>
+      <div class="table-wrap"><table>
+        <tbody>${admins.map(c => `<tr>
+          <td><strong>${esc(c.displayName || c.email)}</strong><br>
+              <span style="font-size:11px;color:var(--gris-2)">${esc(c.email||'')}</span></td>
+          <td style="text-align:right"><span style="font-size:11px;color:var(--dorado);font-weight:700">PROVATIO</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>` : '';
 
   setContent('Administración de Provatio', `
     <div class="alert ${pendientes?'alert-warn':'alert-info'}" style="margin-bottom:16px">
@@ -8085,13 +8157,12 @@ async function renderAdminProvatio(){
         ? '⏳ Tenés <strong>'+pendientes+'</strong> cuenta'+(pendientes>1?'s':'')+' esperando onboarding. Activalas cuando coordines el arranque.'
         : '✓ No hay cuentas pendientes. Cuando alguien se registre, va a aparecer acá.'}
     </div>
-    <div class="card">
-      <div class="card-header"><span class="card-title">Cuentas registradas (${cuentas.length})</span></div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Persona</th><th>Operación</th><th>Registro</th><th>Estado</th><th></th></tr></thead>
-        <tbody>${filas || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gris-3)">Sin registros todavía</td></tr>'}</tbody>
-      </table></div>
-    </div>`);
+    ${htmlSueltas}
+    <div style="font-size:11px;font-weight:700;color:var(--gris-2);text-transform:uppercase;letter-spacing:0.08em;margin:4px 0 10px">
+      Clientes (${empIds.length})
+    </div>
+    ${htmlEmpresas || '<div style="padding:16px;color:var(--gris-3);font-size:13px">Todavía no hay clientes con empresa creada.</div>'}
+    ${htmlAdmins}`);
 }
 
 async function cambiarEstadoCuenta(uid, nuevoEstado){
