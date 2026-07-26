@@ -8973,7 +8973,7 @@ function procesarImportacion(data){
   window._importData = data;
 }
 
-function confirmarImportacion(){
+async function confirmarImportacion(){
   const data = window._importData;
   if(!data) return;
   
@@ -9017,8 +9017,17 @@ function confirmarImportacion(){
 
   window._importData = null;
   closeModal();
+
+  // CRÍTICO: persistir en la nube. Antes solo se cargaba en memoria y al
+  // navegar se releía Firestore (vacío) → parecía que "borraba" todo.
+  showToast('Datos cargados. Guardando en la nube…', 'success');
+  const ok = await guardarEnFirestore();
   navigate(vistaActual);
-  showToast(`Importado: ${importados.join(', ')}`, 'success');
+  if(ok){
+    showToast(`Importado y guardado ✓: ${importados.join(', ')}`, 'success');
+  } else {
+    showToast('Los datos están en pantalla pero NO se guardaron. Tocá Guardar cuando tengas buena conexión.', 'error');
+  }
 }
 
 // ── IMPORTAR SOLO RECETAS (desde otra app o formato Provatio) ──
@@ -9028,7 +9037,7 @@ function importarRecetas(){
   input.accept = '.json';
   input.onchange = e => {
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = async ev => {
       try {
         const data = JSON.parse(ev.target.result);
         // Puede ser exportación completa o solo array de recetas
@@ -9043,9 +9052,13 @@ function importarRecetas(){
           if(existing>=0) demoData.recetas[existing]=r;
           else{ demoData.recetas.push(r); nuevas++; }
         });
-        
+
+        // Persistir en la nube (antes solo quedaba en memoria y se perdía al navegar)
+        showToast('Recetas cargadas. Guardando…', 'success');
+        const ok = await guardarEnFirestore();
         navigate('recetas');
-        showToast(`${nuevas} recetas importadas a esta operación`, 'success');
+        showToast(ok ? `${nuevas} recetas importadas y guardadas ✓`
+                     : 'Las recetas están en pantalla pero NO se guardaron. Tocá Guardar.', ok?'success':'error');
       } catch(err) {
         showToast('Error al leer el archivo: ' + err.message, 'error');
       }
