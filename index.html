@@ -8140,7 +8140,10 @@ async function renderAdminProvatio(){
       <td style="font-size:13px">${esc(c.tipoOperacion||'—')}${c.ciudad?'<br><span style="font-size:11px;color:var(--gris-2)">'+esc(c.ciudad)+', '+esc(c.pais||'')+'</span>':''}</td>
       <td style="font-size:12px;color:var(--gris-2)">${fmtFecha(c.fechaRegistro)}</td>
       <td>${badges[_estadoDe(c)]||''}</td>
-      <td style="white-space:nowrap;text-align:right">${btnDe(c, est)}</td>
+      <td style="white-space:nowrap;text-align:right">
+        ${btnDe(c, est)}
+        <button class="btn btn-secondary btn-sm" onclick="modalGestionarCuenta('${escJs(c.uid)}')" title="Gestionar esta cuenta" style="margin-left:4px">⚙</button>
+      </td>
     </tr>`;
   };
 
@@ -8220,6 +8223,115 @@ async function cambiarEstadoCuenta(uid, nuevoEstado){
   }catch(err){
     showToast('Error: ' + err.message, 'error');
   }
+}
+
+// ── GESTIÓN COMPLETA DE UNA CUENTA (solo admin de Provatio) ──
+// Liberar (soltar la empresa), cambiar rol, o reasignar a otra empresa.
+async function modalGestionarCuenta(uid){
+  if(!esAdminProvatio()){ showToast('Solo el equipo de Provatio puede hacer esto','error'); return; }
+  let cuenta = null, empresasList = [];
+  try{
+    const snap = await db.collection('usuarios').doc(uid).get();
+    cuenta = snap.exists ? {uid, ...snap.data()} : null;
+    const empSnap = await db.collection('empresas').get();
+    empSnap.forEach(d => empresasList.push({id:d.id, ...d.data()}));
+  }catch(err){ showToast('No pude leer la cuenta: '+err.message,'error'); return; }
+  if(!cuenta){ showToast('Cuenta no encontrada','error'); return; }
+
+  const nombre = esc(cuenta.displayName || cuenta.email || uid);
+  const empActual = cuenta.empresaId ? (empresasList.find(e=>e.id===cuenta.empresaId)||{}) : null;
+  const esDuenoActual = empActual && empActual.duenoUid === uid;
+
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Gestionar cuenta — ${nombre}</span>
+      <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--crema,#F5F0E8);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px">
+        <div><strong>${esc(cuenta.email||'')}</strong></div>
+        <div style="color:var(--gris-2);margin-top:4px">
+          ${empActual ? `Pertenece a <strong>${esc(empActual.nombre||cuenta.empresaId)}</strong>${esDuenoActual?' · 👑 Dueño':' · Miembro'}` : 'Sin empresa asignada (cuenta libre)'}
+        </div>
+      </div>
+
+      ${empActual ? `
+      <div style="border:1px solid var(--crema-2);border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:8px">Liberar cuenta</div>
+        <p style="font-size:13px;color:var(--gris-1);margin-bottom:10px">La desvincula de "${esc(empActual.nombre||'')}". Queda libre para asignarla a otra empresa. (No borra los datos de la empresa.)</p>
+        <button class="btn btn-secondary" onclick="_gestLiberar('${escJs(uid)}')">Liberar de esta empresa</button>
+      </div>` : ''}
+
+      ${empActual && !esDuenoActual ? `
+      <div style="border:1px solid var(--crema-2);border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:8px">Cambiar rol en la empresa</div>
+        <select id="gest-rol" style="width:100%;margin-bottom:10px">
+          <option value="dueno">Dueño</option>
+          <option value="encargado">Encargado</option>
+          <option value="cocina">Cocina</option>
+          <option value="supervisor">Supervisor</option>
+        </select>
+        <button class="btn btn-secondary" onclick="_gestCambiarRol('${escJs(uid)}','${escJs(cuenta.empresaId)}')">Guardar rol</button>
+      </div>` : ''}
+
+      <div style="border:1px solid var(--crema-2);border-radius:10px;padding:14px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:8px">Asignar a una empresa</div>
+        <select id="gest-empresa" style="width:100%;margin-bottom:10px">
+          <option value="">— Elegí una empresa —</option>
+          ${empresasList.map(e=>`<option value="${esc(e.id)}"${e.id===cuenta.empresaId?' selected':''}>${esc(e.nombre||e.id)}</option>`).join('')}
+        </select>
+        <button class="btn btn-primary" onclick="_gestAsignar('${escJs(uid)}')">Asignar a esta empresa</button>
+      </div>
+    </div>
+  `);
+}
+
+async function _gestLiberar(uid){
+  if(!confirm('¿Liberar esta cuenta de su empresa?\n\nQueda sin empresa, lista para asignarla a otra. Los datos de la empresa no se borran.')) return;
+  try{
+    await db.collection('usuarios').doc(uid).update({ empresaId: firebase.firestore.FieldValue.delete() });
+    showToast('Cuenta liberada ✓','success');
+    closeModal(); renderAdminProvatio();
+  }catch(err){ showToast('Error: '+err.message,'error'); }
+}
+
+async function _gestCambiarRol(uid, empresaId){
+  const rol = document.getElementById('gest-rol').value;
+  if(!confirm(`¿Cambiar el rol de esta persona a "${rol}"?`)) return;
+  try{
+    await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid)
+      .set({ rol }, {merge:true});
+    // Si pasa a dueño, marcarlo también en la empresa
+    if(rol==='dueno'){
+      await db.collection('empresas').doc(empresaId).set({ duenoUid: uid }, {merge:true});
+    }
+    showToast('Rol actualizado ✓','success');
+    closeModal(); renderAdminProvatio();
+  }catch(err){ showToast('Error: '+err.message,'error'); }
+}
+
+async function _gestAsignar(uid){
+  const empresaId = document.getElementById('gest-empresa').value;
+  if(!empresaId){ showToast('Elegí una empresa','error'); return; }
+  let empNombre = empresaId;
+  try{
+    const e = await db.collection('empresas').doc(empresaId).get();
+    if(e.exists) empNombre = e.data().nombre || empresaId;
+  }catch(_){}
+  if(!confirm(`¿Asignar esta cuenta a "${empNombre}"?\n\nSi ya pertenecía a otra empresa, se cambia a esta.`)) return;
+  try{
+    // Vincular el usuario a la empresa
+    await db.collection('usuarios').doc(uid).set({ empresaId }, {merge:true});
+    // Crear/actualizar su ficha de miembro (por defecto encargado, sin locales)
+    const cuentaSnap = await db.collection('usuarios').doc(uid).get();
+    const cta = cuentaSnap.data() || {};
+    await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid).set({
+      uid, email: cta.email||'', nombre: cta.displayName||cta.email||'Miembro',
+      rol: 'encargado', operacionesAsignadas: [], activo: true, altaEn: Date.now(),
+    }, {merge:true});
+    showToast(`Asignada a "${empNombre}" ✓`,'success');
+    closeModal(); renderAdminProvatio();
+  }catch(err){ showToast('Error: '+err.message,'error'); }
 }
 
 async function renderEquipo(){
