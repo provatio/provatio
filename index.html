@@ -2711,8 +2711,14 @@ function initApp(user){
   }
   document.getElementById('auth-screen').style.display = 'none';
 
-  // El admin de Provatio siempre entra. El resto, solo si su cuenta está activada.
-  const cuentaActiva = esAdminProvatio() || (currentUser.estadoCuenta === 'activa');
+  // El admin de Provatio siempre entra. El resto entra si su cuenta está activada
+  // O si ya pertenece a una empresa (fue invitado por un dueño a su equipo) —
+  // salvo que el admin la haya suspendido explícitamente.
+  // El gate de activación es para DUEÑOS nuevos (onboarding pago), no para el
+  // personal que un cliente ya activo suma desde "Equipo y accesos".
+  const cuentaActiva = esAdminProvatio()
+    || (currentUser.estadoCuenta !== 'suspendida'
+        && (currentUser.estadoCuenta === 'activa' || !!currentUser.empresaId));
   if(!cuentaActiva){
     mostrarPendienteActivacion(user);
     return;
@@ -7828,15 +7834,27 @@ async function renderAdminProvatio(){
     return;
   }
 
+  // CRITERIO ÚNICO de estado (usado por el contador, el orden y las filas):
+  //   admin → cuenta del equipo Provatio
+  //   activa → estadoCuenta 'activa'
+  //   suspendida → estadoCuenta 'suspendida' (la suspendió el admin)
+  //   pendiente → todo lo demás (campo faltante, valor viejo, etc.)
+  const _estadoDe = (c) => {
+    if(ADMINS_PROVATIO.includes((c.email||'').toLowerCase())) return 'admin';
+    if(c.estadoCuenta === 'activa') return 'activa';
+    if(c.estadoCuenta === 'suspendida') return 'suspendida';
+    return 'pendiente';
+  };
+
   // Ordenar: pendientes primero, después por fecha desc
   cuentas.sort((a,b)=>{
-    const pa = (a.estadoCuenta === 'pendiente') ? 0 : 1;
-    const pb = (b.estadoCuenta === 'pendiente') ? 0 : 1;
+    const pa = (_estadoDe(a) === 'pendiente') ? 0 : 1;
+    const pb = (_estadoDe(b) === 'pendiente') ? 0 : 1;
     if(pa !== pb) return pa - pb;
     return (b.fechaRegistro||'').localeCompare(a.fechaRegistro||'');
   });
 
-  const pendientes = cuentas.filter(c => c.estadoCuenta === 'pendiente').length;
+  const pendientes = cuentas.filter(c => _estadoDe(c) === 'pendiente').length;
 
   const fmtFecha = (iso) => {
     if(!iso) return '—';
@@ -7845,20 +7863,21 @@ async function renderAdminProvatio(){
   };
 
   const filas = cuentas.map(c => {
-    const activa = c.estadoCuenta === 'activa';
-    const esAdmin = ADMINS_PROVATIO.includes((c.email||'').toLowerCase());
-    return `<tr${activa?'':' style="background:#FFF9F0"'}>
+    const est = _estadoDe(c);
+    const badges = {
+      admin:      '<span style="font-size:11px;color:var(--dorado);font-weight:700">PROVATIO</span>',
+      activa:     '<span style="color:var(--verde);font-size:12px;font-weight:600">● Activa</span>',
+      suspendida: '<span style="color:#B03A2E;font-size:12px;font-weight:600">● Suspendida</span>',
+      pendiente:  '<span style="color:#B8540A;font-size:12px;font-weight:600">● Pendiente</span>',
+    };
+    return `<tr${est==='pendiente'?' style="background:#FFF9F0"':''}>
       <td><strong>${esc(c.displayName || c.email)}</strong><br>
           <span style="font-size:11px;color:var(--gris-2)">${esc(c.email||'')}</span></td>
       <td style="font-size:13px">${esc(c.tipoOperacion||'—')}${c.ciudad?'<br><span style="font-size:11px;color:var(--gris-2)">'+esc(c.ciudad)+', '+esc(c.pais||'')+'</span>':''}</td>
       <td style="font-size:12px;color:var(--gris-2)">${fmtFecha(c.fechaRegistro)}</td>
-      <td>${esAdmin
-            ? '<span style="font-size:11px;color:var(--dorado);font-weight:700">PROVATIO</span>'
-            : activa
-              ? '<span style="color:var(--verde);font-size:12px;font-weight:600">● Activa</span>'
-              : '<span style="color:#B8540A;font-size:12px;font-weight:600">● Pendiente</span>'}</td>
-      <td style="white-space:nowrap;text-align:right">${esAdmin ? '' : (activa
-          ? `<button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','pendiente')">Suspender</button>`
+      <td>${badges[est]}</td>
+      <td style="white-space:nowrap;text-align:right">${est==='admin' ? '' : (est==='activa'
+          ? `<button class="btn btn-secondary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','suspendida')">Suspender</button>`
           : `<button class="btn btn-primary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','activa')">✓ Activar</button>`)}</td>
     </tr>`;
   }).join('');
@@ -10018,17 +10037,19 @@ function mostrarPendienteActivacion(user){
 
       <!-- Título -->
       <h2 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:var(--negro);margin-bottom:12px">
-        ¡Bienvenido a Provatio!
+        ${user.estadoCuenta==='suspendida' ? 'Tu acceso está pausado' : '¡Bienvenido a Provatio!'}
       </h2>
 
       <!-- Mensaje -->
       <p style="font-size:15px;color:var(--gris-1);line-height:1.7;margin-bottom:8px">
-        Hola <strong>${user.displayName||user.email.split('@')[0]}</strong> — tu registro fue exitoso.
+        Hola <strong>${user.displayName||user.email.split('@')[0]}</strong>${user.estadoCuenta==='suspendida' ? '.' : ' — tu registro fue exitoso.'}
       </p>
       <p style="font-size:14px;color:#3A3A32;line-height:1.7;margin-bottom:32px">
-        Tu cuenta ya está creada. El siguiente paso es armar juntos tu operación:
+        ${user.estadoCuenta==='suspendida'
+          ? 'Tu cuenta está temporalmente suspendida. Tus datos están intactos y guardados. Escribinos para reactivar el acceso.'
+          : `Tu cuenta ya está creada. El siguiente paso es armar juntos tu operación:
         cargamos tus recetas, tus costos y tus mermas para que empieces a ver tus números reales.
-        Escribinos y coordinamos el arranque.
+        Escribinos y coordinamos el arranque.`}
       </p>
 
       <!-- Card informativa -->
@@ -10042,13 +10063,13 @@ function mostrarPendienteActivacion(user){
           </div>
           <div>
             <div style="font-size:13px;font-weight:600;color:var(--negro)">${user.email}</div>
-            <div style="font-size:11px;color:#5A5A52">Cuenta creada · Lista para el onboarding</div>
+            <div style="font-size:11px;color:#5A5A52">${user.estadoCuenta==='suspendida' ? 'Cuenta suspendida · Datos guardados' : 'Cuenta creada · Lista para el onboarding'}</div>
           </div>
         </div>
       </div>
 
-      <!-- Pasos -->
-      <div style="background:var(--blanco);border:1px solid var(--crema-2);border-radius:12px;padding:20px;margin-bottom:24px;text-align:left">
+      <!-- Pasos (solo para cuentas nuevas; a una suspendida no le corresponde) -->
+      <div style="background:var(--blanco);border:1px solid var(--crema-2);border-radius:12px;padding:20px;margin-bottom:24px;text-align:left;${user.estadoCuenta==='suspendida'?'display:none':''}">
         <div style="font-size:11px;font-weight:700;color:#3A3A32;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px">
           Qué pasa ahora
         </div>
@@ -10079,7 +10100,7 @@ function mostrarPendienteActivacion(user){
 
       <!-- Botones -->
       <div style="display:flex;flex-direction:column;gap:10px">
-        <a href="https://wa.me/5492664728720?text=Hola!%20Me%20registré%20en%20Provatio%20y%20quiero%20coordinar%20el%20onboarding" target="_blank" rel="noopener"
+        <a href="https://wa.me/5492664728720?text=${user.estadoCuenta==='suspendida' ? 'Hola!%20Mi%20cuenta%20de%20Provatio%20est%C3%A1%20suspendida%20y%20quiero%20reactivarla' : 'Hola!%20Me%20registré%20en%20Provatio%20y%20quiero%20coordinar%20el%20onboarding'}" target="_blank" rel="noopener"
           style="width:100%;padding:13px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;text-decoration:none;display:block;box-sizing:border-box">
           💬 Escribinos para arrancar
         </a>
@@ -10109,8 +10130,11 @@ async function verificarActivacion(){
     const doc = await db.collection('usuarios').doc(currentUser.uid).get();
     if(doc.exists){
       const data = doc.data();
-      // La cuenta quedó activada por el admin de Provatio
-      if(data.estadoCuenta === 'activa' || data.empresaId || data.operacionId){
+      // La cuenta quedó activada por el admin de Provatio.
+      // MISMO criterio que el gate de initApp: activa, o miembro de una empresa,
+      // siempre que no esté suspendida.
+      if(data.estadoCuenta !== 'suspendida'
+         && (data.estadoCuenta === 'activa' || data.empresaId || data.operacionId)){
         // Ya tiene operación asignada — recargar
         currentUser = {...currentUser, ...data};
         currentUser.estadoCuenta = 'activa';
