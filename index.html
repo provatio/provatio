@@ -5266,7 +5266,7 @@ function renderEditorReceta(){
           onchange="recetaEditando.precioVenta=+this.value;renderEditorReceta()">
       </div>`}
       <select onchange="recetaEditando.tipoServicio=this.value" style="width:150px">
-        ${(getOp().tiposServicio||['Operario']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
+        ${(getOp().tiposServicio||['Almuerzo']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
       </select>
       <select onchange="recetaEditando.tipoPlato=this.value" style="width:130px">
         ${(getOp().tiposPlato||['Principal']).map(s=>`<option${s===r.tipoPlato?' selected':''}>${s}</option>`).join('')}
@@ -8585,11 +8585,11 @@ function modalNuevaOperacion(){
       </div>
       <div class="form-group">
         <label>Tipos de servicio (separados por coma)</label>
-        <input type="text" id="no-servicios" placeholder="Ej: Operario, Sin Cubiertos, Saludable, Liviano" value="Operario, Sin Cubiertos, Saludable, Liviano">
+        <input type="text" id="no-servicios" placeholder="Ej: Almuerzo, Cena, Menú ejecutivo, Operario (minería)" value="Almuerzo, Cena">
       </div>
       <div class="form-group">
         <label>Tipos de plato (separados por coma)</label>
-        <input type="text" id="no-platos" placeholder="Ej: Principal, Guarnición, Postre, Entrada" value="Principal, Guarnición, Postre, Entrada">
+        <input type="text" id="no-platos" placeholder="Ej: Entrada, Principal, Guarnición, Postre" value="Entrada, Principal, Guarnición, Postre">
       </div>
     </div>
     <div class="modal-footer">
@@ -8939,10 +8939,10 @@ function descargarPlantilla(){
     descripcion: 'Plantilla de importación Provatio — completar y subir desde Importar datos',
     operacion: {
       nombre: 'NOMBRE DEL CLIENTE O OPERACIÓN',
-      tipo: 'catering',
+      tipo: 'restaurante',
       precioVenta: 22000,
-      tiposServicio: ['Operario', 'Sin Cubiertos', 'Saludable', 'Liviano'],
-      tiposPlato: ['Principal', 'Guarnición', 'Postre'],
+      tiposServicio: ['Almuerzo', 'Cena'],
+      tiposPlato: ['Entrada', 'Principal', 'Guarnición', 'Postre'],
     },
     ingredientes: [
       {id:'ing-ejemplo-1', nombre:'Pollo muslo/pata deshuesado', cat:'Aves y granja', precio:4200, bulto:1, unidad:'kg'},
@@ -8956,7 +8956,7 @@ function descargarPlantilla(){
       {
         id: 'rec-ejemplo-1',
         nombre: 'NOMBRE DE LA RECETA',
-        tipoServicio: 'Operario',
+        tipoServicio: 'Almuerzo',
         tipoPlato: 'Principal',
         ingredientes: [
           {ingId:'ing-ejemplo-1', tecnica:'Cocción húmeda', neto:165},
