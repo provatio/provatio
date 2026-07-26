@@ -3198,6 +3198,21 @@ function aplicarFactura(){
 function buildSidebar(rol){
   const nav = document.getElementById('sidebar-nav');
 
+  // ── Cliente en ARRANQUE (activado, sin empresa ni operaciones) ─────────
+  // Menú mínimo: todavía no hay operación a la que apunten las pantallas.
+  // Se decide acá arriba para que valga igual sin importar el rol legacy
+  // que tenga guardado el documento del usuario ('admin' viejo o 'dueno').
+  if(currentUser && !esAdminProvatio() && !getEmpresaId()
+     && !Object.keys(demoData.operaciones||{}).length){
+    nav.innerHTML = `
+      <div class="nav-section" style="user-select:none"><span>Principal</span></div>
+      <div class="nav-item" onclick="navigate('dashboard')" id="nav-dashboard">
+        <span class="nav-icon">${ico('chart',16)}</span>
+        <span>Panel general</span>
+      </div>`;
+    return;
+  }
+
   // ── Items según rol y tipo de operación ────────────────────────────────
   const isDK = esDarkKitchen();
   const isCP = esCentroProduccion();
