@@ -4918,7 +4918,9 @@ function toggleTodasMermas(abrir){
   demoData.ingredientes.forEach(i=>{ if(i.cat) window._mermaAcordeon['cat_'+i.cat]=abrir; });
   demoData.ingredientes.forEach(i=>{ window._mermaAcordeon['ing_'+i.nombre]=abrir; });
   getMermasDisponibles().forEach(m=>{
-    window._mermaAcordeon['cat_'+getCatIng(m.ingrediente)]=abrir;
+    const _ingM = demoData.ingredientes.find(i=>i.nombre===m.ingrediente);
+    const _catM = (_ingM && _ingM.cat) || 'Otros';
+    window._mermaAcordeon['cat_'+_catM]=abrir;
     window._mermaAcordeon['ing_'+m.ingrediente]=abrir;
   });
   renderMermas();
