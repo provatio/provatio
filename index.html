@@ -1648,9 +1648,16 @@ function esDarkKitchen(){
   const op = getOp();
   return op && (op.tipo==='darkKitchen' || op.tipo==='Dark Kitchen');
 }
+// Cabecera de grupo: un CP formal, O un local común que "provee al grupo"
+// (CASA MADRE — escalón 2 del crecimiento escalonado). Mismo circuito de
+// transferencia; la diferencia es solo el precio que cada uno decide cargar
+// (la casa madre suele transferir al costo; el CP con su margen).
+function esCabeceraOp(op){
+  return !!op && (op.tipo==='Centro de Producción' || op.tipo==='centroProduccion'
+                  || op.proveeAlGrupo === true);
+}
 function esCentroProduccion(){
-  const op = getOp();
-  return op && (op.tipo==='centroProduccion' || op.tipo==='Centro de Producción');
+  return esCabeceraOp(getOp());
 }
 
 // Obtener ingredientes del local + ingredientes del CP (si está vinculado)
@@ -3410,13 +3417,17 @@ function buildSidebar(rol){
   const opTipo = document.getElementById('op-indicador-tipo');
   if(opInd && enOperacion && getOp()){
     const op = getOp();
-    const tipoLabel = op.tipo==='darkKitchen'||op.tipo==='Dark Kitchen' ? '🌑 Dark Kitchen'
+    let tipoLabel = op.tipo==='darkKitchen'||op.tipo==='Dark Kitchen' ? '🌑 Dark Kitchen'
       : op.tipo==='Centro de Producción'||op.tipo==='centroProduccion' ? '🏭 Centro de Producción'
       : op.tipo==='catering'||op.tipo==='Catering' ? '📦 Catering'
       : op.tipo==='hotel'||op.tipo==='Hotel' ? '🏨 Hotel'
       : op.tipo==='pasteleria'||op.tipo==='Pastelería' ? '🥐 Pastelería'
       : op.tipo==='viandas'||op.tipo==='Viandas' ? '🍱 Viandas'
       : '🍽 Restaurante';
+    // Casa madre: local común que además provee al grupo (escalón 2)
+    if(op.proveeAlGrupo && !(op.tipo==='Centro de Producción'||op.tipo==='centroProduccion')){
+      tipoLabel += ' · 🏠 Casa madre';
+    }
     // Si es local vinculado a un CP, mostrar la cadena
     const cpVinc = op.grupoId && demoData.operaciones[op.grupoId];
     // Evitar mostrar "Los Inmortales · Los Inmortales" cuando el CP se abre a sí mismo
@@ -6046,13 +6057,15 @@ function imprimirPresupuesto(){ window.print(); }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-// Obtener el Centro de Producción vinculado al admin
+// Obtener la cabecera del grupo (CP formal, o casa madre si no hay CP)
 function getCentroProduccion(){
   const ops = Object.values(demoData.operaciones||{});
-  return ops.find(op => op.tipo==='Centro de Producción' || op.tipo==='centroProduccion') || null;
+  return ops.find(op => op.tipo==='Centro de Producción' || op.tipo==='centroProduccion')
+      || ops.find(op => op.proveeAlGrupo === true)
+      || null;
 }
 
-// Obtener locales de la cadena (solo los vinculados al CP activo)
+// Obtener locales de la cadena (solo los vinculados a la cabecera activa)
 function getLocalesCadena(){
   const cp = getCentroProduccion();
   if(!cp) return [];
@@ -6060,7 +6073,7 @@ function getLocalesCadena(){
   if(!cpId) return [];
   const ops = Object.values(demoData.operaciones||{});
   return ops.filter(op =>
-    (op.tipo!=='Centro de Producción' && op.tipo!=='centroProduccion') &&
+    !esCabeceraOp(op) &&
     op.grupoId === cpId
   );
 }
@@ -8349,11 +8362,11 @@ function renderClientes(){
     </tr>`;
   }
 
-  // Agrupar: primero CPs con sus locales, luego independientes
-  const cps = allOps.filter(([k,v])=>v.tipo==='Centro de Producción'||v.tipo==='centroProduccion');
+  // Agrupar: primero cabeceras (CP o casa madre) con sus locales, luego independientes
+  const cps = allOps.filter(([k,v])=>esCabeceraOp(v));
   const vinculadas = new Set(allOps.filter(([k,v])=>v.grupoId).map(([k])=>k));
   const independientes = allOps.filter(([k,v])=>
-    v.tipo!=='Centro de Producción' && v.tipo!=='centroProduccion' && !v.grupoId
+    !esCabeceraOp(v) && !v.grupoId
   );
 
   let rowsHtml = '';
@@ -8383,10 +8396,11 @@ function renderClientes(){
 window.modalVincularCadena = function(opId){
   const op = demoData.operaciones[opId];
   if(!op) return;
-  const cps = Object.entries(demoData.operaciones||{})
-    .filter(([k,v]) => v.tipo==='Centro de Producción' || v.tipo==='centroProduccion');
+  // Cualquier OTRA operación puede ser la madre del vínculo: un CP formal,
+  // o un local común (que al ser elegido se convierte en CASA MADRE).
+  const cps = Object.entries(demoData.operaciones||{}).filter(([k]) => k !== opId);
   if(!cps.length){
-    showToast('Primero creá una operación de tipo Centro de Producción','error');
+    showToast('No hay otra operación a la cual vincular. Creá primero el otro local.','error');
     return;
   }
   openModal(`
@@ -8396,11 +8410,15 @@ window.modalVincularCadena = function(opId){
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>Centro de Producción / Casa Matriz</label>
+        <label>Recibe productos de (CP o casa madre)</label>
         <select id="vc-grupo">
           <option value="">— Operación independiente —</option>
-          ${cps.map(([k,v])=>`<option value="${k}"${op.grupoId===k?' selected':''}>${esc(v.nombre)}</option>`).join('')}
+          ${cps.map(([k,v])=>`<option value="${k}"${op.grupoId===k?' selected':''}>${esc(v.nombre)}${esCabeceraOp(v)?'':' (se convierte en casa madre)'}</option>`).join('')}
         </select>
+        <div style="font-size:12px;color:var(--gris-2);margin-top:6px">
+          Si elegís un local común, pasa a ser <strong>casa madre</strong>: produce
+          para este local y le "vende" al precio que decida (al costo o con margen).
+        </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:16px">
         <button class="btn btn-primary" style="flex:1" onclick="guardarVinculoCadena('${escJs(opId)}')">Guardar</button>
@@ -8410,11 +8428,29 @@ window.modalVincularCadena = function(opId){
   `);
 };
 
-window.guardarVinculoCadena = function(opId){
+window.guardarVinculoCadena = async function(opId){
   const op = demoData.operaciones[opId];
   if(!op) return;
-  op.grupoId = document.getElementById('vc-grupo').value || null;
-  guardarEnFirestore();
+  const madreId = document.getElementById('vc-grupo').value || null;
+  op.grupoId = madreId;
+  try{
+    const eid = getEmpresaId();
+    // Persistir el vínculo directo al documento de ESTA operación
+    if(eid) await db.collection('empresas').doc(eid)
+      .collection('operaciones').doc(opId).set({ grupoId: madreId }, {merge:true});
+    // Si la madre elegida es un local común, se convierte en CASA MADRE
+    if(madreId){
+      const madre = demoData.operaciones[madreId];
+      if(madre && !esCabeceraOp(madre)){
+        madre.proveeAlGrupo = true;
+        if(eid) await db.collection('empresas').doc(eid)
+          .collection('operaciones').doc(madreId).set({ proveeAlGrupo: true }, {merge:true});
+      }
+    }
+  }catch(err){
+    showToast('No se pudo guardar el vínculo: ' + err.message, 'error');
+    return;
+  }
   closeModal();
   renderClientes();
   showToast('Vínculo actualizado','success');
@@ -8537,10 +8573,10 @@ function modalNuevaOperacion(){
         </select>
       </div>
       <div class="form-group" id="no-grupo-wrap">
-        <label>Pertenece a (Centro de Producción / Cadena)</label>
+        <label>Pertenece a (recibe productos de otro local o CP)</label>
         <select id="no-grupo">
           <option value="">— Operación independiente —</option>
-          ${Object.entries(demoData.operaciones||{}).filter(([k,v])=>v.tipo==='Centro de Producción'||v.tipo==='centroProduccion').map(([k,v])=>`<option value="${k}">${esc(v.nombre)}</option>`).join('')}
+          ${Object.entries(demoData.operaciones||{}).map(([k,v])=>`<option value="${k}">${esc(v.nombre)}${esCabeceraOp(v)?'':' (se convierte en casa madre)'}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -8609,6 +8645,20 @@ async function guardarNuevaOperacion(){
     try {
       await db.collection('empresas').doc(getEmpresaId())
         .collection('operaciones').doc(id).set(limpiarParaFirestore(nuevaOp), {merge:true});
+
+      // Si el grupo elegido es un local común, se convierte en CASA MADRE
+      // (escalón 2 del crecimiento: produce para el nuevo local sin dejar
+      // de ser restaurante). El circuito de transferencia es el del CP.
+      const _madreId = nuevaOp.grupoId;
+      if(_madreId){
+        const _madre = demoData.operaciones[_madreId];
+        if(_madre && !esCabeceraOp(_madre)){
+          _madre.proveeAlGrupo = true;
+          await db.collection('empresas').doc(getEmpresaId())
+            .collection('operaciones').doc(_madreId).set({ proveeAlGrupo: true }, {merge:true});
+          showToast(`"${_madre.nombre}" ahora es casa madre de "${nuevaOp.nombre}"`,'success');
+        }
+      }
     } catch(err){ showToast('No se pudo guardar la operación: '+err.message,'error'); }
   }
 }
