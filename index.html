@@ -3558,7 +3558,16 @@ function navigate(vista, params={}){
   if(navEl) navEl.classList.add('active');
   
   const vistas = {
-    dashboard: ()=>{ currentOpId=null; buildSidebar(currentUser?.rol||'admin'); renderDashboard(); },
+    dashboard: ()=>{
+      // Si el admin estaba dentro de la operación de un cliente, soltar ese contexto
+      if(window._adminEmpresaId && esAdminProvatio()){
+        window._adminEmpresaId = null;
+        currentUser.empresaId = null;
+        demoData.operaciones = {}; demoData.ingredientes = []; demoData.mermas = [];
+        demoData.recetas = []; demoData.facturas = []; currentOpId = null;
+      }
+      currentOpId=null; buildSidebar(currentUser?.rol||'admin'); renderDashboard();
+    },
     operacion: renderDashboardOperacion,
     resultado: renderResultado,
     clientes: renderClientes,
@@ -8132,11 +8141,20 @@ async function renderAdminProvatio(){
   // Nombre y dueño de cada empresa (el admin puede leerlas por reglas)
   const empIds = Object.keys(porEmpresa);
   const empInfo = {};
+  const empOps = {};   // operaciones de cada empresa: [{id, nombre}]
   if(empIds.length){
     const docs = await Promise.all(empIds.map(id =>
       db.collection('empresas').doc(id).get().catch(()=>null)));
     docs.forEach((d,i)=>{
       empInfo[empIds[i]] = (d && d.exists) ? d.data() : { nombre: '(empresa sin datos)' };
+    });
+    // Traer las operaciones de cada empresa (para el onboarding: entrar a trabajarlas)
+    const opsSnaps = await Promise.all(empIds.map(id =>
+      db.collection('empresas').doc(id).collection('operaciones').get().catch(()=>null)));
+    opsSnaps.forEach((snap,i)=>{
+      const arr = [];
+      if(snap) snap.forEach(o => arr.push({ id:o.id, nombre:(o.data().nombre)||o.id }));
+      empOps[empIds[i]] = arr;
     });
   }
 
@@ -8200,6 +8218,15 @@ async function renderAdminProvatio(){
           <thead><tr><th>Persona</th><th>Operación</th><th>Registro</th><th>Estado</th><th></th></tr></thead>
           <tbody>${gente.map(c => filaPersona(c, c.uid===info.duenoUid ? 'dueno' : 'equipo')).join('')}</tbody>
         </table></div>
+        ${(empOps[eid]||[]).length ? `
+        <div style="padding:12px 14px;border-top:1px solid var(--crema-2);background:#FAFAF7">
+          <div style="font-size:11px;font-weight:700;color:var(--gris-2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Operaciones (entrar para onboarding)</div>
+          ${(empOps[eid]||[]).map(o=>`
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">
+              <span style="font-size:13px">🍽 ${esc(o.nombre)}</span>
+              <button class="btn btn-secondary btn-sm" onclick="abrirOperacionAdmin('${escJs(eid)}','${escJs(o.id)}')">Entrar →</button>
+            </div>`).join('')}
+        </div>` : ''}
       </div>`;
     }).join('');
 
@@ -8249,7 +8276,44 @@ async function cambiarEstadoCuenta(uid, nuevoEstado){
   }
 }
 
-// ── EDITAR EMPRESA (solo admin de Provatio) ──
+// ── ENTRAR A LA OPERACIÓN DE UN CLIENTE (admin, para onboarding) ──
+// Carga la operación de OTRA empresa (la del cliente) y te deja trabajarla.
+// Las reglas le dan permiso al admin de Provatio. Al salir, volvés a tu panel.
+async function abrirOperacionAdmin(empresaId, opId){
+  if(!esAdminProvatio()){ showToast('Solo el equipo de Provatio puede hacer esto','error'); return; }
+  try{
+    showLoading && showLoading('Entrando a la operación del cliente…');
+    const opDoc = await db.collection('empresas').doc(empresaId).collection('operaciones').doc(opId).get();
+    if(!opDoc.exists){ hideLoading && hideLoading(); showToast('No encontré la operación','error'); return; }
+    const data = opDoc.data() || {};
+
+    // "Prestar" el contexto de esa empresa a la sesión del admin, para poder
+    // leer/guardar en el lugar correcto mientras hacés el onboarding.
+    window._adminEmpresaId = empresaId;   // usado por getEmpresaId mientras dure
+    currentUser.empresaId = empresaId;
+
+    // Cargar los datos de la operación en memoria
+    demoData.operaciones = {};
+    demoData.operaciones[opId] = data;
+    const d = data._datos || {};
+    demoData.ingredientes = d.ingredientes || [];
+    demoData.mermas = d.mermas || [];
+    demoData.recetas = (d.recetas || []).map(r=>({...r, opId}));
+    demoData.eventos = (d.eventos || []).map(e=>({...e, opId}));
+    demoData.facturas = d.facturas || [];
+    currentOpId = opId;
+
+    hideLoading && hideLoading();
+    // Mostrar la app y entrar a la operación
+    const appEl = document.getElementById('app'); if(appEl) appEl.style.display='flex';
+    buildSidebar(currentUser.rol||'admin');
+    navigate('operacion');
+    showToast(`Estás en "${data.nombre||'la operación'}" como soporte Provatio`,'success');
+  }catch(err){
+    hideLoading && hideLoading();
+    showToast('No pude entrar: '+err.message,'error');
+  }
+}
 // Cambiar el nombre de la empresa y ver su información. Pensado para corregir
 // nombres genéricos ("Mi empresa") o actualizar datos del cliente.
 async function modalEditarEmpresa(empresaId){
@@ -8401,12 +8465,19 @@ async function _ejecutarLimpiezaTotal(){
 
 async function modalGestionarCuenta(uid){
   if(!esAdminProvatio()){ showToast('Solo el equipo de Provatio puede hacer esto','error'); return; }
-  let cuenta = null, empresasList = [];
+  let cuenta = null, empresasList = [], opsEmpresa = [], asignadasActuales = [];
   try{
     const snap = await db.collection('usuarios').doc(uid).get();
     cuenta = snap.exists ? {uid, ...snap.data()} : null;
     const empSnap = await db.collection('empresas').get();
     empSnap.forEach(d => empresasList.push({id:d.id, ...d.data()}));
+    // Si la cuenta ya tiene empresa, traer sus operaciones y qué locales tiene asignados hoy
+    if(cuenta && cuenta.empresaId){
+      const opsSnap = await db.collection('empresas').doc(cuenta.empresaId).collection('operaciones').get();
+      opsSnap.forEach(o => opsEmpresa.push({id:o.id, nombre:(o.data().nombre)||o.id}));
+      const fichaSnap = await db.collection('empresas').doc(cuenta.empresaId).collection('miembros').doc(uid).get();
+      if(fichaSnap.exists) asignadasActuales = fichaSnap.data().operacionesAsignadas || [];
+    }
   }catch(err){ showToast('No pude leer la cuenta: '+err.message,'error'); return; }
   if(!cuenta){ showToast('Cuenta no encontrada','error'); return; }
 
@@ -8436,14 +8507,23 @@ async function modalGestionarCuenta(uid){
 
       ${empActual && !esDuenoActual ? `
       <div style="border:1px solid var(--crema-2);border-radius:10px;padding:14px;margin-bottom:14px">
-        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:8px">Cambiar rol en la empresa</div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:8px">Rol y locales asignados</div>
         <select id="gest-rol" style="width:100%;margin-bottom:10px">
-          <option value="dueno">Dueño</option>
+          <option value="dueno"${asignadasActuales==='dueno'?' selected':''}>Dueño (ve todos los locales)</option>
           <option value="encargado">Encargado</option>
           <option value="cocina">Cocina</option>
           <option value="supervisor">Supervisor</option>
         </select>
-        <button class="btn btn-secondary" onclick="_gestCambiarRol('${escJs(uid)}','${escJs(cuenta.empresaId)}')">Guardar rol</button>
+        <div style="font-size:12px;color:var(--gris-2);margin-bottom:6px">De qué locales trabaja (tildá los que ve):</div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+          ${opsEmpresa.length ? opsEmpresa.map(o=>`
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" class="gest-op" value="${esc(o.id)}"${asignadasActuales.includes(o.id)?' checked':''}>
+              🍽 ${esc(o.nombre)}
+            </label>`).join('') : '<span style="font-size:12px;color:var(--gris-3)">Esta empresa todavía no tiene locales creados.</span>'}
+        </div>
+        <div style="font-size:11px;color:var(--gris-3);margin-bottom:10px">El Dueño ve todos los locales sin necesidad de tildar. Encargado/Cocina ven solo los marcados.</div>
+        <button class="btn btn-secondary" onclick="_gestCambiarRol('${escJs(uid)}','${escJs(cuenta.empresaId)}')">Guardar rol y locales</button>
       </div>` : ''}
 
       <div style="border:1px solid var(--crema-2);border-radius:10px;padding:14px">
@@ -8474,15 +8554,22 @@ async function _gestLiberar(uid){
 
 async function _gestCambiarRol(uid, empresaId){
   const rol = document.getElementById('gest-rol').value;
-  if(!confirm(`¿Cambiar el rol de esta persona a "${rol}"?`)) return;
+  const opsMarcadas = Array.from(document.querySelectorAll('.gest-op:checked')).map(c=>c.value);
+  // Encargado/cocina/supervisor sin ningún local marcado = no vería nada. Avisar.
+  if(rol!=='dueno' && opsMarcadas.length===0){
+    if(!confirm('No marcaste ningún local. Esta persona no va a ver ninguna operación al entrar.\n\n¿Guardar igual?')) return;
+  }
+  if(!confirm(`¿Guardar rol "${rol}"${rol!=='dueno' && opsMarcadas.length ? ' con '+opsMarcadas.length+' local(es)' : ''}?`)) return;
   try{
+    const ficha = { rol };
+    // El dueño ve todo (no necesita lista). Los demás, solo lo asignado.
+    ficha.operacionesAsignadas = (rol==='dueno') ? [] : opsMarcadas;
     await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid)
-      .set({ rol }, {merge:true});
-    // Si pasa a dueño, marcarlo también en la empresa
+      .set(ficha, {merge:true});
     if(rol==='dueno'){
       await db.collection('empresas').doc(empresaId).set({ duenoUid: uid }, {merge:true});
     }
-    showToast('Rol actualizado ✓','success');
+    showToast('Rol y locales actualizados ✓','success');
     closeModal(); renderAdminProvatio();
   }catch(err){ showToast('Error: '+err.message,'error'); }
 }
