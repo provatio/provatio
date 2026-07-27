@@ -2557,7 +2557,7 @@ function mostrarModalPerfil(email, pass){
             <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">
               Nombre completo *
             </label>
-            <input type="text" id="p-nombre" placeholder="Javier Reynoso" 
+            <input type="text" id="p-nombre" placeholder="Ej: María González" 
               style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
           </div>
           <div>
@@ -11197,6 +11197,92 @@ auth.onAuthStateChanged(firebaseUser => {
     cargarUsuarioFirebase(firebaseUser);
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// CIERRE DE SESIÓN POR INACTIVIDAD
+// Protege las computadoras compartidas (cocina) sin molestar a quien trabaja.
+// - Cliente: 30 min de inactividad → aviso "¿seguís ahí?" → 2 min más → cierra.
+// - Admin de Provatio: más tiempo (gestiona la plataforma, no es compu de cocina).
+// - ANTES de cerrar, guarda lo que haya cargado (no se pierde trabajo).
+// - Cualquier actividad real (click, tecla, guardar) reinicia el reloj.
+// ═══════════════════════════════════════════════════════════════════════
+const _INACT = {
+  timerAviso: null,
+  timerCierre: null,
+  avisoVisible: false,
+  minutosCliente: 30,      // inactividad antes del aviso (cliente)
+  minutosAdmin: 120,       // el admin dura más
+  segundosGracia: 120,     // margen tras el aviso antes de cerrar
+};
+
+function _minutosInactividad(){
+  return (typeof esAdminProvatio === 'function' && esAdminProvatio())
+    ? _INACT.minutosAdmin : _INACT.minutosCliente;
+}
+
+function reiniciarInactividad(){
+  if(!currentUser) return;            // solo cuenta si hay sesión
+  if(_INACT.avisoVisible) return;     // si el aviso está abierto, no reiniciar por eventos de fondo
+  clearTimeout(_INACT.timerAviso);
+  clearTimeout(_INACT.timerCierre);
+  _INACT.timerAviso = setTimeout(_mostrarAvisoInactividad, _minutosInactividad()*60*1000);
+}
+
+function _mostrarAvisoInactividad(){
+  if(!currentUser) return;
+  _INACT.avisoVisible = true;
+  // Cartel de aviso
+  let aviso = document.getElementById('inact-aviso');
+  if(!aviso){
+    aviso = document.createElement('div');
+    aviso.id = 'inact-aviso';
+    aviso.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center';
+    aviso.innerHTML = `
+      <div style="background:var(--blanco,#fff);border-radius:14px;padding:28px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25)">
+        <div style="font-size:40px;margin-bottom:8px">⏳</div>
+        <h3 style="font-family:'Playfair Display',serif;font-size:20px;margin-bottom:8px;color:#1a1a1a">¿Seguís ahí?</h3>
+        <p style="font-size:14px;color:#555;line-height:1.6;margin-bottom:20px">
+          Tu sesión está por cerrarse por inactividad. Tus datos se guardan solos antes de cerrar.
+        </p>
+        <button onclick="_seguirTrabajando()" style="width:100%;padding:12px;background:#1a1a1a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">
+          Sí, sigo trabajando
+        </button>
+      </div>`;
+    document.body.appendChild(aviso);
+  }
+  aviso.style.display = 'flex';
+  // Si no responde en el margen de gracia → guardar y cerrar
+  _INACT.timerCierre = setTimeout(_cerrarPorInactividad, _INACT.segundosGracia*1000);
+}
+
+function _seguirTrabajando(){
+  _INACT.avisoVisible = false;
+  const aviso = document.getElementById('inact-aviso');
+  if(aviso) aviso.style.display = 'none';
+  clearTimeout(_INACT.timerCierre);
+  reiniciarInactividad();
+}
+
+async function _cerrarPorInactividad(){
+  _INACT.avisoVisible = false;
+  const aviso = document.getElementById('inact-aviso');
+  if(aviso) aviso.style.display = 'none';
+  // GUARDAR antes de cerrar — no perder trabajo cargado
+  try {
+    if(currentUser && currentOpId){ await guardarEnFirestore(); }
+  } catch(e){ console.warn('No se pudo guardar antes de cerrar por inactividad', e); }
+  // Cerrar sesión
+  try { await auth.signOut(); } catch(_){}
+  currentUser = null;
+  location.reload();  // vuelve a la pantalla de login limpia
+}
+
+// Reiniciar el reloj ante actividad real del usuario
+['click','keydown','mousemove','touchstart','scroll'].forEach(ev=>{
+  document.addEventListener(ev, reiniciarInactividad, {passive:true});
+});
+// Arrancar el reloj cuando ya hay sesión cargada
+setInterval(()=>{ if(currentUser && !_INACT.timerAviso && !_INACT.avisoVisible) reiniciarInactividad(); }, 5000);
 
 // Señal para la caja negra: el motor de la app arrancó completo
 window.__appOk = true;
