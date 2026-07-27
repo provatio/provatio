@@ -8220,6 +8220,9 @@ async function renderAdminProvatio(){
         ? '⏳ Tenés <strong>'+pendientes+'</strong> cuenta'+(pendientes>1?'s':'')+' esperando onboarding. Activalas cuando coordines el arranque.'
         : '✓ No hay cuentas pendientes. Cuando alguien se registre, va a aparecer acá.'}
     </div>
+    <div style="text-align:right;margin-bottom:12px">
+      <button class="btn btn-secondary btn-sm" onclick="modalLimpiezaTotal()">🧹 Limpiar empresas de prueba</button>
+    </div>
     ${(window._empresasVacias && window._empresasVacias.length) ? `
     <div class="alert alert-warn" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
       <span>🧹 Hay <strong>${window._empresasVacias.length}</strong> empresa${window._empresasVacias.length>1?'s':''} sin ninguna operación (${window._empresasVacias.map(e=>esc(e.nombre)).join(', ')}). Son restos que conviene limpiar.</span>
@@ -8254,6 +8257,96 @@ async function _limpiarEmpresasVacias(){
     await _borrarEmpresaCompleta(e.id, e.nombre);
   }
   window._empresasVacias = [];
+  renderAdminProvatio();
+}
+
+// ── LIMPIEZA TOTAL (solo admin) — borra empresas ENTERAS con sus operaciones ──
+// Muestra TODAS las empresas de la base (no solo las vacías) y deja elegir cuáles
+// borrar por completo: operaciones, miembros, y liberar a su gente. Sin ir a Firebase.
+async function modalLimpiezaTotal(){
+  if(!esAdminProvatio()){ showToast('Solo el equipo de Provatio puede hacer esto','error'); return; }
+  let empresas = [];
+  try{
+    const snap = await db.collection('empresas').get();
+    for(const e of snap.docs){
+      const ops = await db.collection('empresas').doc(e.id).collection('operaciones').get();
+      const nombresOps = [];
+      ops.forEach(o => nombresOps.push((o.data().nombre)||o.id));
+      empresas.push({ id:e.id, nombre:(e.data().nombre||e.id), ops:nombresOps });
+    }
+  }catch(err){ showToast('No pude leer las empresas: '+err.message,'error'); return; }
+
+  if(!empresas.length){ showToast('No hay empresas en la base','info'); return; }
+
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Limpieza de empresas</span>
+      <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warn" style="margin-bottom:14px">
+        Marcá las empresas que querés <strong>borrar por completo</strong> (sus operaciones, su gente y la empresa). Esta acción no se puede deshacer.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto">
+        ${empresas.map(e=>`
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--crema-2);border-radius:8px;cursor:pointer">
+            <input type="checkbox" class="lt-check" value="${esc(e.id)}" data-nombre="${esc(e.nombre)}" style="margin-top:3px">
+            <div>
+              <div style="font-weight:600">${esc(e.nombre)}</div>
+              <div style="font-size:12px;color:var(--gris-2)">${e.ops.length ? e.ops.length+' operación(es): '+e.ops.map(esc).join(', ') : 'sin operaciones (vacía)'}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" style="background:#B03A2E" onclick="_ejecutarLimpiezaTotal()">Borrar las marcadas</button>
+    </div>
+  `);
+}
+
+async function _ejecutarLimpiezaTotal(){
+  const checks = Array.from(document.querySelectorAll('.lt-check:checked'));
+  if(!checks.length){ showToast('No marcaste ninguna empresa','error'); return; }
+  const elegidas = checks.map(c=>({id:c.value, nombre:c.getAttribute('data-nombre')}));
+  if(!confirm(`¿Borrar por completo ${elegidas.length} empresa(s)?\n\n${elegidas.map(e=>'• '+e.nombre).join('\n')}\n\nSe borran sus operaciones, su gente y la empresa. NO se puede deshacer.`)) return;
+
+  mostrarProgreso && mostrarProgreso('Limpiando…');
+  for(const e of elegidas){
+    try{
+      // 1) Borrar todas las operaciones de la empresa
+      const ops = await db.collection('empresas').doc(e.id).collection('operaciones').get();
+      for(const o of ops.docs){
+        await db.collection('empresas').doc(e.id).collection('operaciones').doc(o.id).delete().catch(()=>{});
+      }
+      // 2) Liberar y borrar miembros
+      const mem = await db.collection('empresas').doc(e.id).collection('miembros').get();
+      for(const m of mem.docs){
+        await db.collection('usuarios').doc(m.id).update({
+          empresaId: firebase.firestore.FieldValue.delete(),
+          operacionId: firebase.firestore.FieldValue.delete(),
+        }).catch(()=>{});
+        await db.collection('empresas').doc(e.id).collection('miembros').doc(m.id).delete().catch(()=>{});
+      }
+      // 3) Liberar a cualquier usuario que apunte a esta empresa (por las dudas)
+      const us = await db.collection('usuarios').where('empresaId','==',e.id).get();
+      for(const u of us.docs){
+        await db.collection('usuarios').doc(u.id).update({
+          empresaId: firebase.firestore.FieldValue.delete(),
+          operacionId: firebase.firestore.FieldValue.delete(),
+        }).catch(()=>{});
+      }
+      // 4) Borrar la empresa
+      await db.collection('empresas').doc(e.id).delete().catch(()=>{});
+    }catch(err){ console.warn('Error limpiando '+e.nombre, err); }
+  }
+  ocultarProgreso && ocultarProgreso();
+  // Si borré la empresa en la que yo estaba parado, me suelto
+  if(currentUser && elegidas.some(e=>e.id===currentUser.empresaId)){
+    currentUser.empresaId = null; currentUser.rolEmpresa = null;
+  }
+  closeModal();
+  showToast(`${elegidas.length} empresa(s) eliminada(s) por completo ✓`,'success');
   renderAdminProvatio();
 }
 
