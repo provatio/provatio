@@ -8191,7 +8191,9 @@ async function renderAdminProvatio(){
       return `
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
-          <span class="card-title">🏢 ${esc(info.nombre||eid)}</span>
+          <span class="card-title">🏢 ${esc(info.nombre||eid)}
+            <button class="btn btn-icon btn-sm" onclick="modalEditarEmpresa('${escJs(eid)}')" title="Editar empresa" style="margin-left:6px;font-size:13px">✏️</button>
+          </span>
           <span style="font-size:12px;color:var(--gris-2)">${gente.length} persona${gente.length!==1?'s':''}</span>
         </div>
         <div class="table-wrap"><table>
@@ -8247,7 +8249,54 @@ async function cambiarEstadoCuenta(uid, nuevoEstado){
   }
 }
 
-// ── GESTIÓN COMPLETA DE UNA CUENTA (solo admin de Provatio) ──
+// ── EDITAR EMPRESA (solo admin de Provatio) ──
+// Cambiar el nombre de la empresa y ver su información. Pensado para corregir
+// nombres genéricos ("Mi empresa") o actualizar datos del cliente.
+async function modalEditarEmpresa(empresaId){
+  if(!esAdminProvatio()){ showToast('Solo el equipo de Provatio puede hacer esto','error'); return; }
+  let emp = null, ops = [];
+  try{
+    const snap = await db.collection('empresas').doc(empresaId).get();
+    emp = snap.exists ? snap.data() : null;
+    const opsSnap = await db.collection('empresas').doc(empresaId).collection('operaciones').get();
+    opsSnap.forEach(o => ops.push((o.data().nombre)||o.id));
+  }catch(err){ showToast('No pude leer la empresa: '+err.message,'error'); return; }
+  if(!emp){ showToast('Empresa no encontrada','error'); return; }
+
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Editar empresa</span>
+      <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nombre de la empresa</label>
+        <input type="text" id="ee-nombre" value="${esc(emp.nombre||'')}" placeholder="Ej: Kansas" style="width:100%">
+      </div>
+      <div style="background:var(--crema,#F5F0E8);border-radius:8px;padding:12px 14px;margin-top:8px;font-size:12px;color:var(--gris-2)">
+        <div><strong>Operaciones:</strong> ${ops.length ? ops.map(esc).join(', ') : 'ninguna'}</div>
+        <div style="margin-top:4px"><strong>ID interno:</strong> ${esc(empresaId)}</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="_guardarEmpresa('${escJs(empresaId)}')">Guardar cambios</button>
+    </div>
+  `);
+}
+
+async function _guardarEmpresa(empresaId){
+  const nombre = (document.getElementById('ee-nombre').value||'').trim();
+  if(!nombre){ showToast('El nombre no puede estar vacío','error'); return; }
+  try{
+    await db.collection('empresas').doc(empresaId).set({ nombre }, {merge:true});
+    // Si es la empresa en la que estoy parado, refrescar mi contexto
+    if(currentUser && currentUser.empresaId===empresaId){ currentUser.empresaNombre = nombre; }
+    showToast('Empresa actualizada ✓','success');
+    closeModal();
+    renderAdminProvatio();
+  }catch(err){ showToast('Error: '+err.message,'error'); }
+}
 // Liberar (soltar la empresa), cambiar rol, o reasignar a otra empresa.
 async function _limpiarEmpresasVacias(){
   const vacias = window._empresasVacias || [];
