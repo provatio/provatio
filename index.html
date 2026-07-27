@@ -8073,6 +8073,20 @@ async function renderAdminProvatio(){
     return;
   }
 
+  // ── Detectar EMPRESAS VACÍAS (sin ninguna operación) para poder limpiarlas ──
+  // Poka-yoke retroactivo: barre los fantasmas que quedaron de antes, sin ir a Firebase.
+  let empresasVacias = [];
+  try{
+    const empSnap = await db.collection('empresas').get();
+    for(const e of empSnap.docs){
+      const ops = await db.collection('empresas').doc(e.id).collection('operaciones').get();
+      if(ops.empty){
+        empresasVacias.push({ id:e.id, nombre:(e.data().nombre||e.id) });
+      }
+    }
+  }catch(err){ console.warn('No pude revisar empresas vacías:', err); }
+  window._empresasVacias = empresasVacias;
+
   // CRITERIO ÚNICO de estado (usado por el contador, el orden y las filas):
   //   admin → cuenta del equipo Provatio
   //   activa → estadoCuenta 'activa'
@@ -8206,6 +8220,11 @@ async function renderAdminProvatio(){
         ? '⏳ Tenés <strong>'+pendientes+'</strong> cuenta'+(pendientes>1?'s':'')+' esperando onboarding. Activalas cuando coordines el arranque.'
         : '✓ No hay cuentas pendientes. Cuando alguien se registre, va a aparecer acá.'}
     </div>
+    ${(window._empresasVacias && window._empresasVacias.length) ? `
+    <div class="alert alert-warn" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <span>🧹 Hay <strong>${window._empresasVacias.length}</strong> empresa${window._empresasVacias.length>1?'s':''} sin ninguna operación (${window._empresasVacias.map(e=>esc(e.nombre)).join(', ')}). Son restos que conviene limpiar.</span>
+      <button class="btn btn-secondary btn-sm" onclick="_limpiarEmpresasVacias()">Limpiar empresas vacías</button>
+    </div>` : ''}
     ${htmlSueltas}
     <div style="font-size:11px;font-weight:700;color:var(--gris-2);text-transform:uppercase;letter-spacing:0.08em;margin:4px 0 10px">
       Clientes (${empIds.length})
@@ -8227,6 +8246,17 @@ async function cambiarEstadoCuenta(uid, nuevoEstado){
 
 // ── GESTIÓN COMPLETA DE UNA CUENTA (solo admin de Provatio) ──
 // Liberar (soltar la empresa), cambiar rol, o reasignar a otra empresa.
+async function _limpiarEmpresasVacias(){
+  const vacias = window._empresasVacias || [];
+  if(!vacias.length) return;
+  if(!confirm(`¿Eliminar ${vacias.length} empresa(s) vacía(s)?\n\n${vacias.map(e=>'• '+e.nombre).join('\n')}\n\nSe borran las empresas y se libera a cualquier persona que tuvieran asignada. No afecta a las empresas con operaciones.`)) return;
+  for(const e of vacias){
+    await _borrarEmpresaCompleta(e.id, e.nombre);
+  }
+  window._empresasVacias = [];
+  renderAdminProvatio();
+}
+
 async function modalGestionarCuenta(uid){
   if(!esAdminProvatio()){ showToast('Solo el equipo de Provatio puede hacer esto','error'); return; }
   let cuenta = null, empresasList = [];
@@ -8289,7 +8319,12 @@ async function modalGestionarCuenta(uid){
 async function _gestLiberar(uid){
   if(!confirm('¿Liberar esta cuenta de su empresa?\n\nQueda sin empresa, lista para asignarla a otra. Los datos de la empresa no se borran.')) return;
   try{
-    await db.collection('usuarios').doc(uid).update({ empresaId: firebase.firestore.FieldValue.delete() });
+    // Borrar AMBOS vínculos: el del modelo nuevo (empresaId) y el legacy (operacionId).
+    // Si queda operacionId viejo, la cuenta sigue medio enganchada aunque se libere.
+    await db.collection('usuarios').doc(uid).update({
+      empresaId: firebase.firestore.FieldValue.delete(),
+      operacionId: firebase.firestore.FieldValue.delete(),
+    });
     showToast('Cuenta liberada ✓','success');
     closeModal(); renderAdminProvatio();
   }catch(err){ showToast('Error: '+err.message,'error'); }
@@ -8919,10 +8954,11 @@ async function delOperacion(id){
   const colgantes = Object.values(demoData.operaciones||{}).filter(o=>o.grupoId===id);
   if(colgantes.length && !confirm(`⚠ "${nombre}" tiene ${colgantes.length} local(es) vinculado(s) que quedarán sin cabecera. ¿Continuar igual?`)) return;
 
+  const eid = getEmpresaId();
+
   delete demoData.operaciones[id];
   if(currentUser){
     try {
-      const eid = getEmpresaId();
       if(eid){
         await db.collection('empresas').doc(eid).collection('operaciones').doc(id).delete();
       } else {
@@ -8931,8 +8967,53 @@ async function delOperacion(id){
     } catch(err){ showToast('No se pudo eliminar de la nube: '+err.message,'error'); return; }
   }
   if(currentOpId===id) currentOpId = null;
+
+  // ── Poka-yoke: si la empresa quedó SIN operaciones, ofrecer limpiarla entera ──
+  // Así no quedan "empresas fantasma" que después haya que borrar a mano.
+  if(eid){
+    try{
+      const restantes = await db.collection('empresas').doc(eid).collection('operaciones').get();
+      if(restantes.empty){
+        const empDoc = await db.collection('empresas').doc(eid).get();
+        const empNombre = (empDoc.exists && empDoc.data().nombre) || 'esta empresa';
+        if(confirm(`"${empNombre}" quedó sin ninguna operación.\n\n¿Querés eliminar también la empresa y liberar a las personas que tenía asignadas?\n\nAceptar = borrar la empresa y dejar a su gente como cuentas libres\nCancelar = dejar la empresa vacía (podés crearle una operación nueva después)`)){
+          await _borrarEmpresaCompleta(eid, empNombre);
+        }
+      }
+    }catch(err){ console.warn('No pude revisar si la empresa quedó vacía:', err); }
+  }
+
   navigate('dashboard');
   showToast(`"${nombre}" eliminada`);
+}
+
+// Borra una empresa entera SIN dejar rastros: sus miembros, libera a los usuarios
+// que la tenían asignada, y borra el documento de la empresa. Todo desde la app.
+async function _borrarEmpresaCompleta(empresaId, empNombre){
+  try{
+    // 1) Liberar a todos los usuarios que apuntaban a esta empresa
+    const usSnap = await db.collection('usuarios').where('empresaId','==',empresaId).get();
+    for(const u of usSnap.docs){
+      await db.collection('usuarios').doc(u.id).update({
+        empresaId: firebase.firestore.FieldValue.delete(),
+        operacionId: firebase.firestore.FieldValue.delete(),
+      });
+    }
+    // 2) Borrar las fichas de miembros de la empresa
+    const memSnap = await db.collection('empresas').doc(empresaId).collection('miembros').get();
+    for(const m of memSnap.docs){
+      await db.collection('empresas').doc(empresaId).collection('miembros').doc(m.id).delete();
+    }
+    // 3) Borrar el documento de la empresa
+    await db.collection('empresas').doc(empresaId).delete();
+
+    if(currentUser && currentUser.empresaId===empresaId){
+      currentUser.empresaId = null;
+    }
+    showToast(`Empresa "${empNombre}" eliminada y su gente liberada ✓`,'success');
+  }catch(err){
+    showToast('La operación se borró, pero la empresa no del todo: '+err.message,'error');
+  }
 }
 
 // ── PRÓXIMAMENTE ──
