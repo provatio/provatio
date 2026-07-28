@@ -1514,14 +1514,15 @@ async function cargarDesdeFirestore(uid){
     const opActiva = demoData.operaciones[currentOpId] || {};
 
     if(opActiva._datos){
-      // Formato nuevo: todo en el documento de la operación
+      // Formato nuevo: todo en el documento de la operación.
+      // Se REEMPLAZA todo lo que hubiera en memoria por lo de esta operación,
+      // y se re-etiqueta con currentOpId, para que el contador y la lista
+      // (que filtra por opId) SIEMPRE coincidan. Antes podían desfasar y las
+      // recetas figuraban en el contador pero no en la lista.
       demoData.ingredientes = opActiva._datos.ingredientes || [];
       demoData.mermas = opActiva._datos.mermas || [];
-      const rec = (opActiva._datos.recetas||[]).map(r=>({...r, opId:currentOpId}));
-      demoData.recetas = demoData.recetas.filter(r => r.opId !== currentOpId).concat(rec);
-      if(!demoData.eventos) demoData.eventos = [];
-      const evs = (opActiva._datos.eventos||[]).map(e=>({...e, opId:currentOpId}));
-      demoData.eventos = demoData.eventos.filter(e => e.opId !== currentOpId).concat(evs);
+      demoData.recetas = (opActiva._datos.recetas||[]).map(r=>({...r, opId:currentOpId}));
+      demoData.eventos = (opActiva._datos.eventos||[]).map(e=>({...e, opId:currentOpId}));
       demoData.facturas = opActiva._datos.facturas || [];
       window._revLocal = opActiva._rev || 0;
       hideLoading();
