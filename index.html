@@ -8505,11 +8505,11 @@ async function modalGestionarCuenta(uid){
         <button class="btn btn-secondary" onclick="_gestLiberar('${escJs(uid)}')">Liberar de esta empresa</button>
       </div>` : ''}
 
-      ${empActual && !esDuenoActual ? `
+      ${empActual ? `
       <div style="border:1px solid var(--crema-2);border-radius:10px;padding:14px;margin-bottom:14px">
         <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:8px">Rol y locales asignados</div>
         <select id="gest-rol" style="width:100%;margin-bottom:10px">
-          <option value="dueno"${asignadasActuales==='dueno'?' selected':''}>Dueño (ve todos los locales)</option>
+          <option value="dueno"${esDuenoActual?' selected':''}>Dueño (ve todos los locales)</option>
           <option value="encargado">Encargado</option>
           <option value="cocina">Cocina</option>
           <option value="supervisor">Supervisor</option>
@@ -8555,20 +8555,31 @@ async function _gestLiberar(uid){
 async function _gestCambiarRol(uid, empresaId){
   const rol = document.getElementById('gest-rol').value;
   const opsMarcadas = Array.from(document.querySelectorAll('.gest-op:checked')).map(c=>c.value);
-  // Encargado/cocina/supervisor sin ningún local marcado = no vería nada. Avisar.
   if(rol!=='dueno' && opsMarcadas.length===0){
     if(!confirm('No marcaste ningún local. Esta persona no va a ver ninguna operación al entrar.\n\n¿Guardar igual?')) return;
   }
   if(!confirm(`¿Guardar rol "${rol}"${rol!=='dueno' && opsMarcadas.length ? ' con '+opsMarcadas.length+' local(es)' : ''}?`)) return;
   try{
-    const ficha = { rol };
-    // El dueño ve todo (no necesita lista). Los demás, solo lo asignado.
-    ficha.operacionesAsignadas = (rol==='dueno') ? [] : opsMarcadas;
-    await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid)
-      .set(ficha, {merge:true});
+    // Ficha de miembro: el dueño ve todo (lista vacía = sin restricción);
+    // los demás ven SOLO lo tildado. Siempre activo para poder entrar.
+    await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid).set({
+      rol,
+      operacionesAsignadas: (rol==='dueno') ? [] : opsMarcadas,
+      activo: true,
+    }, {merge:true});
+
+    // Sincronizar el duenoUid de la empresa con el rol, para que no queden
+    // los dos lados en contradicción (era el bug: dueña por un lado, encargada por otro).
+    const empRef = db.collection('empresas').doc(empresaId);
+    const empSnap = await empRef.get();
+    const duenoActual = empSnap.exists ? empSnap.data().duenoUid : null;
     if(rol==='dueno'){
-      await db.collection('empresas').doc(empresaId).set({ duenoUid: uid }, {merge:true});
+      await empRef.set({ duenoUid: uid }, {merge:true});
+    } else if(duenoActual === uid){
+      // Dejó de ser dueño: soltar el duenoUid para que no quede como dueño fantasma
+      await empRef.update({ duenoUid: firebase.firestore.FieldValue.delete() }).catch(()=>{});
     }
+
     showToast('Rol y locales actualizados ✓','success');
     closeModal(); renderAdminProvatio();
   }catch(err){ showToast('Error: '+err.message,'error'); }
