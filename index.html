@@ -1927,7 +1927,20 @@ function getIngrediente(id){
   }
   return null;
 }
-function getRecetas(){ return demoData.recetas.filter(r=>r.opId===currentOpId); }
+function getRecetas(){
+  // Filtro normal por operación activa.
+  const propias = demoData.recetas.filter(r=>r.opId===currentOpId);
+  if(propias.length) return propias;
+  // Red de seguridad: si hay recetas en memoria pero ninguna matchea el opId
+  // actual (desfase por cómo se cargó la operación), se re-etiquetan al opId
+  // activo y se muestran. Al cargar una operación solo están SUS recetas en
+  // memoria, así que esto no mezcla datos de otra operación.
+  if(demoData.recetas.length && currentOpId){
+    demoData.recetas.forEach(r=>{ r.opId = currentOpId; });
+    return demoData.recetas.slice();
+  }
+  return propias;
+}
 function getMermasOp(){ return demoData.mermas; } // mermas son globales (referencia)
 function getIngredientesOp(){ return demoData.ingredientes; } // ingredientes globales
 function getMerma(nombre, tecnica, estado, proceso){
@@ -2743,6 +2756,13 @@ function initApp(user){
   // Incorporar rol y locales asignados desde la ficha de miembro de la empresa
   if(window._miembroEmpresa){
     currentUser = {...currentUser, ...window._miembroEmpresa};
+  }
+  // GARANTÍA: el empresaId del documento de usuario es la fuente confiable.
+  // Si por timing _miembroEmpresa vino vacío, igual dejamos el empresaId puesto
+  // para que cargarDesdeFirestore encuentre la operación y sus recetas.
+  // (Este era el bug: sin empresaId, no cargaba las recetas del dueño.)
+  if(user && user.empresaId && !currentUser.empresaId){
+    currentUser.empresaId = user.empresaId;
   }
   document.getElementById('auth-screen').style.display = 'none';
 
