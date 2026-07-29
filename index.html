@@ -3759,6 +3759,26 @@ async function crearEmpresaYOperacion(){
   const tipo   = document.getElementById('ae-tipo').value;
   if(!nomEmp){ showToast('Escribí el nombre de tu negocio','error'); return; }
   if(!currentUser || !currentUser.uid){ showToast('No hay sesión activa','error'); return; }
+
+  // BLINDAJE 1: si el usuario YA tiene empresa, no crear otra (evita duplicados
+  // como los que se generaron al probar). Lo manda a su operación existente.
+  if(getEmpresaId()){
+    showToast('Ya tenés una empresa. No se puede crear otra desde acá.','error');
+    return;
+  }
+
+  // BLINDAJE 2: no permitir dos empresas con el mismo nombre (ignorando
+  // mayúsculas y espacios), que fue el origen del enredo "kansas tes"/"Kansas test".
+  try{
+    const _norm = s => (s||'').toLowerCase().replace(/\s+/g,' ').trim();
+    const _todas = await db.collection('empresas').get();
+    const _dup = _todas.docs.some(d => _norm(d.data().nombre) === _norm(nomEmp));
+    if(_dup){
+      showToast(`Ya existe una empresa llamada "${nomEmp}". Elegí otro nombre.`,'error');
+      return;
+    }
+  }catch(e){ console.warn('No pude verificar nombres duplicados:', e); }
+
   // Un solo nombre: la empresa y su primera operación nacen iguales.
   // El día que sume un segundo local o un CP, ahí los nombres se diferencian.
   const nomOp = nomEmp;
