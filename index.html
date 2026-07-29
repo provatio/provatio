@@ -1619,7 +1619,15 @@ const ROLES = {
 
 function getEmpresaId(){ return (currentUser && currentUser.empresaId) || null; }
 function getMiRol(){ return (currentUser && currentUser.rolEmpresa) || null; }
-function esDueno(){ return getMiRol() === 'dueno'; }
+function esDueno(){
+  // Es dueño si su ficha de miembro lo dice, O si la empresa lo tiene como duenoUid.
+  // (Antes solo miraba la ficha: si quedaba desincronizada — dueño en la empresa
+  //  pero 'encargado' en la ficha — no veía sus operaciones. Este era el bug.)
+  if(getMiRol() === 'dueno') return true;
+  if(currentUser && currentUser.uid && window._empresaDuenoUid
+     && window._empresaDuenoUid === currentUser.uid) return true;
+  return false;
+}
 function puedeGestionarUsuarios(){ return esDueno(); }
 function verDinero(){ return getMiRol() !== 'cocina'; }
 function verMargenCP(){ const r = getMiRol(); return r === 'dueno' || r === 'cp'; }
@@ -2457,7 +2465,14 @@ async function cargarUsuarioFirebase(firebaseUser){
     // Si el usuario pertenece a una empresa, cargar su ficha de miembro (rol y locales)
     try{
       const _ud = userDoc.exists ? userDoc.data() : null;
+      window._empresaDuenoUid = null;
       if(_ud && _ud.empresaId){
+        // Leer el duenoUid de la empresa: si esta persona es la dueña, la
+        // reconocemos como tal aunque su ficha de miembro esté desincronizada.
+        try{
+          const empDoc = await db.collection('empresas').doc(_ud.empresaId).get();
+          if(empDoc.exists) window._empresaDuenoUid = empDoc.data().duenoUid || null;
+        }catch(_){}
         const miem = await db.collection('empresas').doc(_ud.empresaId)
           .collection('miembros').doc(firebaseUser.uid).get();
         if(miem.exists){
@@ -2467,10 +2482,20 @@ async function cargarUsuarioFirebase(firebaseUser){
             await auth.signOut();
             return;
           }
+          // Si la empresa dice que es la dueña, el rol efectivo es 'dueno'
+          // (aunque la ficha diga otra cosa) — evita el bug de no ver operaciones.
+          const _esDuenaEmpresa = (window._empresaDuenoUid === firebaseUser.uid);
           window._miembroEmpresa = {
             empresaId: _ud.empresaId,
-            rolEmpresa: m.rol || 'encargado',
+            rolEmpresa: _esDuenaEmpresa ? 'dueno' : (m.rol || 'encargado'),
             operacionesAsignadas: m.operacionesAsignadas || [],
+          };
+        } else if(window._empresaDuenoUid === firebaseUser.uid){
+          // Es dueña pero no tiene ficha de miembro: igual la dejamos entrar como dueña
+          window._miembroEmpresa = {
+            empresaId: _ud.empresaId,
+            rolEmpresa: 'dueno',
+            operacionesAsignadas: [],
           };
         }
       }
