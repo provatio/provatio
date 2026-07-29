@@ -1936,13 +1936,17 @@ function getIngrediente(id){
   return null;
 }
 function getRecetas(){
+  // Si perdimos currentOpId pero hay una sola operación, apuntá a ella.
+  if(!currentOpId){
+    const _ops = Object.keys(demoData.operaciones||{});
+    if(_ops.length === 1) currentOpId = _ops[0];
+  }
   // Filtro normal por operación activa.
   const propias = demoData.recetas.filter(r=>r.opId===currentOpId);
   if(propias.length) return propias;
-  // Red de seguridad: si hay recetas en memoria pero ninguna matchea el opId
-  // actual (desfase por cómo se cargó la operación), se re-etiquetan al opId
-  // activo y se muestran. Al cargar una operación solo están SUS recetas en
-  // memoria, así que esto no mezcla datos de otra operación.
+  // Red de seguridad: si hay recetas en memoria pero ninguna matchea el opId,
+  // se re-etiquetan al opId activo y se muestran. Al cargar una operación solo
+  // están SUS recetas en memoria, así que esto no mezcla datos de otra.
   if(demoData.recetas.length && currentOpId){
     demoData.recetas.forEach(r=>{ r.opId = currentOpId; });
     return demoData.recetas.slice();
@@ -3611,8 +3615,19 @@ function navigate(vista, params={}){
         currentUser.empresaId = null;
         demoData.operaciones = {}; demoData.ingredientes = []; demoData.mermas = [];
         demoData.recetas = []; demoData.facturas = []; currentOpId = null;
+      } else {
+        // Para un cliente (dueño/encargado), NO borrar currentOpId si tiene una
+        // sola operación: mantenerlo apuntando a ella. Antes se ponía a null y
+        // getRecetas() dejaba de encontrar las recetas (contador 49, lista 0).
+        const _ops = Object.keys(demoData.operaciones||{});
+        if(_ops.length === 1){
+          currentOpId = _ops[0];
+        } else if(_ops.length === 0){
+          currentOpId = null;
+        }
+        // Si tiene varias, se respeta la que ya estaba activa.
       }
-      currentOpId=null; buildSidebar(currentUser?.rol||'admin'); renderDashboard();
+      buildSidebar(currentUser?.rol||'admin'); renderDashboard();
     },
     operacion: renderDashboardOperacion,
     resultado: renderResultado,
