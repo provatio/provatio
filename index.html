@@ -907,7 +907,15 @@ input:focus, select:focus, textarea:focus {
       </div>
     </div>
 
-    <button class="btn btn-primary" onclick="login()" style="margin-top:8px">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:#5A5A52;cursor:pointer;user-select:none">
+      <input type="checkbox" id="auth-recordar" style="width:16px;height:16px;cursor:pointer">
+      Mantener sesión iniciada en esta computadora
+    </label>
+    <div style="font-size:11px;color:#8A8A82;margin-top:4px;line-height:1.4">
+      No lo marques si es una computadora compartida (cocina, oficina).
+    </div>
+
+    <button class="btn btn-primary" onclick="login()" style="margin-top:12px">
       Ingresar a Provatio →
     </button>
 
@@ -2439,12 +2447,23 @@ function login(){
   const email = document.getElementById('auth-email').value.trim();
   const pass = document.getElementById('auth-pass').value;
   if(!email||!pass){ showAuthError('Completá email y contraseña'); return; }
-  
+
   const btn = document.querySelector('#auth-screen .btn-primary');
   btn.textContent = 'Ingresando...';
   btn.disabled = true;
 
-  auth.signInWithEmailAndPassword(email, pass)
+  // Elección del usuario: si tildó "mantener sesión", la sesión sobrevive al
+  // cerrar el navegador (LOCAL). Si NO la tildó (compu compartida), la sesión
+  // dura SOLO mientras la pestaña esté abierta (SESSION): al cerrar el
+  // navegador, la próxima vez pide mail y contraseña de nuevo.
+  const recordar = !!(document.getElementById('auth-recordar') && document.getElementById('auth-recordar').checked);
+  const _persist = recordar
+    ? firebase.auth.Auth.Persistence.LOCAL
+    : firebase.auth.Auth.Persistence.SESSION;
+
+  auth.setPersistence(_persist)
+    .catch(()=>{})  // si falla la config, seguimos con el login igual
+    .then(()=> auth.signInWithEmailAndPassword(email, pass))
     .then(result => {
       cargarUsuarioFirebase(result.user);
     })
