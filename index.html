@@ -4374,6 +4374,7 @@ function renderIngredientes(){
                 <th style="text-align:right">Cantidad</th>
                 <th style="text-align:right">Precio por unidad ($)</th>
                 <th style="text-align:right">Precio unitario</th>
+                <th style="text-align:center" title="Controlar el stock de este producto para detectar faltantes">Control stock</th>
                 <th>Acciones</th>
               </tr></thead>
               <tbody>
@@ -4383,6 +4384,12 @@ function renderIngredientes(){
                   <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
                   <td style="text-align:right"><input type="number" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',+this.value)"></td>
                   <td style="text-align:right"><span class="calc">$${fmt(Math.round(item.precio/(item.bulto||1)))}/${item.unidadMedida||'kg'}</span></td>
+                  <td style="text-align:center">
+                    <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px" title="Marcar para controlar el stock de este producto (detectar faltantes)">
+                      <input type="checkbox" ${item.controlaStock?'checked':''} onchange="updateIng('${item.id}','controlaStock',this.checked)" style="width:16px;height:16px;cursor:pointer">
+                      ${item.controlaStock?'📦':''}
+                    </label>
+                  </td>
                   <td style="display:flex;gap:6px">
                     <button class="btn btn-secondary btn-sm" data-ing-id="${item.id}" onclick="editarIng(this.dataset.ingId)">${ico('edit',13)} Editar</button>
                     <button class="btn btn-danger btn-sm" data-ing-id="${item.id}" onclick="delIng(this.dataset.ingId)">${ico('trash',13)} Eliminar</button>
@@ -4495,7 +4502,14 @@ function toggleTodosIngCat(abrir){
 
 function updateIng(id,field,val){
   const i = demoData.ingredientes.find(i=>i.id===id);
-  if(i){ i[field]=val; renderIngredientes(); showToast('Guardado','success'); }
+  if(i){
+    i[field]=val;
+    // Para el toggle de control de stock no re-renderizamos toda la lista
+    // (evita perder el foco/scroll); solo guardamos. Para precio sí conviene.
+    if(field!=='controlaStock') renderIngredientes();
+    guardarEnFirestore();
+    showToast(field==='controlaStock' ? (val?'📦 Control de stock activado':'Control de stock desactivado') : 'Guardado','success');
+  }
 }
 
 function editarIng(id){
