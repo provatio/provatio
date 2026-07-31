@@ -4381,6 +4381,7 @@ function renderIngredientes(){
                 <th style="text-align:right">Precio por unidad ($)</th>
                 <th style="text-align:right">Precio unitario</th>
                 <th style="text-align:center" title="Controlar el stock de este producto para detectar faltantes">Control stock</th>
+                <th style="text-align:right" title="Cantidad mínima que querés tener siempre — Provatio sugiere el pedido cuando bajás de acá">Stock mínimo</th>
                 <th>Acciones</th>
               </tr></thead>
               <tbody>
@@ -4395,6 +4396,14 @@ function renderIngredientes(){
                       <input type="checkbox" ${item.controlaStock?'checked':''} onchange="updateIng('${item.id}','controlaStock',this.checked)" style="width:16px;height:16px;cursor:pointer">
                       ${item.controlaStock?'📦':''}
                     </label>
+                  </td>
+                  <td style="text-align:right">
+                    ${item.controlaStock ? `
+                      <input type="number" min="0" step="0.1" value="${item.stockMinimo!=null?item.stockMinimo:''}" placeholder="—"
+                        style="width:80px;text-align:right" title="Stock mínimo de trabajo"
+                        onchange="updateIng('${item.id}','stockMinimo',this.value===''?null:+this.value)">
+                      <span style="font-size:11px;color:var(--gris-2)">${esc(item.unidadMedida||'kg')}</span>
+                    ` : '<span style="font-size:11px;color:var(--gris-3)">—</span>'}
                   </td>
                   <td style="display:flex;gap:6px">
                     <button class="btn btn-secondary btn-sm" data-ing-id="${item.id}" onclick="editarIng(this.dataset.ingId)">${ico('edit',13)} Editar</button>
@@ -4510,9 +4519,9 @@ function updateIng(id,field,val){
   const i = demoData.ingredientes.find(i=>i.id===id);
   if(i){
     i[field]=val;
-    // Para el toggle de control de stock no re-renderizamos toda la lista
-    // (evita perder el foco/scroll); solo guardamos. Para precio sí conviene.
-    if(field!=='controlaStock') renderIngredientes();
+    // controlaStock re-renderiza para mostrar/ocultar el campo de stock mínimo.
+    // stockMinimo NO re-renderiza (para no perder el foco mientras se escribe).
+    if(field!=='stockMinimo') renderIngredientes();
     guardarEnFirestore();
     showToast(field==='controlaStock' ? (val?'📦 Control de stock activado':'Control de stock desactivado') : 'Guardado','success');
   }
