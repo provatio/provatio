@@ -3398,6 +3398,7 @@ function buildSidebar(rol){
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
     ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
+    ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
@@ -3445,6 +3446,7 @@ function buildSidebar(rol){
     {section:'Compras y análisis'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
     {icon:'clipboard', label:'Control de stock', vista:'stock'},
+    {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
   ]);
@@ -3678,6 +3680,7 @@ function navigate(vista, params={}){
     rentabilidad: renderRentabilidad,
     compras: renderCompras,
     stock: renderStock,
+    desperdicio: renderDesperdicio,
     soon: renderSoon,
     importExport: renderImportExport,
     subproductos: renderSubproductos,
@@ -7007,6 +7010,200 @@ function setPlanPorciones(dia, servicio, porciones){
 function limpiarSemana(){ semanaData.plan={}; renderSemanal(); }
 
 // ── LISTA DE COMPRAS ──
+// ══════════════════════════════════════════════════════════════════════
+// DESPERDICIO DECLARADO (B1) — registro rápido de lo que se tira.
+// Se puede tirar un INGREDIENTE crudo (2 kg lechuga vencida) o un PLATO
+// terminado (1 milanesa quemada). El plato se descompone en sus ingredientes
+// (bruto) para explicar el desvío de stock, y se valoriza por su costo.
+// Cada registro se guarda a nivel ingrediente en op.desperdicios para el cruce.
+// ══════════════════════════════════════════════════════════════════════
+const MOTIVOS_DESPERDICIO = [
+  'Se quemó',
+  'Error de comanda',
+  'Vencido',
+  'Sobreproducción',
+  'Mal armado de plato',
+  'Devolución de salón',
+  'Otro',
+];
+
+function renderDesperdicio(){
+  const op = getOp();
+  const regs = (op && op.desperdiciosLog) ? op.desperdiciosLog.slice() : [];
+  regs.sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+
+  // Total del mes en curso
+  const mesActual = new Date().toISOString().slice(0,7);
+  let totalMes = 0;
+  const porMotivo = {};
+  regs.forEach(r=>{
+    if((r.fecha||'').slice(0,7)===mesActual){
+      totalMes += (+r.costo||0);
+      porMotivo[r.motivo] = (porMotivo[r.motivo]||0) + (+r.costo||0);
+    }
+  });
+  const motivosOrden = Object.entries(porMotivo).sort((a,b)=>b[1]-a[1]);
+
+  setContent('Desperdicio', `
+    <div class="alert alert-info" style="margin-bottom:16px">
+      ${ico('bulb',14)} Registrá acá lo que se tira: mercadería cruda vencida o platos que salieron mal.
+      Provatio lo valoriza y lo cruza con el control de stock — cuanto más registrás, más chico queda
+      el desvío sin explicación.
+    </div>
+
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+      <div class="card" style="flex:1;min-width:220px">
+        <div class="card-body">
+          <div class="metric-label">Desperdicio del mes</div>
+          <div class="metric-value" style="color:#B03A2E">$${fmt(Math.round(totalMes))}</div>
+          <div style="font-size:12px;color:var(--gris-2)">${fmtMesLargo(mesActual)}</div>
+        </div>
+      </div>
+      <div class="card" style="flex:2;min-width:280px">
+        <div class="card-body">
+          <div class="metric-label" style="margin-bottom:8px">Por motivo (este mes)</div>
+          ${motivosOrden.length ? motivosOrden.map(([m,v])=>`
+            <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0">
+              <span>${esc(m)}</span><strong>$${fmt(Math.round(v))}</strong>
+            </div>`).join('') : '<div style="font-size:13px;color:var(--gris-3)">Todavía no hay registros este mes.</div>'}
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">${ico('trash',14)} Registrar desperdicio</span>
+      </div>
+      <div class="card-body" style="border-top:1px solid var(--crema-2)">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="btn ${window._despTipo!=='receta'?'btn-primary':'btn-secondary'} btn-sm" onclick="window._despTipo='ingrediente';renderDesperdicio()">Ingrediente crudo</button>
+          <button class="btn ${window._despTipo==='receta'?'btn-primary':'btn-secondary'} btn-sm" onclick="window._despTipo='receta';renderDesperdicio()">Plato terminado</button>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:2;min-width:200px">
+            <label style="font-size:12px;color:var(--gris-2)">¿Qué se tiró?</label>
+            ${window._despTipo==='receta' ? `
+              <select id="desp-item" style="width:100%">
+                <option value="">— elegí el plato —</option>
+                ${demoData.recetas.filter(r=>r.opId===op.id).map(r=>`<option value="${esc(r.id)}">${esc(r.nombre)}</option>`).join('')}
+              </select>` : `
+              <select id="desp-item" style="width:100%">
+                <option value="">— elegí el ingrediente —</option>
+                ${demoData.ingredientes.map(i=>`<option value="${esc(i.id)}">${esc(i.nombre)}</option>`).join('')}
+              </select>`}
+          </div>
+          <div style="flex:1;min-width:110px">
+            <label style="font-size:12px;color:var(--gris-2)">Cantidad</label>
+            <input type="number" id="desp-cant" min="0" step="0.1" placeholder="0" style="width:100%">
+          </div>
+          <div style="flex:1.5;min-width:160px">
+            <label style="font-size:12px;color:var(--gris-2)">Motivo</label>
+            <select id="desp-motivo" style="width:100%">
+              ${MOTIVOS_DESPERDICIO.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="registrarDesperdicio()">Registrar</button>
+        </div>
+      </div>
+    </div>
+
+    ${regs.length ? `
+    <div class="card">
+      <div class="card-header"><span class="card-title">Registros recientes</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Qué se tiró</th><th style="text-align:right">Cantidad</th><th>Motivo</th><th style="text-align:right">Costo</th><th style="width:50px"></th></tr></thead>
+        <tbody>
+          ${regs.slice(0,20).map(r=>`<tr>
+            <td>${fmtFechaCorta(r.fecha)}</td>
+            <td><strong>${esc(r.nombre)}</strong> ${r.tipo==='receta'?'<span style="font-size:11px;color:var(--gris-2)">(plato)</span>':''}</td>
+            <td style="text-align:right">${fmt1(r.cantidad)} ${esc(r.unidad||'')}</td>
+            <td><span style="font-size:12px">${esc(r.motivo)}</span></td>
+            <td style="text-align:right">$${fmt(Math.round(r.costo||0))}</td>
+            <td><button class="btn btn-icon btn-sm" onclick="borrarDesperdicio('${escJs(r.id)}')" title="Borrar" style="color:#B03A2E">✕</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>` : ''}
+  `);
+}
+
+function fmtMesLargo(iso){
+  const [y,m] = (iso||'').split('-');
+  const meses = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  return m ? `${meses[+m]} ${y}` : iso;
+}
+
+async function registrarDesperdicio(){
+  const op = getOp();
+  if(!op){ showToast('No hay operación activa','error'); return; }
+  const tipo = window._despTipo==='receta' ? 'receta' : 'ingrediente';
+  const itemId = document.getElementById('desp-item').value;
+  const cant = +document.getElementById('desp-cant').value;
+  const motivo = document.getElementById('desp-motivo').value;
+  if(!itemId){ showToast('Elegí qué se tiró','error'); return; }
+  if(!cant || cant<=0){ showToast('Poné una cantidad','error'); return; }
+
+  const hoy = new Date().toISOString().slice(0,10);
+  const idReg = 'dsp_'+Date.now();
+  let nombre='', unidad='', costo=0;
+  const descompuesto = []; // {ingId, cantidadBruta}
+
+  if(tipo==='ingrediente'){
+    const ing = getIngrediente(itemId);
+    if(!ing){ showToast('Ingrediente no encontrado','error'); return; }
+    nombre = ing.nombre;
+    unidad = ing.unidadMedida||ing.unidad||'kg';
+    costo = cant * (ing.precio/(ing.bulto||1));
+    descompuesto.push({ ingId: itemId, cantidad: cant });
+  } else {
+    // Plato: descomponer en ingredientes BRUTOS (reusa calcIngrediente) × cantidad de platos
+    const rec = demoData.recetas.find(r=>r.id===itemId);
+    if(!rec){ showToast('Plato no encontrado','error'); return; }
+    nombre = rec.nombre;
+    unidad = 'plato'+(cant>1?'s':'');
+    const porciones = rec.porciones||1;
+    (rec.ingredientes||[]).forEach(ri=>{
+      const calc = calcIngrediente(ri.ingId, ri.tecnica, ri.neto, 1, ri.esCondimento, ri.unidad);
+      if(!calc || calc.error) return;
+      costo += (calc.costo_porcion||0) * cant / porciones;
+      if(!calc.esCondimento && calc.kg_total!=null){
+        // kg_total es el bruto por 1 porción; × platos tirados / porciones de la receta
+        descompuesto.push({ ingId: ri.ingId, cantidad: calc.kg_total * cant / porciones });
+      }
+    });
+  }
+
+  // Log visible (para el reporte) — guarda el registro tal como se cargó
+  if(!op.desperdiciosLog) op.desperdiciosLog = [];
+  op.desperdiciosLog.push({ id:idReg, fecha:hoy, tipo, itemId, nombre, cantidad:cant, unidad, motivo, costo });
+
+  // Desglose a nivel ingrediente (para cruzar con el desvío de stock)
+  if(!op.desperdicios) op.desperdicios = [];
+  descompuesto.forEach(d=>{
+    op.desperdicios.push({ regId:idReg, fecha:hoy, ingId:d.ingId, cantidad:d.cantidad, motivo });
+  });
+
+  const ok = await guardarEnFirestore();
+  if(ok){
+    showToast(`Registrado: ${nombre} ($${fmt(Math.round(costo))})`,'success');
+    document.getElementById('desp-cant').value='';
+    renderDesperdicio();
+  } else {
+    showToast('No se pudo guardar','error');
+  }
+}
+
+async function borrarDesperdicio(regId){
+  const op = getOp();
+  if(!op) return;
+  if(!confirm('¿Borrar este registro de desperdicio?')) return;
+  op.desperdiciosLog = (op.desperdiciosLog||[]).filter(r=>r.id!==regId);
+  op.desperdicios = (op.desperdicios||[]).filter(d=>d.regId!==regId);
+  await guardarEnFirestore();
+  showToast('Registro borrado','success');
+  renderDesperdicio();
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // CONTROL DE STOCK — Paso 2: conteo de los productos marcados como críticos.
 // El conteo se guarda con fecha. Sirve para: detectar faltantes (agujero negro),
