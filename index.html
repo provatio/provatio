@@ -3398,6 +3398,7 @@ function buildSidebar(rol){
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
     ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
+    ...(!isCP ? [{icon:'cart', label:'Pedido sugerido', vista:'pedido'}] : []),
     ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
@@ -3446,6 +3447,7 @@ function buildSidebar(rol){
     {section:'Compras y análisis'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
     {icon:'clipboard', label:'Control de stock', vista:'stock'},
+    {icon:'cart', label:'Pedido sugerido', vista:'pedido'},
     {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
@@ -3681,6 +3683,7 @@ function navigate(vista, params={}){
     compras: renderCompras,
     stock: renderStock,
     desperdicio: renderDesperdicio,
+    pedido: renderPedidoSugerido,
     soon: renderSoon,
     importExport: renderImportExport,
     subproductos: renderSubproductos,
@@ -7019,6 +7022,142 @@ function setPlanPorciones(dia, servicio, porciones){
 function limpiarSemana(){ semanaData.plan={}; renderSemanal(); }
 
 // ── LISTA DE COMPRAS ──
+// ══════════════════════════════════════════════════════════════════════
+// PEDIDO SUGERIDO (Etapa 2) — arma la lista de reposición COMPLETA.
+// - Producto crítico (con stock mínimo): pedido = mínimo − stock actual.
+// - Producto no crítico: sugerencia = consumo teórico según ventas del período.
+// - Resto (sin datos): queda en la lista con cantidad a completar por el encargado.
+// Todo agrupado por categoría, cantidades editables. Provatio sugiere, el humano decide.
+// ══════════════════════════════════════════════════════════════════════
+function renderPedidoSugerido(){
+  const op = getOp();
+  if(!op){ renderDashboardAdmin(); return; }
+
+  // Stock actual: última toma de inventario
+  const conteos = (op.conteosStock||[]).slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const ultimo = conteos[0] || null;
+
+  // Consumo teórico del último período (para no críticos). Si hay 2 conteos, uso ese rango;
+  // si no, uso el mes en curso como referencia.
+  let consumo = {};
+  if(conteos.length>=2){
+    consumo = _consumoTeoricoPeriodo(conteos[1].fecha, conteos[0].fecha);
+  } else {
+    const mes = new Date().toISOString().slice(0,7);
+    consumo = _consumoTeoricoPeriodo(mes+'-01', mes+'-31');
+  }
+
+  // Armar sugerencia por ingrediente
+  const items = demoData.ingredientes.map(i=>{
+    const unidad = i.unidadMedida||i.unidad||'kg';
+    const cat = i.cat || 'Sin categoría';
+    let sugerido = null, tipo = '', detalle = '';
+    if(i.controlaStock && i.stockMinimo!=null){
+      const actual = (ultimo && ultimo.datos && ultimo.datos[i.id]!=null) ? +ultimo.datos[i.id] : 0;
+      const falta = i.stockMinimo - actual;
+      sugerido = falta > 0 ? Math.round(falta*10)/10 : 0;
+      tipo = 'critico';
+      detalle = `tenés ${fmt1(actual)}, mínimo ${fmt1(i.stockMinimo)}`;
+    } else if(consumo[i.id] > 0){
+      sugerido = Math.round(consumo[i.id]*10)/10;
+      tipo = 'consumo';
+      detalle = 'según consumo de ventas';
+    } else {
+      sugerido = null; // a completar por el encargado
+      tipo = 'manual';
+      detalle = 'a definir';
+    }
+    return { id:i.id, nombre:i.nombre, cat, unidad, sugerido, tipo, detalle, precio:i.precio/(i.bulto||1) };
+  });
+
+  // Agrupar por categoría; dentro, primero los que tienen algo para pedir
+  const porCat = {};
+  items.forEach(it=>{ (porCat[it.cat] = porCat[it.cat]||[]).push(it); });
+  const cats = Object.keys(porCat).sort();
+
+  // ícono simple por categoría (heurística por nombre)
+  const iconoCat = (c)=>{
+    const l=(c||'').toLowerCase();
+    if(l.includes('carne')||l.includes('vacun')) return '🥩';
+    if(l.includes('cerdo')||l.includes('ave')||l.includes('pollo')||l.includes('granja')) return '🍗';
+    if(l.includes('pescad')||l.includes('marisc')) return '🐟';
+    if(l.includes('verdur')||l.includes('frut')) return '🥬';
+    if(l.includes('lácte')||l.includes('lacte')||l.includes('queso')||l.includes('fiambre')) return '🧀';
+    if(l.includes('almac')||l.includes('seco')) return '🥫';
+    if(l.includes('pan')||l.includes('panific')) return '🥖';
+    if(l.includes('papel')||l.includes('descart')||l.includes('limpiez')) return '🧻';
+    if(l.includes('bebid')) return '🥤';
+    return '📦';
+  };
+
+  setContent('Pedido sugerido', `
+    <div class="alert alert-info" style="margin-bottom:16px">
+      ${ico('bulb',14)} Provatio sugiere cuánto reponer: los <strong>productos críticos</strong> según tu stock
+      mínimo y lo que tenés, y el <strong>resto</strong> según lo que consumiste en ventas. Revisá y ajustá
+      las cantidades — vos tenés la última palabra. Está agrupado por categoría para derivar a cada proveedor.
+      ${!ultimo ? '<br><span style="font-size:12px;color:#B8540A">⚠ Todavía no hiciste una toma de inventario, así que los productos críticos asumen stock 0. Cargá el inventario en Control de stock para más precisión.</span>' : ''}
+    </div>
+
+    ${cats.map(cat=>{
+      const lista = porCat[cat].slice().sort((a,b)=>{
+        // los que tienen algo para pedir primero
+        const av = (a.sugerido&&a.sugerido>0)?0:1, bv=(b.sugerido&&b.sugerido>0)?0:1;
+        return av-bv || a.nombre.localeCompare(b.nombre);
+      });
+      return `
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-header">
+          <span class="card-title">${iconoCat(cat)} ${esc(cat)}</span>
+          <button class="btn btn-secondary btn-sm" onclick="_copiarCategoria('${escJs(cat)}')" title="Copiar este bloque para mandarlo al proveedor">📋 Copiar</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>Producto</th>
+            <th style="text-align:right">Pedir</th>
+            <th style="text-align:left;padding-left:12px">Por qué</th>
+          </tr></thead>
+          <tbody>
+            ${lista.map(it=>`<tr data-cat-row="${escJs(cat)}" data-nombre="${escJs(it.nombre)}" data-unidad="${escJs(it.unidad)}">
+              <td><strong>${esc(it.nombre)}</strong></td>
+              <td style="text-align:right;white-space:nowrap">
+                <input type="number" min="0" step="0.1" value="${it.sugerido!=null?it.sugerido:''}" placeholder="—"
+                  data-ped-cant="${escJs(it.id)}"
+                  style="width:85px;text-align:right;${it.sugerido>0?'border-color:#B8540A;font-weight:600':''}">
+                <span style="font-size:11px;color:var(--gris-2)">${esc(it.unidad)}</span>
+              </td>
+              <td style="text-align:left;padding-left:12px;font-size:12px;color:var(--gris-2)">
+                ${it.tipo==='critico'?'📦 ':''}${it.tipo==='consumo'?'📊 ':''}${esc(it.detalle)}
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
+    }).join('')}
+  `);
+}
+
+// Copiar un bloque de categoría al portapapeles (solo lo que tiene cantidad > 0)
+function _copiarCategoria(cat){
+  const filas = document.querySelectorAll(`[data-cat-row="${CSS.escape(cat)}"]`);
+  const lineas = [];
+  filas.forEach(tr=>{
+    const nombre = tr.getAttribute('data-nombre');
+    const unidad = tr.getAttribute('data-unidad');
+    const inp = tr.querySelector('[data-ped-cant]');
+    const val = inp && inp.value!=='' ? +inp.value : 0;
+    if(val>0) lineas.push(`${nombre}: ${val} ${unidad}`);
+  });
+  if(!lineas.length){ showToast('No hay nada para pedir en esta categoría','info'); return; }
+  const texto = `Pedido — ${cat}\n${lineas.join('\n')}`;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(texto).then(
+      ()=>showToast('📋 Copiado — pegalo en el chat del proveedor','success'),
+      ()=>showToast('No se pudo copiar','error'));
+  } else {
+    showToast('Tu navegador no permite copiar automático','error');
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // DESPERDICIO DECLARADO (B1) — registro rápido de lo que se tira.
 // Se puede tirar un INGREDIENTE crudo (2 kg lechuga vencida) o un PLATO
