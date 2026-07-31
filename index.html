@@ -7360,14 +7360,25 @@ function _htmlDesvioSalud(){
   const conteos = (op && op.conteosStock) ? op.conteosStock.slice() : [];
   conteos.sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
 
+  // Desperdicio declarado del período (o del mes en curso si no hay 2 conteos)
+  const logs = (op && op.desperdiciosLog) ? op.desperdiciosLog : [];
+
   if(!criticos.length || conteos.length < 2){
+    // Sin inventario suficiente: igual mostramos el desperdicio declarado del mes
+    const mesActual = new Date().toISOString().slice(0,7);
+    let declMes = 0;
+    logs.forEach(r=>{ if((r.fecha||'').slice(0,7)===mesActual) declMes += (+r.costo||0); });
     return `
     <div class="card" style="margin-bottom:20px">
-      <div class="card-header"><span class="card-title">🔍 Desvío de inventario</span></div>
+      <div class="card-header">
+        <span class="card-title">📉 Pérdida de mercadería</span>
+        <button class="btn btn-secondary btn-sm" onclick="navigate('desperdicio')">Ver desperdicio</button>
+      </div>
       <div style="padding:16px 18px;font-size:13px;color:var(--gris-2)">
+        ${declMes>0 ? `Desperdicio declarado este mes: <strong style="color:#B03A2E">$${fmt(Math.round(declMes))}</strong>.<br>` : ''}
         ${!criticos.length
-          ? 'Marcá tus productos críticos en <strong>Ingredientes</strong> y hacé <strong>tomas de inventario</strong> para detectar el desvío (la mercadería que se va sin explicación).'
-          : 'Cargá una <strong>segunda toma de inventario</strong> en <a href="#" onclick="navigate(\'stock\');return false" style="color:inherit;text-decoration:underline">Control de stock</a> para ver el desvío del período.'}
+          ? 'Marcá tus productos críticos en <strong>Ingredientes</strong> y hacé <strong>tomas de inventario</strong> para medir también el desvío sin explicación (posible robo o pérdida no declarada).'
+          : 'Cargá una <strong>segunda toma de inventario</strong> en <a href="#" onclick="navigate(\'stock\');return false" style="color:inherit;text-decoration:underline">Control de stock</a> para medir el desvío sin explicación del período.'}
       </div>
     </div>`;
   }
@@ -7378,7 +7389,8 @@ function _htmlDesvioSalud(){
   const compras = _comprasPeriodo(desde, hasta);
   const declarado = _desperdicioDeclaradoPeriodo(desde, hasta);
 
-  let totalValor = 0;
+  // Desvío SIN EXPLICAR (en $) — lo que no explican ventas ni desperdicio declarado
+  let valorSinExplicar = 0;
   const alertas = [];
   criticos.forEach(i=>{
     const ini = previo.datos && previo.datos[i.id]!=null ? +previo.datos[i.id] : null;
@@ -7388,35 +7400,73 @@ function _htmlDesvioSalud(){
     const sinExplicar = (ini + (compras[i.id]||0) - (consumo[i.id]||0)) - fin - (declarado[i.id]||0);
     if(sinExplicar > 0.05){
       const valor = Math.round(sinExplicar * precioXu);
-      totalValor += valor;
+      valorSinExplicar += valor;
       alertas.push({nombre:i.nombre, cant:sinExplicar, unidad:(i.unidadMedida||i.unidad||'kg'), valor});
     }
   });
   alertas.sort((a,b)=>b.valor-a.valor);
 
-  const hayDesvio = totalValor > 0;
+  // Desperdicio DECLARADO (en $) del período — de los logs
+  let valorDeclarado = 0;
+  const declPorMotivo = {};
+  logs.forEach(r=>{
+    const f = (r.fecha||'').slice(0,10);
+    if(f>=desde && f<=hasta){
+      valorDeclarado += (+r.costo||0);
+      declPorMotivo[r.motivo] = (declPorMotivo[r.motivo]||0) + (+r.costo||0);
+    }
+  });
+  const motivosOrden = Object.entries(declPorMotivo).sort((a,b)=>b[1]-a[1]);
+
+  const perdidaTotal = valorDeclarado + valorSinExplicar;
+  const hayMisterio = valorSinExplicar > 0;
+  const pctSinExplicar = perdidaTotal>0 ? Math.round(valorSinExplicar/perdidaTotal*100) : 0;
+
   return `
-    <div class="card" style="margin-bottom:20px;${hayDesvio?'border:1.5px solid #B03A2E':''}">
+    <div class="card" style="margin-bottom:20px;${hayMisterio?'border:1.5px solid #B03A2E':''}">
       <div class="card-header">
-        <span class="card-title">${hayDesvio?'🚨':'✓'} Desvío de inventario — ${fmtFechaCorta(desde)} a ${fmtFechaCorta(hasta)}</span>
+        <span class="card-title">📉 Pérdida de mercadería — ${fmtFechaCorta(desde)} a ${fmtFechaCorta(hasta)}</span>
         <button class="btn btn-secondary btn-sm" onclick="navigate('stock')">Ver detalle</button>
       </div>
-      ${hayDesvio ? `
       <div class="card-body" style="border-top:1px solid var(--crema-2)">
-        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
-          <span style="font-size:13px;color:var(--gris-2)">Mercadería perdida sin explicación:</span>
-          <span style="font-size:26px;font-weight:800;color:#B03A2E">$${fmt(totalValor)}</span>
+
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px">
+          <div style="flex:1;min-width:200px;background:#FDF9F0;border-radius:10px;padding:14px">
+            <div style="font-size:12px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.04em">Desperdicio declarado</div>
+            <div style="font-size:22px;font-weight:800;color:#B8540A">$${fmt(Math.round(valorDeclarado))}</div>
+            <div style="font-size:11px;color:var(--gris-2)">Lo que el equipo registró — se sabe qué pasó</div>
+          </div>
+          <div style="flex:1;min-width:200px;background:${hayMisterio?'#FDF2F0':'#F0F7F0'};border-radius:10px;padding:14px">
+            <div style="font-size:12px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.04em">Desvío sin explicar</div>
+            <div style="font-size:22px;font-weight:800;color:${hayMisterio?'#B03A2E':'#2E7D32'}">$${fmt(Math.round(valorSinExplicar))}</div>
+            <div style="font-size:11px;color:var(--gris-2)">${hayMisterio?'Nadie lo explica — posible robo o pérdida':'Todo el consumo está justificado ✓'}</div>
+          </div>
+          <div style="flex:1;min-width:200px;background:var(--crema);border-radius:10px;padding:14px">
+            <div style="font-size:12px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.04em">Pérdida total</div>
+            <div style="font-size:22px;font-weight:800;color:#1a1a1a">$${fmt(Math.round(perdidaTotal))}</div>
+            <div style="font-size:11px;color:var(--gris-2)">${pctSinExplicar}% sin explicación</div>
+          </div>
         </div>
-        <div style="font-size:13px;color:var(--gris-1);line-height:1.7">
+
+        ${hayMisterio ? `
+        <div style="font-size:13px;color:var(--gris-1);line-height:1.7;margin-bottom:10px">
+          <strong>Mercadería que nadie explica:</strong><br>
           ${alertas.slice(0,4).map(a=>`• <strong>${esc(a.nombre)}</strong>: faltan ${fmt1(a.cant)} ${esc(a.unidad)} <span style="color:var(--gris-2)">($${fmt(a.valor)})</span>`).join('<br>')}
         </div>
-        <div style="margin-top:12px;padding:10px 12px;background:#FDF2F0;border-radius:8px;font-size:12px;color:#8A2E22">
-          Este monto no lo explican las ventas ni el desperdicio declarado. Puede ser desperdicio no registrado, mal porcionado o pérdida.
-        </div>
-      </div>` : `
-      <div class="card-body" style="border-top:1px solid var(--crema-2);font-size:13px;color:#2E7D32">
-        ✓ Sin desvíos: el consumo de tus productos críticos coincide con las ventas. Buen control.
-      </div>`}
+        <div style="padding:10px 12px;background:#FDF2F0;border-radius:8px;font-size:12px;color:#8A2E22">
+          Este monto no lo explican ni las ventas ni el desperdicio declarado. Para el informe gerencial:
+          revisar control de stock, porcionado y — si persiste — posible sustracción.
+        </div>` : `
+        <div style="padding:10px 12px;background:#F0F7F0;border-radius:8px;font-size:12px;color:#2E7D32">
+          ✓ Sin desvío inexplicado: toda la merma está justificada por ventas y desperdicio declarado. Buen control.
+        </div>`}
+
+        ${motivosOrden.length ? `
+        <div style="margin-top:14px;font-size:12px;color:var(--gris-2)">
+          <strong>Desperdicio declarado por motivo:</strong>
+          ${motivosOrden.map(([m,v])=>`<span style="display:inline-block;margin:2px 8px 2px 0">${esc(m)}: <strong>$${fmt(Math.round(v))}</strong></span>`).join('')}
+        </div>` : ''}
+      </div>
     </div>`;
 }
 
