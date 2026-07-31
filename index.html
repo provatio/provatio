@@ -7154,6 +7154,75 @@ function fmtFechaCorta(iso){
   return isNaN(d) ? iso : d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
 }
 
+// Resumen del desvío de inventario para la pantalla de Salud del negocio.
+// Muestra el total en $ del desvío sin explicar y las alertas más grandes,
+// con un acceso a la pantalla completa de Control de stock.
+function _htmlDesvioSalud(){
+  const criticos = demoData.ingredientes.filter(i=>i.controlaStock);
+  const op = getOp();
+  const conteos = (op && op.conteosStock) ? op.conteosStock.slice() : [];
+  conteos.sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+
+  if(!criticos.length || conteos.length < 2){
+    return `
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header"><span class="card-title">🔍 Desvío de inventario</span></div>
+      <div style="padding:16px 18px;font-size:13px;color:var(--gris-2)">
+        ${!criticos.length
+          ? 'Marcá tus productos críticos en <strong>Ingredientes</strong> y hacé <strong>tomas de inventario</strong> para detectar el desvío (la mercadería que se va sin explicación).'
+          : 'Cargá una <strong>segunda toma de inventario</strong> en <a href="#" onclick="navigate(\'stock\');return false" style="color:inherit;text-decoration:underline">Control de stock</a> para ver el desvío del período.'}
+      </div>
+    </div>`;
+  }
+
+  const actual = conteos[0], previo = conteos[1];
+  const desde = previo.fecha, hasta = actual.fecha;
+  const consumo = _consumoTeoricoPeriodo(desde, hasta);
+  const compras = _comprasPeriodo(desde, hasta);
+  const declarado = _desperdicioDeclaradoPeriodo(desde, hasta);
+
+  let totalValor = 0;
+  const alertas = [];
+  criticos.forEach(i=>{
+    const ini = previo.datos && previo.datos[i.id]!=null ? +previo.datos[i.id] : null;
+    const fin = actual.datos && actual.datos[i.id]!=null ? +actual.datos[i.id] : null;
+    if(ini==null || fin==null) return;
+    const precioXu = i.precio/(i.bulto||1);
+    const sinExplicar = (ini + (compras[i.id]||0) - (consumo[i.id]||0)) - fin - (declarado[i.id]||0);
+    if(sinExplicar > 0.05){
+      const valor = Math.round(sinExplicar * precioXu);
+      totalValor += valor;
+      alertas.push({nombre:i.nombre, cant:sinExplicar, unidad:(i.unidadMedida||i.unidad||'kg'), valor});
+    }
+  });
+  alertas.sort((a,b)=>b.valor-a.valor);
+
+  const hayDesvio = totalValor > 0;
+  return `
+    <div class="card" style="margin-bottom:20px;${hayDesvio?'border:1.5px solid #B03A2E':''}">
+      <div class="card-header">
+        <span class="card-title">${hayDesvio?'🚨':'✓'} Desvío de inventario — ${fmtFechaCorta(desde)} a ${fmtFechaCorta(hasta)}</span>
+        <button class="btn btn-secondary btn-sm" onclick="navigate('stock')">Ver detalle</button>
+      </div>
+      ${hayDesvio ? `
+      <div class="card-body" style="border-top:1px solid var(--crema-2)">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+          <span style="font-size:13px;color:var(--gris-2)">Mercadería perdida sin explicación:</span>
+          <span style="font-size:26px;font-weight:800;color:#B03A2E">$${fmt(totalValor)}</span>
+        </div>
+        <div style="font-size:13px;color:var(--gris-1);line-height:1.7">
+          ${alertas.slice(0,4).map(a=>`• <strong>${esc(a.nombre)}</strong>: faltan ${fmt1(a.cant)} ${esc(a.unidad)} <span style="color:var(--gris-2)">($${fmt(a.valor)})</span>`).join('<br>')}
+        </div>
+        <div style="margin-top:12px;padding:10px 12px;background:#FDF2F0;border-radius:8px;font-size:12px;color:#8A2E22">
+          Este monto no lo explican las ventas ni el desperdicio declarado. Puede ser desperdicio no registrado, mal porcionado o pérdida.
+        </div>
+      </div>` : `
+      <div class="card-body" style="border-top:1px solid var(--crema-2);font-size:13px;color:#2E7D32">
+        ✓ Sin desvíos: el consumo de tus productos críticos coincide con las ventas. Buen control.
+      </div>`}
+    </div>`;
+}
+
 // ── CÁLCULO DEL FALTANTE (el "agujero negro") ────────────────────────────
 // Entre dos conteos consecutivos:
 //   Stock inicial + Compras del período − Consumo teórico (bruto) − Stock final
@@ -7444,6 +7513,8 @@ function renderResultado(){
     <div style="background:var(--crema);border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--gris-1)">
       ${ico('bulb',14)} Este módulo mira el negocio completo: tus recetas pueden estar sanas una por una y aun así la operación perder plata si las ventas no cubren los gastos fijos. Acá está esa verdad.
     </div>
+
+    ${_htmlDesvioSalud()}
 
     <div class="card">
       <div class="card-header">
