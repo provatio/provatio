@@ -7047,15 +7047,15 @@ function renderStock(){
 
     <div class="card" style="margin-bottom:16px">
       <div class="card-header">
-        <span class="card-title">${ico('clipboard',14)} Conteo de hoy — ${fmtFechaCorta(hoy)}</span>
+        <span class="card-title">${ico('clipboard',14)} Toma de inventario — ${fmtFechaCorta(hoy)}</span>
         <span style="font-size:12px;color:var(--gris-2)">${criticos.length} producto${criticos.length!==1?'s':''} crítico${criticos.length!==1?'s':''}</span>
       </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th>Producto</th>
-            <th style="text-align:right">Conteo anterior</th>
-            <th style="text-align:right">Tengo ahora</th>
+            <th style="text-align:right">Stock anterior</th>
+            <th style="text-align:right">Stock real (hoy)</th>
             <th style="text-align:right">Valor en stock</th>
           </tr></thead>
           <tbody>
@@ -7080,15 +7080,15 @@ function renderStock(){
         </table>
       </div>
       <div style="padding:14px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--crema-2)">
-        <button class="btn btn-primary" onclick="guardarConteoStock()">Guardar conteo de hoy</button>
+        <button class="btn btn-primary" onclick="guardarConteoStock()">Guardar inventario de hoy</button>
       </div>
     </div>
 
     ${conteos.length ? `
     <div class="card">
-      <div class="card-header"><span class="card-title">Conteos anteriores</span></div>
+      <div class="card-header"><span class="card-title">Tomas de inventario anteriores</span></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Fecha</th><th style="text-align:right">Productos contados</th><th style="text-align:right">Valor total en stock</th></tr></thead>
+        <thead><tr><th>Fecha</th><th style="text-align:right">Productos inventariados</th><th style="text-align:right">Valor total en stock</th></tr></thead>
         <tbody>
           ${conteos.slice(0,8).map(c=>{
             let valor=0, n=0;
@@ -7101,8 +7101,8 @@ function renderStock(){
 
     ${conteos.length >= 2 ? _htmlFaltantes(conteos, criticos) : (conteos.length===1 ? `
     <div class="alert alert-info" style="margin-top:16px">
-      ${ico('bulb',14)} Cuando cargues un <strong>segundo conteo</strong>, Provatio va a comparar
-      contra este y las compras del período para mostrarte los faltantes sin explicación.
+      ${ico('bulb',14)} Cuando cargues una <strong>segunda toma de inventario</strong>, Provatio va a comparar
+      contra esta y las compras del período para mostrarte el desvío.
     </div>` : '')}
   `);
 }
@@ -7141,10 +7141,10 @@ async function guardarConteoStock(){
   window._stockDraft = {};
   const ok = await guardarEnFirestore();
   if(ok){
-    showToast('Conteo guardado ✓','success');
+    showToast('Inventario guardado ✓','success');
     renderStock();
   } else {
-    showToast('No se pudo guardar el conteo','error');
+    showToast('No se pudo guardar el inventario','error');
   }
 }
 
@@ -7212,27 +7212,27 @@ function _htmlFaltantes(conteosOrdenados, criticos){
   return `
     <div class="card" style="margin-top:16px;${hayAlerta?'border:1.5px solid #B03A2E':''}">
       <div class="card-header">
-        <span class="card-title">${hayAlerta?'🚨':'🔍'} Faltante sin explicación — ${fmtFechaCorta(desde)} a ${fmtFechaCorta(hasta)}</span>
+        <span class="card-title">${hayAlerta?'🚨':'🔍'} Desvío de inventario — ${fmtFechaCorta(desde)} a ${fmtFechaCorta(hasta)}</span>
       </div>
       <div style="padding:10px 14px;font-size:12px;color:var(--gris-2);border-bottom:1px solid var(--crema-2)">
-        Stock inicial + compras del período − consumo teórico (peso bruto, según ventas) − stock final = lo que falta.
+        Stock inicial + compras del período − consumo teórico (peso bruto, según ventas) − stock final = desvío.
         Si el desperdicio declarado no lo explica, aparece acá.
       </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th>Producto</th>
-            <th style="text-align:right">Tenías</th>
-            <th style="text-align:right">Compraste</th>
-            <th style="text-align:right">Se usó (bruto)</th>
-            <th style="text-align:right">Quedó</th>
-            <th style="text-align:right">Sin explicar</th>
+            <th style="text-align:right">Stock inicial</th>
+            <th style="text-align:right">Compras</th>
+            <th style="text-align:right">Consumo teórico</th>
+            <th style="text-align:right">Stock final</th>
+            <th style="text-align:right">Desvío</th>
           </tr></thead>
           <tbody>${filas}</tbody>
         </table>
       </div>
       ${hayAlerta ? `<div style="padding:12px 14px;background:#FDF2F0;font-size:13px;color:#8A2E22;border-top:1px solid #F0D5D0">
-        ⚠ Hay faltantes que las ventas y el desperdicio declarado no explican. Puede ser
+        ⚠ Hay un desvío que las ventas y el desperdicio declarado no explican. Puede ser
         desperdicio no registrado, mal porcionado o pérdida. Revisá con tu equipo.
       </div>` : ''}
     </div>`;
