@@ -3397,6 +3397,7 @@ function buildSidebar(rol){
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
+    ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
@@ -3443,6 +3444,7 @@ function buildSidebar(rol){
     {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
     {section:'Compras y análisis'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
+    {icon:'clipboard', label:'Control de stock', vista:'stock'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
   ]);
@@ -3675,6 +3677,7 @@ function navigate(vista, params={}){
     dashboardCadena: renderDashboardCadena,
     rentabilidad: renderRentabilidad,
     compras: renderCompras,
+    stock: renderStock,
     soon: renderSoon,
     importExport: renderImportExport,
     subproductos: renderSubproductos,
@@ -7004,6 +7007,300 @@ function setPlanPorciones(dia, servicio, porciones){
 function limpiarSemana(){ semanaData.plan={}; renderSemanal(); }
 
 // ── LISTA DE COMPRAS ──
+// ══════════════════════════════════════════════════════════════════════
+// CONTROL DE STOCK — Paso 2: conteo de los productos marcados como críticos.
+// El conteo se guarda con fecha. Sirve para: detectar faltantes (agujero negro),
+// y a futuro armar el pedido al CP. Cada operación cuenta en SU unidad.
+// ══════════════════════════════════════════════════════════════════════
+function renderStock(){
+  // Solo los ingredientes marcados con "controlar stock"
+  const criticos = demoData.ingredientes.filter(i=>i.controlaStock);
+
+  // Historial de conteos de la operación (el más reciente arriba)
+  const op = getOp();
+  const conteos = (op && op.conteosStock) ? op.conteosStock.slice() : [];
+  conteos.sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const ultimo = conteos[0] || null;
+
+  if(!criticos.length){
+    setContent('Control de stock', `
+      <div class="alert alert-info" style="margin-bottom:16px">
+        ${ico('bulb',14)} Todavía no marcaste ningún producto para controlar su stock.
+      </div>
+      <div class="card"><div style="padding:24px;text-align:center;color:var(--gris-2)">
+        Andá a <strong>Mis ingredientes</strong> y tildá la casilla <strong>"Control stock"</strong> 📦
+        en los productos que quieras controlar (las carnes caras, el pescado, el alcohol…).
+        Después volvé acá para cargar cuánto tenés.
+      </div></div>
+    `);
+    return;
+  }
+
+  const hoy = new Date().toISOString().slice(0,10);
+
+  setContent('Control de stock', `
+    <div class="alert alert-info" style="margin-bottom:16px">
+      ${ico('bulb',14)} Contá cuánto tenés hoy de cada producto crítico. Provatio compara
+      contra el conteo anterior y las compras para detectar faltantes sin explicación.
+      ${ultimo ? `<br><span style="font-size:12px;color:var(--gris-2)">Último conteo: <strong>${fmtFechaCorta(ultimo.fecha)}</strong></span>` : ''}
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">${ico('clipboard',14)} Conteo de hoy — ${fmtFechaCorta(hoy)}</span>
+        <span style="font-size:12px;color:var(--gris-2)">${criticos.length} producto${criticos.length!==1?'s':''} crítico${criticos.length!==1?'s':''}</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Producto</th>
+            <th style="text-align:right">Conteo anterior</th>
+            <th style="text-align:right">Tengo ahora</th>
+            <th style="text-align:right">Valor en stock</th>
+          </tr></thead>
+          <tbody>
+            ${criticos.map(i=>{
+              const unidad = i.unidadMedida||i.unidad||'kg';
+              const precioXu = i.precio/(i.bulto||1);
+              const anterior = ultimo && ultimo.datos && ultimo.datos[i.id]!=null ? ultimo.datos[i.id] : null;
+              return `<tr>
+                <td><strong>${esc(i.nombre)}</strong> <span style="font-size:11px;color:var(--gris-2)">(${esc(unidad)})</span></td>
+                <td style="text-align:right;color:var(--gris-2)">${anterior!=null ? anterior+' '+esc(unidad) : '—'}</td>
+                <td style="text-align:right">
+                  <input type="number" min="0" step="0.1" id="stk-${i.id}" placeholder="0"
+                    value="${window._stockDraft && window._stockDraft[i.id]!=null ? window._stockDraft[i.id] : ''}"
+                    style="width:100px;text-align:right"
+                    oninput="_stockDraftSet('${i.id}',this.value)">
+                  <span style="font-size:11px;color:var(--gris-2)">${esc(unidad)}</span>
+                </td>
+                <td style="text-align:right"><span class="calc" id="stkval-${i.id}">$${fmt(Math.round((window._stockDraft&&+window._stockDraft[i.id]||0)*precioXu))}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:14px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--crema-2)">
+        <button class="btn btn-primary" onclick="guardarConteoStock()">Guardar conteo de hoy</button>
+      </div>
+    </div>
+
+    ${conteos.length ? `
+    <div class="card">
+      <div class="card-header"><span class="card-title">Conteos anteriores</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th style="text-align:right">Productos contados</th><th style="text-align:right">Valor total en stock</th></tr></thead>
+        <tbody>
+          ${conteos.slice(0,8).map(c=>{
+            let valor=0, n=0;
+            criticos.forEach(i=>{ if(c.datos && c.datos[i.id]!=null){ valor += (+c.datos[i.id])*(i.precio/(i.bulto||1)); n++; } });
+            return `<tr><td>${fmtFechaCorta(c.fecha)}</td><td style="text-align:right">${n}</td><td style="text-align:right">$${fmt(Math.round(valor))}</td></tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>
+    </div>` : ''}
+
+    ${conteos.length >= 2 ? _htmlFaltantes(conteos, criticos) : (conteos.length===1 ? `
+    <div class="alert alert-info" style="margin-top:16px">
+      ${ico('bulb',14)} Cuando cargues un <strong>segundo conteo</strong>, Provatio va a comparar
+      contra este y las compras del período para mostrarte los faltantes sin explicación.
+    </div>` : '')}
+  `);
+}
+
+// Borrador en memoria mientras el usuario carga (para no perder si navega sin querer)
+function _stockDraftSet(ingId, val){
+  if(!window._stockDraft) window._stockDraft = {};
+  window._stockDraft[ingId] = val;
+  const ing = demoData.ingredientes.find(x=>x.id===ingId);
+  if(ing){
+    const precioXu = ing.precio/(ing.bulto||1);
+    const el = document.getElementById('stkval-'+ingId);
+    if(el) el.textContent = '$'+fmt(Math.round((+val||0)*precioXu));
+  }
+}
+
+async function guardarConteoStock(){
+  const criticos = demoData.ingredientes.filter(i=>i.controlaStock);
+  const datos = {};
+  let algo = false;
+  criticos.forEach(i=>{
+    const el = document.getElementById('stk-'+i.id);
+    if(el && el.value!=='' && !isNaN(+el.value)){ datos[i.id] = +el.value; algo = true; }
+  });
+  if(!algo){ showToast('Cargá al menos un producto antes de guardar','error'); return; }
+
+  const op = getOp();
+  if(!op){ showToast('No hay operación activa','error'); return; }
+  if(!op.conteosStock) op.conteosStock = [];
+
+  const hoy = new Date().toISOString().slice(0,10);
+  // Si ya hay un conteo de hoy, lo reemplaza (no duplica el día)
+  op.conteosStock = op.conteosStock.filter(c=>c.fecha!==hoy);
+  op.conteosStock.push({ fecha: hoy, datos, guardadoEn: Date.now() });
+
+  window._stockDraft = {};
+  const ok = await guardarEnFirestore();
+  if(ok){
+    showToast('Conteo guardado ✓','success');
+    renderStock();
+  } else {
+    showToast('No se pudo guardar el conteo','error');
+  }
+}
+
+function fmtFechaCorta(iso){
+  if(!iso) return '—';
+  const d = new Date(iso+'T12:00:00');
+  return isNaN(d) ? iso : d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+
+// ── CÁLCULO DEL FALTANTE (el "agujero negro") ────────────────────────────
+// Entre dos conteos consecutivos:
+//   Stock inicial + Compras del período − Consumo teórico (bruto) − Stock final
+//   = FALTANTE INEXPLICADO
+// El consumo teórico usa el peso BRUTO (lo que salió de la heladera), reusando
+// calcIngrediente. Las compras salen de las facturas del período.
+function _htmlFaltantes(conteosOrdenados, criticos){
+  // conteosOrdenados viene del más reciente al más viejo
+  const actual = conteosOrdenados[0];
+  const previo = conteosOrdenados[1];
+  const desde = previo.fecha, hasta = actual.fecha;
+
+  // Consumo teórico por ingrediente (bruto) según ventas del período
+  const consumo = _consumoTeoricoPeriodo(desde, hasta);   // {ingId: kg_bruto}
+  // Compras por ingrediente en el período (de facturas)
+  const compras = _comprasPeriodo(desde, hasta);          // {ingId: cantidad}
+  // Desperdicio declarado del período (B1) — si existe
+  const declarado = _desperdicioDeclaradoPeriodo(desde, hasta); // {ingId: cantidad}
+
+  let hayAlerta = false;
+  const filas = criticos.map(i=>{
+    const unidad = i.unidadMedida||i.unidad||'kg';
+    const precioXu = i.precio/(i.bulto||1);
+    const ini = previo.datos && previo.datos[i.id]!=null ? +previo.datos[i.id] : null;
+    const fin = actual.datos && actual.datos[i.id]!=null ? +actual.datos[i.id] : null;
+    if(ini==null || fin==null){
+      return `<tr><td><strong>${esc(i.nombre)}</strong></td>
+        <td colspan="5" style="color:var(--gris-3);font-size:12px">Falta contar en uno de los dos períodos</td></tr>`;
+    }
+    const comp = compras[i.id] || 0;
+    const cons = consumo[i.id] || 0;
+    const decl = declarado[i.id] || 0;
+    // Faltante = (inicial + compras − consumo) − final
+    const deberiaQuedar = ini + comp - cons;
+    const faltante = deberiaQuedar - fin;
+    const sinExplicar = faltante - decl;
+    const valorSin = Math.round(sinExplicar * precioXu);
+    // Umbral: consideramos "alerta" si el sin-explicar supera ~3% de lo movido
+    const movido = comp + ini;
+    const esAlerta = sinExplicar > 0 && (movido>0 ? (sinExplicar/movido) > 0.03 : sinExplicar>0);
+    if(esAlerta) hayAlerta = true;
+    const color = esAlerta ? '#B03A2E' : (sinExplicar>0 ? '#B8540A' : 'var(--verde)');
+    return `<tr>
+      <td><strong>${esc(i.nombre)}</strong></td>
+      <td style="text-align:right">${fmt1(ini)} ${esc(unidad)}</td>
+      <td style="text-align:right;color:#2E7D32">+${fmt1(comp)}</td>
+      <td style="text-align:right;color:#5A5A52">−${fmt1(cons)}</td>
+      <td style="text-align:right">${fmt1(fin)} ${esc(unidad)}</td>
+      <td style="text-align:right;font-weight:700;color:${color}">
+        ${sinExplicar>0.05 ? '−'+fmt1(sinExplicar)+' '+esc(unidad) : '✓ OK'}
+        ${sinExplicar>0.05 && valorSin>0 ? `<br><span style="font-size:11px;font-weight:400">$${fmt(valorSin)}</span>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="card" style="margin-top:16px;${hayAlerta?'border:1.5px solid #B03A2E':''}">
+      <div class="card-header">
+        <span class="card-title">${hayAlerta?'🚨':'🔍'} Faltante sin explicación — ${fmtFechaCorta(desde)} a ${fmtFechaCorta(hasta)}</span>
+      </div>
+      <div style="padding:10px 14px;font-size:12px;color:var(--gris-2);border-bottom:1px solid var(--crema-2)">
+        Stock inicial + compras del período − consumo teórico (peso bruto, según ventas) − stock final = lo que falta.
+        Si el desperdicio declarado no lo explica, aparece acá.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Producto</th>
+            <th style="text-align:right">Tenías</th>
+            <th style="text-align:right">Compraste</th>
+            <th style="text-align:right">Se usó (bruto)</th>
+            <th style="text-align:right">Quedó</th>
+            <th style="text-align:right">Sin explicar</th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+      ${hayAlerta ? `<div style="padding:12px 14px;background:#FDF2F0;font-size:13px;color:#8A2E22;border-top:1px solid #F0D5D0">
+        ⚠ Hay faltantes que las ventas y el desperdicio declarado no explican. Puede ser
+        desperdicio no registrado, mal porcionado o pérdida. Revisá con tu equipo.
+      </div>` : ''}
+    </div>`;
+}
+
+// Consumo teórico (peso BRUTO en la unidad del ingrediente) en el período,
+// según las ventas por mes cruzadas con las recetas.
+function _consumoTeoricoPeriodo(desde, hasta){
+  const op = getOp();
+  const out = {};
+  const ventasPorMes = (op && op.ventasPorMes) || {};
+  // Meses que caen dentro del rango [desde, hasta] (formato mes: 'YYYY-MM')
+  const mesDesde = desde.slice(0,7), mesHasta = hasta.slice(0,7);
+  Object.keys(ventasPorMes).forEach(mes=>{
+    if(mes < mesDesde || mes > mesHasta) return;
+    const ventas = ventasPorMes[mes] || {};
+    Object.keys(ventas).forEach(recId=>{
+      const unidades = +ventas[recId] || 0;
+      if(!unidades) return;
+      const rec = demoData.recetas.find(r=>r.id===recId.replace('_dlv',''));
+      if(!rec || !rec.ingredientes) return;
+      const porcionesRec = rec.porciones || 1;
+      rec.ingredientes.forEach(ri=>{
+        const calc = calcIngrediente(ri.ingId, ri.tecnica, ri.neto, 1, ri.esCondimento, ri.unidad);
+        if(!calc || calc.error || calc.esCondimento) return;
+        // bruto por porción, en la unidad del ingrediente
+        const ing = getIngrediente(ri.ingId);
+        if(!ing) return;
+        // kg_total de calc es para 1 porción; multiplicamos por unidades vendidas
+        const brutoUnidadIng = (calc.kg_total!=null ? calc.kg_total : 0); // en kg (o unidades si aplica)
+        out[ri.ingId] = (out[ri.ingId]||0) + brutoUnidadIng * unidades / porcionesRec;
+      });
+    });
+  });
+  return out;
+}
+
+// Compras por ingrediente (cantidad en su unidad) en el período, desde facturas.
+function _comprasPeriodo(desde, hasta){
+  const out = {};
+  (demoData.facturas||[]).forEach(f=>{
+    const fecha = (f.fecha||'').slice(0,10);
+    if(!fecha || fecha < desde || fecha > hasta) return;
+    (f.items||[]).forEach(it=>{
+      if(it.matchId && +it.cantidad>0){
+        out[it.matchId] = (out[it.matchId]||0) + (+it.cantidad);
+      }
+    });
+  });
+  return out;
+}
+
+// Desperdicio declarado (B1) por ingrediente en el período. B1 aún no existe;
+// devolvemos vacío por ahora (el cruce quedará listo para cuando se construya).
+function _desperdicioDeclaradoPeriodo(desde, hasta){
+  const op = getOp();
+  const out = {};
+  const regs = (op && op.desperdicios) || [];
+  regs.forEach(d=>{
+    const fecha = (d.fecha||'').slice(0,10);
+    if(!fecha || fecha < desde || fecha > hasta) return;
+    if(d.ingId && +d.cantidad>0) out[d.ingId] = (out[d.ingId]||0) + (+d.cantidad);
+  });
+  return out;
+}
+
+function fmt1(n){ return (Math.round((+n||0)*10)/10).toLocaleString('es-AR'); }
+
 function renderCompras(){
   // Consolidar desde plan semanal
   const consolidado = {};
