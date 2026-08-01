@@ -1687,7 +1687,7 @@ function getIngredientesConCP(){
   if(!opActiva || !opActiva.grupoId) return propios;
   
   const cp = demoData.operaciones[opActiva.grupoId];
-  if(!cp || cp.tipo!=='Centro de Producción') return propios;
+  if(!cp || !esCabeceraOp(cp)) return propios;
   
   const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
   
@@ -6238,8 +6238,9 @@ function imprimirPresupuesto(){ window.print(); }
 // Obtener la cabecera del grupo (CP formal, o casa madre si no hay CP)
 function getCentroProduccion(){
   const ops = Object.values(demoData.operaciones||{});
+  // Priorizar el CP formal; si no hay, tomar la casa madre (proveeAlGrupo).
   return ops.find(op => op.tipo==='Centro de Producción' || op.tipo==='centroProduccion')
-      || ops.find(op => op.proveeAlGrupo === true)
+      || ops.find(op => esCabeceraOp(op))
       || null;
 }
 
@@ -7033,6 +7034,13 @@ function renderPedidoSugerido(){
   const op = getOp();
   if(!op){ renderDashboardAdmin(); return; }
 
+  // ¿Esta operación es una sucursal vinculada a un CP/casa madre?
+  const cpVinculado = (op.grupoId && demoData.operaciones[op.grupoId]) ? demoData.operaciones[op.grupoId] : null;
+  // Catálogo de productos que ofrece el CP (para separar qué se le pide al CP)
+  const catalogoCP = cpVinculado ? getProductosCP() : [];
+  // Nombres del catálogo del CP, en minúscula, para clasificar los ingredientes de la sucursal
+  const nombresCP = new Set(catalogoCP.map(p=>(p.nombre||'').toLowerCase().trim()));
+
   // Stock actual: última toma de inventario
   const conteos = (op.conteosStock||[]).slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
   const ultimo = conteos[0] || null;
@@ -7067,12 +7075,18 @@ function renderPedidoSugerido(){
       tipo = 'manual';
       detalle = 'a definir';
     }
-    return { id:i.id, nombre:i.nombre, cat, unidad, sugerido, tipo, detalle, precio:i.precio/(i.bulto||1) };
+    // ¿Este producto lo provee el CP? (está en el catálogo del CP por nombre)
+    const vaAlCP = nombresCP.has((i.nombre||'').toLowerCase().trim());
+    return { id:i.id, nombre:i.nombre, cat, unidad, sugerido, tipo, detalle, precio:i.precio/(i.bulto||1), vaAlCP };
   });
 
-  // Agrupar por categoría; dentro, primero los que tienen algo para pedir
+  // Separar: lo que va al CP (si hay CP vinculado) va a su propia sección.
+  const itemsCP = cpVinculado ? items.filter(it=>it.vaAlCP) : [];
+  const itemsProv = cpVinculado ? items.filter(it=>!it.vaAlCP) : items;
+
+  // Agrupar los de proveedores por categoría; dentro, primero los que tienen algo para pedir
   const porCat = {};
-  items.forEach(it=>{ (porCat[it.cat] = porCat[it.cat]||[]).push(it); });
+  itemsProv.forEach(it=>{ (porCat[it.cat] = porCat[it.cat]||[]).push(it); });
   const cats = Object.keys(porCat).sort();
 
   // ícono simple por categoría (heurística por nombre)
@@ -7097,6 +7111,43 @@ function renderPedidoSugerido(){
       las cantidades — vos tenés la última palabra. Está agrupado por categoría para derivar a cada proveedor.
       ${!ultimo ? '<br><span style="font-size:12px;color:#B8540A">⚠ Todavía no hiciste una toma de inventario, así que los productos críticos asumen stock 0. Cargá el inventario en Control de stock para más precisión.</span>' : ''}
     </div>
+
+    ${cpVinculado ? `
+    <div class="card" style="margin-bottom:16px;border:1.5px solid var(--dorado,#C9A961)">
+      <div class="card-header" style="background:#FBF7EE">
+        <span class="card-title">🏭 Pedido al Centro de Producción — ${esc(cpVinculado.nombre||'CP')}</span>
+        <button class="btn btn-primary btn-sm" onclick="confirmarPedidoCP()">Confirmar pedido al CP →</button>
+      </div>
+      ${itemsCP.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Producto</th><th style="text-align:right">Pedir</th><th style="text-align:left;padding-left:12px">Por qué</th></tr></thead>
+        <tbody>
+          ${itemsCP.slice().sort((a,b)=>{
+            const av=(a.sugerido&&a.sugerido>0)?0:1, bv=(b.sugerido&&b.sugerido>0)?0:1;
+            return av-bv || a.nombre.localeCompare(b.nombre);
+          }).map(it=>`<tr data-cp-row="1" data-nombre="${escJs(it.nombre)}" data-unidad="${escJs(it.unidad)}" data-ing="${escJs(it.id)}">
+            <td><strong>${esc(it.nombre)}</strong></td>
+            <td style="text-align:right;white-space:nowrap">
+              <input type="number" min="0" step="0.1" value="${it.sugerido!=null?it.sugerido:''}" placeholder="—"
+                data-ped-cp="${escJs(it.id)}"
+                style="width:85px;text-align:right;${it.sugerido>0?'border-color:var(--dorado,#C9A961);font-weight:600':''}">
+              <span style="font-size:11px;color:var(--gris-2)">${esc(it.unidad)}</span>
+            </td>
+            <td style="text-align:left;padding-left:12px;font-size:12px;color:var(--gris-2)">
+              ${it.tipo==='critico'?'📦 ':''}${it.tipo==='consumo'?'📊 ':''}${esc(it.detalle)}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div style="padding:10px 14px;font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
+        Al confirmar, este pedido queda registrado para que ${esc(cpVinculado.nombre||'el CP')} lo prepare. Podés modificarlo antes de confirmar.
+      </div>` : `
+      <div style="padding:16px 18px;font-size:13px;color:var(--gris-2)">
+        No hay productos del CP para reponer en este momento (o el CP todavía no cargó su catálogo de productos).
+      </div>`}
+    </div>` : ''}
+
+    ${cpVinculado && cats.length ? '<div style="font-size:13px;font-weight:700;color:var(--gris-1);margin:20px 0 10px">🛒 A proveedores externos</div>' : ''}
 
     ${cats.map(cat=>{
       const lista = porCat[cat].slice().sort((a,b)=>{
@@ -7155,6 +7206,60 @@ function _copiarCategoria(cat){
       ()=>showToast('No se pudo copiar','error'));
   } else {
     showToast('Tu navegador no permite copiar automático','error');
+  }
+}
+
+// Confirmar el pedido de esta sucursal al CP. Guarda el pedido en el CP
+// (en cp._pedidosSucursales) para que el CP vea la demanda consolidada.
+// "Confirmado" — la sucursal pudo revisar y modificar antes. Achica la ventana de error.
+async function confirmarPedidoCP(){
+  const op = getOp();
+  if(!op || !op.grupoId){ showToast('Esta operación no está vinculada a un CP','error'); return; }
+  const cp = demoData.operaciones[op.grupoId];
+  if(!cp){ showToast('No encuentro el Centro de Producción','error'); return; }
+
+  // Juntar las cantidades cargadas
+  const filas = document.querySelectorAll('[data-cp-row="1"]');
+  const lineas = [];
+  filas.forEach(tr=>{
+    const nombre = tr.getAttribute('data-nombre');
+    const unidad = tr.getAttribute('data-unidad');
+    const ingId  = tr.getAttribute('data-ing');
+    const inp = tr.querySelector('[data-ped-cp]');
+    const val = inp && inp.value!=='' ? +inp.value : 0;
+    if(val>0) lineas.push({ ingId, nombre, unidad, cantidad: val });
+  });
+  if(!lineas.length){ showToast('No hay nada para pedir al CP','info'); return; }
+
+  if(!confirm(`¿Confirmar el pedido de ${lineas.length} producto(s) al CP "${cp.nombre||''}"?\n\nDespués de confirmar, el CP lo va a ver para prepararlo.`)) return;
+
+  // Guardar en el CP: un pedido por sucursal (reemplaza el anterior de esta sucursal)
+  const opId = currentOpId;
+  const hoy = new Date().toISOString().slice(0,10);
+  if(!cp._pedidosSucursales) cp._pedidosSucursales = [];
+  cp._pedidosSucursales = cp._pedidosSucursales.filter(p=>p.sucursalId!==opId);
+  cp._pedidosSucursales.push({
+    sucursalId: opId,
+    sucursalNombre: op.nombre || 'Sucursal',
+    fecha: hoy,
+    lineas,
+    estado: 'confirmado',
+  });
+
+  // El pedido vive en el documento del CP, no en el de la sucursal. Por eso
+  // escribimos DIRECTAMENTE en la operación del CP en Firestore (un merge del
+  // campo _pedidosSucursales), sin tocar el resto de los datos del CP.
+  try{
+    mostrarProgreso && mostrarProgreso('Confirmando pedido al CP…');
+    const cpId = op.grupoId;
+    await db.collection('empresas').doc(getEmpresaId())
+      .collection('operaciones').doc(cpId)
+      .set({ _pedidosSucursales: cp._pedidosSucursales }, {merge:true});
+    ocultarProgreso && ocultarProgreso();
+    showToast(`✓ Pedido confirmado al CP (${lineas.length} productos)`,'success');
+  }catch(err){
+    ocultarProgreso && ocultarProgreso();
+    showToast('No se pudo confirmar: '+err.message,'error');
   }
 }
 
