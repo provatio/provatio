@@ -9281,18 +9281,23 @@ async function abrirOperacionAdmin(empresaId, opId){
   if(!esAdminProvatio()){ showToast('Solo el equipo de Provatio puede hacer esto','error'); return; }
   try{
     showLoading && showLoading('Entrando a la operación del cliente…');
-    const opDoc = await db.collection('empresas').doc(empresaId).collection('operaciones').doc(opId).get();
-    if(!opDoc.exists){ hideLoading && hideLoading(); showToast('No encontré la operación','error'); return; }
-    const data = opDoc.data() || {};
+    // Traer TODAS las operaciones de la empresa (no solo una), para que la
+    // navegación de cadena (CP ↔ sucursales) funcione en el sidebar.
+    const opsSnap = await db.collection('empresas').doc(empresaId).collection('operaciones').get();
+    demoData.operaciones = {};
+    let data = null;
+    opsSnap.forEach(doc=>{
+      demoData.operaciones[doc.id] = doc.data();
+      if(doc.id === opId) data = doc.data();
+    });
+    if(!data){ hideLoading && hideLoading(); showToast('No encontré la operación','error'); return; }
 
     // "Prestar" el contexto de esa empresa a la sesión del admin, para poder
     // leer/guardar en el lugar correcto mientras hacés el onboarding.
     window._adminEmpresaId = empresaId;   // usado por getEmpresaId mientras dure
     currentUser.empresaId = empresaId;
 
-    // Cargar los datos de la operación en memoria
-    demoData.operaciones = {};
-    demoData.operaciones[opId] = data;
+    // Cargar los datos de la operación ACTIVA en memoria
     const d = data._datos || {};
     demoData.ingredientes = d.ingredientes || [];
     demoData.mermas = d.mermas || [];
