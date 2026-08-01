@@ -1374,6 +1374,19 @@ async function guardarEnFirestore(){
       }
     }
 
+    // Si estamos parados EN el CP, el doc se reescribe entero desde memoria.
+    // Los pedidos que las sucursales confirmaron mientras tanto no están en
+    // nuestra copia, así que los releemos de la fuente antes de escribir.
+    // (Sin esto, entrar al CP y guardar cualquier cosa borra los pedidos.)
+    if(esCabeceraOp(demoData.operaciones[currentOpId]) && getEmpresaId()){
+      try{
+        const _fresco = await db.collection('empresas').doc(getEmpresaId())
+          .collection('operaciones').doc(currentOpId).get();
+        const _peds = (_fresco.data()||{})._pedidosSucursales;
+        if(_peds) demoData.operaciones[currentOpId]._pedidosSucursales = _peds;
+      }catch(e){ console.warn('[Provatio] no pude releer los pedidos del CP:', e); }
+    }
+
     const opData = {
       ...(demoData.operaciones[currentOpId]||{}),
       _meta: {
@@ -1409,6 +1422,11 @@ async function guardarEnFirestore(){
     for(const [opId, op] of Object.entries(demoData.operaciones)){
       if(opId===currentOpId) continue;
       const meta = {...op}; delete meta._datos;
+      // Los pedidos que las sucursales le confirman al CP viven en el documento
+      // del CP y los escribe cada sucursal por su cuenta. Si los mandáramos desde
+      // acá con nuestra copia en memoria (que puede ser vieja), pisaríamos el
+      // pedido que otra sucursal confirmó recién — y desaparecería sin aviso.
+      delete meta._pedidosSucursales;
       await conReintento(() =>
         _refOps.doc(opId).set(limpiarParaFirestore(meta), {merge:true}),
         2, 'meta op').catch(()=>{});
@@ -3343,10 +3361,14 @@ function buildSidebar(rol){
     .map(([id,op])=>({ icon:'store', label:'🍽 '+op.nombre, vista:'local-'+id, onclick:`abrirOperacion('${id}')` })) : [];
   const _opCab = getOp();
   const _esMadreActiva = isCP && _opCab && !(_opCab.tipo==='Centro de Producción'||_opCab.tipo==='centroProduccion');
+  // Pedidos que los locales confirmaron y el CP todavía no despachó
+  const _pedPend = isCP ? (((demoData.operaciones[currentOpId]||{})._pedidosSucursales)||[])
+    .filter(p=>(p.estado||'confirmado')==='confirmado').length : 0;
   const seccionCadena = (isCP && puedeVerCadena) ? [
     {section:'Cadena'},
     {icon:'chart', label:'Vista ejecutiva', vista:'dashboardCadena'},
     {icon:'store', label: _esMadreActiva ? 'Producción para el grupo' : 'Centro de Producción', vista:'centroProduccion'},
+    {icon:'cart', label:'📥 Pedidos de los locales'+(_pedPend?' ('+_pedPend+')':''), vista:'pedidosCP'},
     ...(localesDeCadena.length ? [{section:'🍽 Locales ('+localesDeCadena.length+')'}, ...localesDeCadena] : []),
   ] : [];
 
@@ -3713,7 +3735,8 @@ function navigate(vista, params={}){
     compras: renderCompras,
     stock: renderStock,
     desperdicio: renderDesperdicio,
-    pedido: renderPedidoSugerido,
+    pedido: ()=>{ window._pedCPRefrescado = false; renderPedidoSugerido(); },
+    pedidosCP: renderPedidosCP,
     soon: renderSoon,
     importExport: renderImportExport,
     subproductos: renderSubproductos,
@@ -7137,7 +7160,29 @@ function renderPedidoSugerido(){
     return '📦';
   };
 
+  // Estado de los pedidos que esta sucursal ya le mandó al CP
+  const _misPedidos = cpVinculado ? ((cpVinculado._pedidosSucursales||[]).filter(p=>p.sucursalId===currentOpId)) : [];
+  const _enCamino   = _misPedidos.filter(p=>p.estado==='despachado');
+  const _esperando  = _misPedidos.filter(p=>p.estado==='confirmado');
+
   setContent('Pedido sugerido', `
+    ${_enCamino.map(p=>`
+    <div class="card" style="margin-bottom:14px;border:1.5px solid #2E7D32;background:#F4FAF4">
+      <div class="card-header" style="background:#EAF5EA">
+        <span class="card-title">🚚 Tu pedido al CP ya salió — ${(p.lineas||[]).length} producto(s) del ${esc(p.fecha||'')}</span>
+        <button class="btn btn-primary btn-sm" onclick="confirmarRecepcionPedido('${escJs(p.id)}')">Confirmar que lo recibí</button>
+      </div>
+      <div style="padding:10px 14px;font-size:12px;color:var(--gris-2)">
+        Cuando llegue la mercadería y la controles, confirmá la recepción. Hasta que lo hagas, el CP lo ve como pendiente de llegada.
+      </div>
+    </div>`).join('')}
+
+    ${_esperando.map(p=>`
+    <div class="alert alert-info" style="margin-bottom:14px">
+      ⏳ Ya le confirmaste un pedido al CP (${(p.lineas||[]).length} producto(s), ${esc(p.fecha||'')}${p.hora?' '+esc(p.hora):''}) y todavía no lo despachó.
+      Si volvés a confirmar, ese pedido se reemplaza y el CP ve el aviso de corrección.
+    </div>`).join('')}
+
     <div class="alert alert-info" style="margin-bottom:16px">
       ${ico('bulb',14)} Provatio sugiere cuánto reponer: los <strong>productos críticos</strong> según tu stock
       mínimo y lo que tenés, y el <strong>resto</strong> según lo que consumiste en ventas. Revisá y ajustá
@@ -7218,6 +7263,15 @@ function renderPedidoSugerido(){
       </div>`;
     }).join('')}
   `);
+
+  // El CP pudo despachar desde otra computadora. Traemos el estado real una
+  // vez y redibujamos, para que el aviso de "ya salió" aparezca solo.
+  if(cpVinculado && !window._pedCPRefrescado){
+    window._pedCPRefrescado = true;
+    _leerPedidosCP(op.grupoId)
+      .then(()=>{ if(vistaActual==='pedido') renderPedidoSugerido(); })
+      .catch(()=>{});
+  }
 }
 
 // Copiar un bloque de categoría al portapapeles (solo lo que tiene cantidad > 0)
@@ -7240,6 +7294,37 @@ function _copiarCategoria(cat){
   } else {
     showToast('Tu navegador no permite copiar automático','error');
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// CIRCUITO DE PEDIDOS CP ↔ SUCURSALES
+// Estados: 'confirmado' (la sucursal lo mandó) → 'despachado' (el CP lo
+// preparó y salió) → 'recibido' (la sucursal acusó que llegó).
+// El pedido sigue VISIBLE en el CP hasta que la sucursal confirma recepción:
+// nadie da por cerrado un pedido que del otro lado no acusaron.
+// ══════════════════════════════════════════════════════════════════════
+
+// Los pedidos viven en el documento del CP pero los escriben las sucursales,
+// cada una desde su sesión. SIEMPRE hay que releer antes de escribir: si dos
+// sucursales confirman con minutos de diferencia, la segunda tiene en memoria
+// una copia sin el pedido de la primera y lo borraría sin que nadie se entere.
+async function _leerPedidosCP(cpId){
+  const snap = await db.collection('empresas').doc(getEmpresaId())
+    .collection('operaciones').doc(cpId).get();
+  const arr = ((snap.data()||{})._pedidosSucursales || []).map((p,i)=>({
+    ...p,
+    id: p.id || ('ped-viejo-'+i+'-'+(p.sucursalId||'')),
+    estado: p.estado || 'confirmado',
+  }));
+  if(demoData.operaciones[cpId]) demoData.operaciones[cpId]._pedidosSucursales = arr;
+  return arr;
+}
+
+async function _guardarPedidosCP(cpId, pedidos){
+  await db.collection('empresas').doc(getEmpresaId())
+    .collection('operaciones').doc(cpId)
+    .set({ _pedidosSucursales: pedidos }, {merge:true});
+  if(demoData.operaciones[cpId]) demoData.operaciones[cpId]._pedidosSucursales = pedidos;
 }
 
 // Confirmar el pedido de esta sucursal al CP. Guarda el pedido en el CP
@@ -7266,33 +7351,240 @@ async function confirmarPedidoCP(){
 
   if(!confirm(`¿Confirmar el pedido de ${lineas.length} producto(s) al CP "${cp.nombre||''}"?\n\nDespués de confirmar, el CP lo va a ver para prepararlo.`)) return;
 
-  // Guardar en el CP: un pedido por sucursal (reemplaza el anterior de esta sucursal)
   const opId = currentOpId;
   const hoy = new Date().toISOString().slice(0,10);
-  if(!cp._pedidosSucursales) cp._pedidosSucursales = [];
-  cp._pedidosSucursales = cp._pedidosSucursales.filter(p=>p.sucursalId!==opId);
-  cp._pedidosSucursales.push({
-    sucursalId: opId,
-    sucursalNombre: op.nombre || 'Sucursal',
-    fecha: hoy,
-    lineas,
-    estado: 'confirmado',
-  });
 
-  // El pedido vive en el documento del CP, no en el de la sucursal. Por eso
-  // escribimos DIRECTAMENTE en la operación del CP en Firestore (un merge del
-  // campo _pedidosSucursales), sin tocar el resto de los datos del CP.
   try{
     mostrarProgreso && mostrarProgreso('Confirmando pedido al CP…');
     const cpId = op.grupoId;
-    await db.collection('empresas').doc(getEmpresaId())
-      .collection('operaciones').doc(cpId)
-      .set({ _pedidosSucursales: cp._pedidosSucursales }, {merge:true});
+    const pedidos = await _leerPedidosCP(cpId);   // fresco: incluye los de las hermanas
+
+    // ¿Hay un pedido nuestro que el CP TODAVÍA no despachó? Entonces este lo
+    // reemplaza y queda marcado como CORREGIDO, para que el CP no prepare la
+    // versión vieja. Si ya lo despachó, el nuevo es un pedido aparte: lo que
+    // salió del CP ya está en camino y no se puede corregir a distancia.
+    const pend = pedidos.find(p=>p.sucursalId===opId && p.estado==='confirmado');
+    const nuevo = {
+      id: 'ped-'+Date.now(),
+      sucursalId: opId,
+      sucursalNombre: op.nombre || 'Sucursal',
+      fecha: hoy,
+      hora: new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
+      lineas,
+      estado: 'confirmado',
+      corregido: !!pend,
+      lineasAntes: pend ? (pend.lineas||[]).length : null,
+      horaAntes: pend ? (pend.hora || null) : null,
+    };
+    const resto = pedidos.filter(p=>!(pend && p.id===pend.id));
+    // Historial: se conservan los últimos 20 recibidos; el resto se poda para
+    // no inflar el documento del CP con pedidos viejos ya cerrados.
+    const recibidos = resto.filter(p=>p.estado==='recibido').slice(-20);
+    const activos   = resto.filter(p=>p.estado!=='recibido');
+    await _guardarPedidosCP(cpId, [...recibidos, ...activos, nuevo]);
+
     ocultarProgreso && ocultarProgreso();
-    showToast(`✓ Pedido confirmado al CP (${lineas.length} productos)`,'success');
+    showToast(pend
+      ? `✓ Pedido corregido y reenviado al CP (${lineas.length} productos) — el CP ve el aviso`
+      : `✓ Pedido confirmado al CP (${lineas.length} productos)`, 'success');
+    renderPedidoSugerido();
   }catch(err){
     ocultarProgreso && ocultarProgreso();
     showToast('No se pudo confirmar: '+err.message,'error');
+  }
+}
+
+// El CP marca que ya preparó y despachó el pedido de una sucursal.
+async function marcarPedidoDespachado(pedidoId){
+  const cpId = currentOpId;
+  if(!confirm('¿Marcar este pedido como despachado?\n\nQueda esperando que la sucursal confirme que lo recibió.')) return;
+  try{
+    mostrarProgreso && mostrarProgreso('Marcando despachado…');
+    const pedidos = await _leerPedidosCP(cpId);
+    const p = pedidos.find(x=>x.id===pedidoId);
+    if(!p){
+      ocultarProgreso && ocultarProgreso();
+      showToast('Ese pedido ya no está — se actualizó la pantalla','info');
+      renderPedidosCP(); return;
+    }
+    p.estado = 'despachado';
+    p.despachadoEn = Date.now();
+    await _guardarPedidosCP(cpId, pedidos);
+    ocultarProgreso && ocultarProgreso();
+    showToast(`✓ Despachado — esperando que ${p.sucursalNombre||'la sucursal'} confirme la recepción`,'success');
+    renderPedidosCP();
+  }catch(err){
+    ocultarProgreso && ocultarProgreso();
+    showToast('No se pudo marcar: '+err.message,'error');
+  }
+}
+
+// La sucursal acusa que la mercadería llegó. Recién ahí el pedido se cierra.
+async function confirmarRecepcionPedido(pedidoId){
+  const op = getOp();
+  if(!op || !op.grupoId){ showToast('Esta operación no está vinculada a un CP','error'); return; }
+  if(!confirm('¿Confirmar que recibiste este pedido?\n\nEl CP lo va a dar por cerrado.')) return;
+  try{
+    mostrarProgreso && mostrarProgreso('Confirmando recepción…');
+    const pedidos = await _leerPedidosCP(op.grupoId);
+    const p = pedidos.find(x=>x.id===pedidoId);
+    if(!p){
+      ocultarProgreso && ocultarProgreso();
+      showToast('Ese pedido ya no está — se actualizó la pantalla','info');
+      renderPedidoSugerido(); return;
+    }
+    p.estado = 'recibido';
+    p.recibidoEn = Date.now();
+    await _guardarPedidosCP(op.grupoId, pedidos);
+    ocultarProgreso && ocultarProgreso();
+    showToast('✓ Recepción confirmada','success');
+    renderPedidoSugerido();
+  }catch(err){
+    ocultarProgreso && ocultarProgreso();
+    showToast('No se pudo confirmar: '+err.message,'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PANTALLA DEL CP — lo que le piden los locales
+// Arriba la demanda CONSOLIDADA (lo que hay que producir en total, que es lo
+// que el CP necesita para trabajar), abajo el detalle por local (que es lo que
+// necesita para despachar). Los dos números salen de los mismos pedidos.
+// ══════════════════════════════════════════════════════════════════════
+async function renderPedidosCP(){
+  const op = getOp();
+  if(!op || !esCabeceraOp(op)){
+    showToast('Esta pantalla es del Centro de Producción','info');
+    navigate('dashboard'); return;
+  }
+  setContent('Pedidos de los locales', '<div class="card" style="padding:18px;color:var(--gris-2)">Buscando los pedidos…</div>');
+
+  let pedidos = [];
+  try{ pedidos = await _leerPedidosCP(currentOpId); }
+  catch(err){
+    setContent('Pedidos de los locales',
+      `<div class="alert alert-error">No pude leer los pedidos: ${esc(err.message)}</div>`);
+    return;
+  }
+
+  const pendientes = pedidos.filter(p=>p.estado==='confirmado')
+    .sort((a,b)=>(a.fecha+''+(a.hora||'')).localeCompare(b.fecha+''+(b.hora||'')));
+  const enCamino   = pedidos.filter(p=>p.estado==='despachado');
+  const recibidos  = pedidos.filter(p=>p.estado==='recibido').slice(-8).reverse();
+
+  // Consolidado: suma por producto de TODO lo pendiente de producir
+  const cons = {};
+  pendientes.forEach(p=>(p.lineas||[]).forEach(l=>{
+    const k = (l.nombre||'').toLowerCase().trim();
+    if(!k) return;
+    if(!cons[k]) cons[k] = { nombre:l.nombre, unidad:l.unidad||'kg', total:0, porSuc:[] };
+    cons[k].total += (+l.cantidad||0);
+    cons[k].porSuc.push({ suc:p.sucursalNombre||'Local', cant:+l.cantidad||0 });
+  }));
+  const filasCons = Object.values(cons).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+
+  const tarjetaPedido = (p, accion)=>`
+    <div class="card" style="margin-bottom:12px${p.corregido?';border-left:3px solid #B8540A':''}">
+      <div class="card-header">
+        <span class="card-title">🍽 ${esc(p.sucursalNombre||'Local')}
+          <span style="font-weight:400;font-size:12px;color:var(--gris-2)"> · ${esc(p.fecha||'')}${p.hora?' '+esc(p.hora):''} · ${(p.lineas||[]).length} producto(s)</span>
+        </span>
+        ${accion||''}
+      </div>
+      ${p.corregido ? `<div style="padding:8px 14px;background:#FFF4E6;font-size:12px;color:#B8540A;border-bottom:1px solid var(--crema-2)">
+        ⚠ <strong>Pedido corregido</strong> — la sucursal lo reenvió${p.horaAntes?' (el anterior era de las '+esc(p.horaAntes)+')':''}${p.lineasAntes!=null?', antes tenía '+p.lineasAntes+' producto(s)':''}. Preparar ESTA versión.
+      </div>` : ''}
+      <div class="table-wrap"><table>
+        <thead><tr><th>Producto</th><th style="text-align:right">Cantidad</th></tr></thead>
+        <tbody>
+          ${(p.lineas||[]).map(l=>`<tr>
+            <td>${esc(l.nombre||'')}</td>
+            <td style="text-align:right;white-space:nowrap"><strong>${fmt1(+l.cantidad||0)}</strong> <span style="font-size:11px;color:var(--gris-2)">${esc(l.unidad||'')}</span></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+
+  setContent('Pedidos de los locales', `
+    <div class="alert alert-info" style="margin-bottom:16px">
+      ${ico('bulb',14)} Acá llega lo que cada local te confirmó. Arriba, <strong>todo junto</strong>:
+      lo que tenés que producir o comprar en total. Abajo, <strong>el detalle por local</strong>:
+      lo que le corresponde a cada uno cuando armás el despacho.
+    </div>
+
+    ${!pendientes.length && !enCamino.length ? `
+      <div class="card" style="padding:22px;text-align:center;color:var(--gris-2)">
+        Todavía no hay pedidos de los locales.<br>
+        <span style="font-size:12px">Cuando una sucursal confirme su pedido desde "Pedido sugerido", te aparece acá.</span>
+      </div>` : ''}
+
+    ${filasCons.length ? `
+    <div class="card" style="margin-bottom:20px;border:1.5px solid var(--dorado,#C9A961)">
+      <div class="card-header" style="background:#FBF7EE">
+        <span class="card-title">📦 Demanda consolidada — ${filasCons.length} producto(s) de ${pendientes.length} local(es)</span>
+        <button class="btn btn-secondary btn-sm" onclick="_copiarConsolidado()">📋 Copiar</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Producto</th>
+          <th style="text-align:right">Total a preparar</th>
+          <th style="text-align:left;padding-left:12px">Para quién</th>
+        </tr></thead>
+        <tbody>
+          ${filasCons.map(f=>`<tr data-cons-row="1" data-nombre="${escJs(f.nombre)}" data-unidad="${escJs(f.unidad)}" data-total="${f.total}">
+            <td><strong>${esc(f.nombre)}</strong></td>
+            <td style="text-align:right;white-space:nowrap;font-weight:700">${fmt1(f.total)} <span style="font-size:11px;font-weight:400;color:var(--gris-2)">${esc(f.unidad)}</span></td>
+            <td style="text-align:left;padding-left:12px;font-size:12px;color:var(--gris-2)">
+              ${f.porSuc.map(s=>esc(s.suc)+' '+fmt1(s.cant)).join(' · ')}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>` : ''}
+
+    ${pendientes.length ? `
+      <div style="font-size:13px;font-weight:700;color:var(--gris-1);margin:20px 0 10px">📥 Para preparar (${pendientes.length})</div>
+      ${pendientes.map(p=>tarjetaPedido(p,
+        `<button class="btn btn-primary btn-sm" onclick="marcarPedidoDespachado('${escJs(p.id)}')">Marcar despachado →</button>`)).join('')}
+    ` : ''}
+
+    ${enCamino.length ? `
+      <div style="font-size:13px;font-weight:700;color:var(--gris-1);margin:24px 0 10px">🚚 Despachados — esperando que el local confirme que llegó (${enCamino.length})</div>
+      ${enCamino.map(p=>tarjetaPedido(p,
+        `<span style="font-size:12px;color:var(--gris-2)">Despachado ${p.despachadoEn ? new Date(p.despachadoEn).toLocaleDateString('es-AR') : ''}</span>`)).join('')}
+    ` : ''}
+
+    ${recibidos.length ? `
+      <div style="font-size:13px;font-weight:700;color:var(--gris-1);margin:24px 0 10px">✓ Cerrados (últimos ${recibidos.length})</div>
+      <div class="card"><div class="table-wrap"><table>
+        <thead><tr><th>Local</th><th>Fecha</th><th style="text-align:right">Productos</th></tr></thead>
+        <tbody>
+          ${recibidos.map(p=>`<tr>
+            <td>${esc(p.sucursalNombre||'Local')}</td>
+            <td>${esc(p.fecha||'')}</td>
+            <td style="text-align:right">${(p.lineas||[]).length}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div></div>
+    ` : ''}
+  `);
+}
+
+// Copiar la demanda consolidada (para pasarla a producción o al proveedor)
+function _copiarConsolidado(){
+  const filas = document.querySelectorAll('[data-cons-row="1"]');
+  const lineas = [];
+  filas.forEach(tr=>{
+    lineas.push(`${tr.getAttribute('data-nombre')}: ${tr.getAttribute('data-total')} ${tr.getAttribute('data-unidad')}`);
+  });
+  if(!lineas.length){ showToast('No hay nada consolidado para copiar','info'); return; }
+  const texto = `Demanda consolidada de los locales\n${lineas.join('\n')}`;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(texto).then(
+      ()=>showToast('📋 Copiado','success'),
+      ()=>showToast('No se pudo copiar','error'));
+  } else {
+    showToast('Tu navegador no permite copiar automático','error');
   }
 }
 
