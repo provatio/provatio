@@ -3328,18 +3328,35 @@ function buildSidebar(rol){
   const estaVinculadaACP = opActiva && opActiva.grupoId;
   const cpDelLocal = (estaVinculadaACP && demoData.operaciones[opActiva.grupoId]) ? demoData.operaciones[opActiva.grupoId] : null;
 
+  // ── Quién puede MOVERSE por la cadena (CP ↔ locales) ────────────────────
+  // Se decide por CAPACIDAD, no por el campo `rol` legacy del documento de
+  // usuario. Antes la navegación de cadena vivía solo en el menú `rol==='admin'`,
+  // y como TODA cuenta nueva nace con rol 'dueno', el dueño de una cadena real
+  // nunca veía ni la sección "Cadena" ni "Ir al CP".
+  // Dueño y supervisor recorren el grupo; encargado y cocina, solo su local.
+  const puedeVerCadena = esAdminProvatio() || esDueno()
+    || ['supervisor','cp'].includes(getMiRol());
+
   // Sección cadena: SOLO cuando estás en el CP
   const localesDeCadena = isCP ? Object.entries(demoData.operaciones||{})
     .filter(([id,op])=>op.grupoId===currentOpId)
     .map(([id,op])=>({ icon:'store', label:'🍽 '+op.nombre, vista:'local-'+id, onclick:`abrirOperacion('${id}')` })) : [];
   const _opCab = getOp();
   const _esMadreActiva = isCP && _opCab && !(_opCab.tipo==='Centro de Producción'||_opCab.tipo==='centroProduccion');
-  const seccionCadena = isCP ? [
+  const seccionCadena = (isCP && puedeVerCadena) ? [
     {section:'Cadena'},
     {icon:'chart', label:'Vista ejecutiva', vista:'dashboardCadena'},
     {icon:'store', label: _esMadreActiva ? 'Producción para el grupo' : 'Centro de Producción', vista:'centroProduccion'},
     ...(localesDeCadena.length ? [{section:'🍽 Locales ('+localesDeCadena.length+')'}, ...localesDeCadena] : []),
   ] : [];
+
+  // Subir del local a su cabecera (CP formal o casa madre). Un solo lugar de
+  // definición para que valga en todos los menús, no solo en el del admin.
+  const itemIrACabecera = (estaVinculadaACP && puedeVerCadena) ? [{
+    icon:'store',
+    label: (cpDelLocal && (cpDelLocal.tipo==='Centro de Producción'||cpDelLocal.tipo==='centroProduccion')) ? '🏭 Ir al CP' : (cpDelLocal ? '🏠 Ir a la casa madre' : '🏭 Ir al CP'),
+    vista:'centroProduccion',
+  }] : [];
 
   const itemsAdmin = !enOperacion ? [
     // Sin operación activa — solo PRINCIPAL
@@ -3371,11 +3388,7 @@ function buildSidebar(rol){
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     ...seccionCadena,
-    ...(estaVinculadaACP ? [{
-      icon:'store',
-      label: (cpDelLocal && (cpDelLocal.tipo==='Centro de Producción'||cpDelLocal.tipo==='centroProduccion')) ? '🏭 Ir al CP' : (cpDelLocal ? '🏠 Ir a la casa madre' : '🏭 Ir al CP'),
-      vista:'centroProduccion',
-    }] : []),
+    ...itemIrACabecera,
     {section: (()=>{
       const op = getOp();
       if(!op) return 'Operación';
@@ -3439,6 +3452,10 @@ function buildSidebar(rol){
   ] : [
     {section:'Mi operación'},
     {icon:'chart', label:'Resumen', vista:'dashboard'},
+    // Navegación de cadena: bajar del CP a los locales, o subir del local a su
+    // cabecera. Vale para el dueño de una cadena real, no solo para el admin.
+    ...seccionCadena,
+    ...itemIrACabecera,
     {icon:'clipboard', label:'Mis ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
