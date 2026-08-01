@@ -3445,12 +3445,15 @@ function buildSidebar(rol){
     {icon:'target', label:'Presupuesto evento', vista:'evento'},
     {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
     {section:'Compras y análisis'},
-    {icon:'cart', label:'Lista de compras', vista:'compras'},
-    {icon:'clipboard', label:'Control de stock', vista:'stock'},
-    {icon:'cart', label:'Pedido sugerido', vista:'pedido'},
-    {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
+    ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
+    ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
+    ...(!isCP ? [{icon:'cart', label:'Pedido sugerido', vista:'pedido'}] : []),
+    ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
+    {section:'Herramientas'},
+    {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
+    {icon:'cart', label:'🧾 Facturas', vista:'facturas'},
   ]);
 
   // ── Sidebar con secciones desplegables ───────────────────────────────────
