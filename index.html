@@ -4082,6 +4082,7 @@ function renderDashboardOperacion(){
       <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="navigate('dashboardCadena')">${ico('chart',14)} Vista ejecutiva de la cadena</button>
         <button class="btn btn-secondary" onclick="navigate('centroProduccion')">${ico('store',14)} ${(op.tipo==='Centro de Producción'||op.tipo==='centroProduccion')?'Gestionar productos del CP':'Gestionar la producción'}</button>
+        <button class="btn btn-secondary" onclick="modalNuevaOperacion()">${ico('store',14)} + Agregar sucursal a la cadena</button>
       </div>
 
       ${locales.length ? `
