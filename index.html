@@ -3325,8 +3325,8 @@ function buildSidebar(rol){
   const isCP = esCentroProduccion();
   const enOperacion = !!currentOpId;
   const opActiva = currentOpId ? demoData.operaciones[currentOpId] : null;
-  const estaVinculadaACP = opActiva && opActiva.grupoId && demoData.operaciones[opActiva.grupoId];
-  const cpDelLocal = estaVinculadaACP ? demoData.operaciones[opActiva.grupoId] : null;
+  const estaVinculadaACP = opActiva && opActiva.grupoId;
+  const cpDelLocal = (estaVinculadaACP && demoData.operaciones[opActiva.grupoId]) ? demoData.operaciones[opActiva.grupoId] : null;
 
   // Sección cadena: SOLO cuando estás en el CP
   const localesDeCadena = isCP ? Object.entries(demoData.operaciones||{})
@@ -3371,9 +3371,9 @@ function buildSidebar(rol){
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     ...seccionCadena,
-    ...(estaVinculadaACP && cpDelLocal ? [{
+    ...(estaVinculadaACP ? [{
       icon:'store',
-      label: (cpDelLocal.tipo==='Centro de Producción'||cpDelLocal.tipo==='centroProduccion') ? '🏭 Ir al CP' : '🏠 Ir a la casa madre',
+      label: (cpDelLocal && (cpDelLocal.tipo==='Centro de Producción'||cpDelLocal.tipo==='centroProduccion')) ? '🏭 Ir al CP' : (cpDelLocal ? '🏠 Ir a la casa madre' : '🏭 Ir al CP'),
       vista:'centroProduccion',
     }] : []),
     {section: (()=>{
@@ -3674,10 +3674,16 @@ function navigate(vista, params={}){
     evento: renderEvento,
     buffet: renderBuffet,
     centroProduccion: ()=>{
-      // Si venimos de un local vinculado, cambiar la operación activa al CP
-      const cpActual = getCentroProduccion();
-      if(cpActual && !esCentroProduccion()){
-        const cpId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===cpActual)?.[0];
+      // Si venimos de un local vinculado, cambiar la operación activa al CP.
+      // Preferimos el grupoId de la operación actual (directo y confiable);
+      // si no, buscamos la cabecera del grupo en memoria.
+      if(!esCentroProduccion()){
+        const opAct = currentOpId ? demoData.operaciones[currentOpId] : null;
+        let cpId = opAct && opAct.grupoId ? opAct.grupoId : null;
+        if(!cpId){
+          const cpActual = getCentroProduccion();
+          if(cpActual) cpId = Object.entries(demoData.operaciones||{}).find(([k,v])=>v===cpActual)?.[0];
+        }
         if(cpId && cpId !== currentOpId){
           abrirOperacion(cpId).then(()=> navigate('centroProduccion'));
           return;
@@ -5308,7 +5314,9 @@ function editarReceta(id){
 function delReceta(id){
   if(!confirm('¿Eliminar esta receta?')) return;
   demoData.recetas = demoData.recetas.filter(r=>r.id!==id);
-  renderRecetas(); showToast('Receta eliminada');
+  renderRecetas();
+  guardarEnFirestore();   // persistir el borrado; si no, la receta vuelve al recargar
+  showToast('Receta eliminada');
 }
 
 function renderEditorReceta(){
