@@ -1952,10 +1952,14 @@ function getRecetas(){
   // Filtro normal por operación activa.
   const propias = demoData.recetas.filter(r=>r.opId===currentOpId);
   if(propias.length) return propias;
-  // Red de seguridad: si hay recetas en memoria pero ninguna matchea el opId,
-  // se re-etiquetan al opId activo y se muestran. Al cargar una operación solo
-  // están SUS recetas en memoria, así que esto no mezcla datos de otra.
-  if(demoData.recetas.length && currentOpId){
+  // Red de seguridad SOLO para operaciones sueltas (sin cadena). En una cadena
+  // (CP + sucursales) pueden convivir recetas de varias operaciones en memoria,
+  // y re-etiquetarlas cruzaría datos (ej: el panaché del CP apareciendo en una
+  // sucursal). Por eso, si la operación pertenece a un grupo o es cabecera, NO
+  // re-etiquetamos: devolvemos solo lo que matchea exacto (aunque sea vacío).
+  const opAct = currentOpId ? demoData.operaciones[currentOpId] : null;
+  const enCadena = opAct && (opAct.grupoId || esCabeceraOp(opAct));
+  if(!enCadena && demoData.recetas.length && currentOpId){
     demoData.recetas.forEach(r=>{ r.opId = currentOpId; });
     return demoData.recetas.slice();
   }
