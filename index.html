@@ -1540,7 +1540,17 @@ async function cargarDesdeFirestore(uid){
     }
 
     if(!_docs.length && _permitidas === null){
-      // Primera vez del dueño — usar datos demo como punto de partida
+      // NO dejar los datos demo en pantalla. Antes se usaban "como punto de
+      // partida" y el resultado era que una cuenta nueva entraba viendo el
+      // "Campamento Petrolero" ficticio, y encima marcada como DUEÑO de algo
+      // que nunca creó. Pantalla vacía y honesta: si no tiene operaciones,
+      // no tiene operaciones.
+      demoData.operaciones = {};
+      demoData.ingredientes = [];
+      demoData.mermas = [];
+      demoData.recetas = [];
+      demoData.facturas = [];
+      currentOpId = null;
       hideLoading();
       navigate('dashboard');
       return false;
@@ -3443,6 +3453,16 @@ function buildSidebar(rol){
     vista:'centroProduccion',
   }] : [];
 
+  // Cuenta y accesos. Antes esto SOLO aparecía cuando no había operación activa,
+  // y como el dueño de una cadena siempre está parado dentro de una, nunca lo
+  // veía: la pantalla de Equipo existía sin puerta de entrada, y no tenía cómo
+  // dar de alta a su encargado. Ahora acompaña a la operación.
+  const _itemsCuenta = [
+    ...(puedeGestionarUsuarios() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
+    ...(esAdminProvatio() ? [{icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'}] : []),
+  ];
+  const seccionCuenta = _itemsCuenta.length ? [{section:'Cuenta'}, ..._itemsCuenta] : [];
+
   const itemsAdmin = !enOperacion ? [
     // Sin operación activa — solo PRINCIPAL
     {section:'Principal'},
@@ -3468,6 +3488,7 @@ function buildSidebar(rol){
     {icon:'cart', label:'🧾 Facturas', vista:'facturas'},
     {section:'Próximamente'},
     {icon:'store', label:'Proveedores', vista:'proveedores', soon:true},
+    ...seccionCuenta,
   ] : [
     // Operación normal activa
     {section:'Principal'},
@@ -3509,6 +3530,7 @@ function buildSidebar(rol){
     {section:'Próximamente'},
     {icon:'store', label:'Proveedores', vista:'proveedores', soon:true},
     {icon:'chart', label:'Comparador de precios', vista:'comparador', soon:true},
+    ...seccionCuenta,
   ];
 
   const items = rol==='admin' ? itemsAdmin : (esNivelCocina() ? [
@@ -3534,6 +3556,7 @@ function buildSidebar(rol){
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
+    ...seccionCuenta,
   ] : [
     {section:'Mi operación'},
     {icon:'chart', label:'Resumen', vista:'dashboard'},
@@ -3560,6 +3583,7 @@ function buildSidebar(rol){
     {section:'Herramientas'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
     {icon:'cart', label:'🧾 Facturas', vista:'facturas'},
+    ...seccionCuenta,
   ]);
 
   // ── Sidebar con secciones desplegables ───────────────────────────────────
@@ -4180,9 +4204,9 @@ function renderDashboardOperacion(){
     },0);
 
     setContent(op.nombre, `
-      <div style="margin-bottom:14px">
+      ${esAdminProvatio() ? `<div style="margin-bottom:14px">
         <button class="btn btn-secondary btn-sm" onclick="navigate('dashboard')">← Volver al panel general</button>
-      </div>
+      </div>` : ''}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
         <div class="metric"><div class="metric-label">${(op.tipo==='Centro de Producción'||op.tipo==='centroProduccion')?'Productos del CP':'Producción para el grupo'}</div><div class="metric-value">${productos.length}</div></div>
         <div class="metric"><div class="metric-label">Elaborados propios</div><div class="metric-value">${elaborados}</div></div>
