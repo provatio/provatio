@@ -4600,6 +4600,20 @@ function modalNuevoIng(ingExistente){
   // Si se pasa un ingrediente existente, pre-cargar sus valores
   const ing = ingExistente || {};
 
+  // ¿Este local está colgado de un CP? Solo entonces tiene sentido preguntar
+  // quién provee el ingrediente. Un local suelto le compra todo a proveedores.
+  const _opAct = getOp();
+  const _cpVinc = (_opAct && _opAct.grupoId && demoData.operaciones[_opAct.grupoId])
+    ? demoData.operaciones[_opAct.grupoId] : null;
+  // Compatibilidad: los ingredientes viejos no tienen el campo. Si el nombre
+  // coincide con el catálogo del CP, se asume que venía del CP.
+  let _provActual = ing.proveedor;
+  if(!_provActual && _cpVinc && ing.nombre){
+    const _nomsCP = new Set(getProductosCP().map(p=>(p.nombre||'').toLowerCase().trim()));
+    _provActual = _nomsCP.has(ing.nombre.toLowerCase().trim()) ? 'cp' : 'externo';
+  }
+  if(!_provActual) _provActual = 'externo';
+
   openModal(`
     <div class="modal-header">
       <span class="modal-title">${ing.id ? 'Editar ingrediente' : 'Nuevo ingrediente'}</span>
@@ -4619,6 +4633,18 @@ function modalNuevoIng(ingExistente){
           <option value="__nueva__">+ Crear nueva categoría…</option>
         </select>
       </div>
+
+      ${_cpVinc ? `
+      <div class="form-group">
+        <label>Quién te lo provee</label>
+        <select id="ni-proveedor">
+          <option value="externo"${_provActual!=='cp'?' selected':''}>🛒 Proveedor externo</option>
+          <option value="cp"${_provActual==='cp'?' selected':''}>🏭 ${esc(_cpVinc.nombre||'Centro de Producción')}</option>
+        </select>
+        <div style="font-size:11px;color:var(--gris-2);margin-top:5px">
+          Define en qué parte del pedido aparece: en el bloque del CP o en el de proveedores externos.
+        </div>
+      </div>` : ''}
 
       <div style="background:var(--crema);border-radius:10px;padding:16px;margin-bottom:14px">
         <div style="font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">
@@ -4798,7 +4824,15 @@ function guardarNuevoIng(idExistente){
     }
   }
   const pesoUnitario = parseFloat(document.getElementById('ni-peso-unitario')?.value||60);
+  // Al editar, PARTIMOS del ingrediente que ya existe y solo pisamos los campos
+  // del formulario. Antes se armaba un objeto nuevo desde cero y se perdían en
+  // silencio los datos que este modal no muestra (controlaStock, stockMinimo…).
+  const _previo = idExistente
+    ? (demoData.ingredientes.find(i=>i.id===idExistente) || {})
+    : {};
+  const _selProv = document.getElementById('ni-proveedor');
   const nuevo = {
+    ..._previo,
     id: idExistente || 'i'+demoData.nextId.i++,
     nombre,
     cat: document.getElementById('ni-cat').value,
@@ -4809,6 +4843,8 @@ function guardarNuevoIng(idExistente){
     precio,
     pesoUnitario: unidadMedida === 'unidades' ? pesoUnitario : undefined,
   };
+  // El selector solo existe si el local está vinculado a un CP.
+  if(_selProv) nuevo.proveedor = _selProv.value;
   if(idExistente){
     const idx = demoData.ingredientes.findIndex(i=>i.id===idExistente);
     if(idx>=0) demoData.ingredientes[idx] = nuevo;
@@ -7131,14 +7167,25 @@ function renderPedidoSugerido(){
       tipo = 'manual';
       detalle = 'a definir';
     }
-    // ¿Este producto lo provee el CP? (está en el catálogo del CP por nombre)
-    const vaAlCP = nombresCP.has((i.nombre||'').toLowerCase().trim());
+    // ¿Quién provee este producto? Manda lo que el encargado declaró en la
+    // ficha del ingrediente. Para los ingredientes viejos (sin el campo) se
+    // cae al criterio anterior: si el nombre está en el catálogo del CP.
+    const vaAlCP = !!cpVinculado && (
+      i.proveedor === 'cp' ||
+      (!i.proveedor && nombresCP.has((i.nombre||'').toLowerCase().trim()))
+    );
     return { id:i.id, nombre:i.nombre, cat, unidad, sugerido, tipo, detalle, precio:i.precio/(i.bulto||1), vaAlCP };
   });
 
   // Separar: lo que va al CP (si hay CP vinculado) va a su propia sección.
   const itemsCP = cpVinculado ? items.filter(it=>it.vaAlCP) : [];
   const itemsProv = cpVinculado ? items.filter(it=>!it.vaAlCP) : items;
+
+  // ── La carta del CP ──────────────────────────────────────────────────────
+  // Lo que el CP publica y este local todavía NO tiene en su lista. Sin esto,
+  // un producto nuevo del CP es imposible de pedir: no figura en ningún lado.
+  const _misNombres = new Set(demoData.ingredientes.map(i=>(i.nombre||'').toLowerCase().trim()));
+  const catalogoNuevo = catalogoCP.filter(p=>!_misNombres.has((p.nombre||'').toLowerCase().trim()));
 
   // Agrupar los de proveedores por categoría; dentro, primero los que tienen algo para pedir
   const porCat = {};
@@ -7221,8 +7268,38 @@ function renderPedidoSugerido(){
         Al confirmar, este pedido queda registrado para que ${esc(cpVinculado.nombre||'el CP')} lo prepare. Podés modificarlo antes de confirmar.
       </div>` : `
       <div style="padding:16px 18px;font-size:13px;color:var(--gris-2)">
-        No hay productos del CP para reponer en este momento (o el CP todavía no cargó su catálogo de productos).
+        Todavía no marcaste ningún ingrediente como provisto por el CP.
+        ${catalogoNuevo.length ? 'Mirá abajo lo que el CP produce y sumá lo que uses.' : 'Cuando el CP cargue su catálogo, va a aparecer acá.'}
       </div>`}
+    </div>` : ''}
+
+    ${cpVinculado && catalogoNuevo.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">📖 ${esc(cpVinculado.nombre||'El CP')} también produce</span>
+      </div>
+      <div style="padding:12px 16px 4px;font-size:12px;color:var(--gris-2)">
+        Esto lo produce el CP y todavía no está en tu lista de ingredientes.
+        Al sumarlo, entra a tu lista con el precio de transferencia del CP y ya lo podés pedir arriba.
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Producto</th>
+          <th style="text-align:right">Precio CP</th>
+          <th style="width:1%"></th>
+        </tr></thead>
+        <tbody>
+          ${catalogoNuevo.map(p=>`<tr>
+            <td><strong>${esc(p.nombre||'')}</strong>
+              <span style="font-size:11px;color:var(--gris-2);margin-left:6px">${esc(p.tipoProd||'')}</span>
+            </td>
+            <td style="text-align:right;white-space:nowrap">$${fmt(p.costoXkg||0)}/kg</td>
+            <td style="white-space:nowrap;padding-right:12px">
+              <button class="btn btn-secondary btn-sm" onclick="sumarProductoDelCP('${escJs(p.id)}')">+ Sumar a mi lista</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
     </div>` : ''}
 
     ${cpVinculado && cats.length ? '<div style="font-size:13px;font-weight:700;color:var(--gris-1);margin:20px 0 10px">🛒 A proveedores externos</div>' : ''}
@@ -7272,6 +7349,51 @@ function renderPedidoSugerido(){
       .then(()=>{ if(vistaActual==='pedido') renderPedidoSugerido(); })
       .catch(()=>{});
   }
+}
+
+// El local suma a su lista un producto de la carta del CP. Se crea como
+// ingrediente propio, marcado como provisto por el CP y con el precio de
+// transferencia, así entra en las recetas y en el costo como cualquier otro.
+function sumarProductoDelCP(prodId){
+  const op = getOp();
+  const cp = (op && op.grupoId) ? demoData.operaciones[op.grupoId] : null;
+  if(!cp){ showToast('Esta operación no está vinculada a un CP','error'); return; }
+
+  const prod = getProductosCP().find(p=>p.id===prodId);
+  if(!prod){ showToast('Ese producto ya no está en el catálogo del CP','error'); return; }
+
+  const nombre = (prod.nombre||'').trim();
+  if(demoData.ingredientes.some(i=>(i.nombre||'').toLowerCase().trim()===nombre.toLowerCase())){
+    showToast(`"${nombre}" ya está en tu lista`,'info');
+    renderPedidoSugerido(); return;
+  }
+
+  if(!confirm(
+    `¿Sumar "${nombre}" a tu lista de ingredientes?\n\n` +
+    `Precio del CP: $${fmt(prod.costoXkg||0)}/kg\n\n` +
+    `Va a quedar disponible para tus recetas y para pedirle al CP.`
+  )) return;
+
+  const cats = getCategorias();
+  const CAT_CP = 'Insumos del CP';
+  if(!cats.includes(CAT_CP)) cats.push(CAT_CP);
+
+  demoData.ingredientes.push({
+    id: 'i'+demoData.nextId.i++,
+    nombre,
+    cat: CAT_CP,
+    unidadTipo: 'kg',
+    unidadMedida: 'kg',
+    unidad: 'kg',
+    bulto: 1,
+    precio: prod.costoXkg || 0,
+    proveedor: 'cp',
+    _origenCP: prod.id,
+  });
+
+  showToast(`✓ "${nombre}" sumado — ya podés pedirlo al CP`,'success');
+  renderPedidoSugerido();
+  guardarEnFirestore();
 }
 
 // Copiar un bloque de categoría al portapapeles (solo lo que tiene cantidad > 0)
