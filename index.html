@@ -4646,6 +4646,18 @@ function modalNuevoIng(ingExistente){
         </div>
       </div>` : ''}
 
+      ${esCentroProduccion() ? `
+      <div style="background:#FBF7EE;border:1px solid var(--dorado,#C9A961);border-radius:8px;padding:12px;margin-bottom:14px">
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin:0;font-weight:600">
+          <input type="checkbox" id="ni-vende-locales"${ing.vendeALocales?' checked':''} style="width:16px;height:16px">
+          <span>🏭 Esto también se lo despacho a los locales</span>
+        </label>
+        <div style="font-size:11px;color:var(--gris-2);margin-top:6px;padding-left:25px;line-height:1.5">
+          Tildalo si además de usarlo en tu cocina lo repartís tal cual — la zanahoria que va al panaché
+          y también sale suelta para los locales. Va a aparecer en el catálogo que ellos ven.
+        </div>
+      </div>` : ''}
+
       <div style="background:var(--crema);border-radius:10px;padding:16px;margin-bottom:14px">
         <div style="font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px">
           Cómo lo comprás
@@ -4845,6 +4857,9 @@ function guardarNuevoIng(idExistente){
   };
   // El selector solo existe si el local está vinculado a un CP.
   if(_selProv) nuevo.proveedor = _selProv.value;
+  // El tilde solo existe estando parado en el CP.
+  const _chkVende = document.getElementById('ni-vende-locales');
+  if(_chkVende) nuevo.vendeALocales = _chkVende.checked;
   if(idExistente){
     const idx = demoData.ingredientes.findIndex(i=>i.id===idExistente);
     if(idx>=0) demoData.ingredientes[idx] = nuevo;
@@ -6354,32 +6369,36 @@ function getLocalesCadena(){
 //   1. Recetas del CP con rendimientoG — su precio de transferencia = precioVenta/rendimientoG
 //   2. Productos manuales legacy (porcionados, redistribuidos)
 function getProductosCP(){
-  // Productos que el CP entrega a los locales. Dos orígenes:
+  // El catálogo que ven los locales. Tres orígenes:
   //  a) recetas elaboradas del CP con rendimiento cargado
   //  b) productos manuales del CP (porcionados y redistribuidos)
+  //  c) ingredientes de la despensa del CP tildados como "también los vendo"
+  //
+  // DOS PRECIOS POR PRODUCTO, y no hay que confundirlos:
+  //   costoProduccionXkg → lo que le cuesta al CP. Es interno, el local NO lo ve.
+  //   costoXkg           → PRECIO DE TRANSFERENCIA: lo que paga el local.
+  // Todo lo que se le muestra al local sale de costoXkg.
   const cp = getCentroProduccion();
   if(!cp) return [];
   const recetasCP = (cp._datos && cp._datos.recetas) || [];
   const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
+  const _desp = cp._despacho || {};
 
   const desdeRecetas = recetasCP
     .filter(r => r.rendimientoG > 0)
     .map(r => {
       const costoProd = calcularCostoRecetaCP(r, cp);
-      const costoXkg  = r.rendimientoG > 0 ? costoProd / r.rendimientoG * 1000 : 0;
-      const precioTransfXkg = r.precioVenta > 0
-        ? r.precioVenta / r.rendimientoG * 1000
-        : costoXkg;
+      const costoXkg  = costoProd / r.rendimientoG * 1000;
       return {
         id: 'cp-rec-' + r.id,
         nombre: r.nombre,
         tipoProd: 'elaborado',
         modoUso: 'directo',
         recetaId: r.id,
-        costoXkg: precioTransfXkg,
         costoProduccionXkg: costoXkg,
-        tienePrecioTransferencia: r.precioVenta > 0,
-        margenXkg: precioTransfXkg - costoXkg,
+        // Si la receta del CP tiene precio de venta cargado, ese es el precio
+        // al que se lo pasa al local (salvo que se pise a mano más abajo).
+        _transfSugerido: r.precioVenta > 0 ? r.precioVenta / r.rendimientoG * 1000 : 0,
       };
     });
 
@@ -6393,18 +6412,79 @@ function getProductosCP(){
         costoXkg = costoBase / (1 - (p.mermaPorcionado||0)/100);
       }
     } else if(p.tipoProd === 'redistribuido'){
-      costoXkg = p.precioXkg || 0;
+      costoXkg = p.precioXkg || 0;   // lo que le cuesta comprarlo al CP
     }
     return {
       ...p,
-      costoXkg,
+      costoProduccionXkg: costoXkg,
+      _transfSugerido: 0,
       modoUso: p.modoUso || (p.tipoProd === 'porcionado' ? 'porcionado' : 'directo'),
-      tienePrecioTransferencia: true
     };
   });
 
-  return [...desdeRecetas, ...manuales]
+  // Ingredientes de la despensa del CP que además se le despachan a los locales.
+  // El CP es proveedor y cocina a la vez: la misma zanahoria va al panaché y
+  // también sale suelta para los locales. Se marca con un tilde en su ficha.
+  const vendibles = ingsCP
+    .filter(i => i.vendeALocales === true)
+    .map(i => ({
+      id: 'cp-ing-' + i.id,
+      nombre: i.nombre,
+      tipoProd: 'redistribuido',
+      modoUso: 'granel',
+      ingId: i.id,
+      costoProduccionXkg: (i.precio||0) / (i.bulto||1),   // lo que la compra el CP
+      _transfSugerido: 0,
+    }));
+
+  return [...desdeRecetas, ...manuales, ...vendibles]
+    // Si un producto quedó cargado a mano Y además el ingrediente está tildado,
+    // se muestra una sola vez: manda el que se cargó primero.
+    .filter((p, ix, arr) => arr.findIndex(x =>
+      (x.nombre||'').toLowerCase().trim() === (p.nombre||'').toLowerCase().trim()) === ix)
+    .map(p => {
+      const d = _desp[p.id] || {};
+
+      // PRECIO DE TRANSFERENCIA. Orden: lo que el CP cargó a mano manda sobre
+      // todo; después el precio de venta de la receta; y si no hay ninguno,
+      // se transfiere AL COSTO (margen cero) y la pantalla del CP lo avisa.
+      const transfManual = +d.precioTransf || 0;
+      const costoProd = p.costoProduccionXkg || 0;
+      const transf = transfManual > 0 ? transfManual
+                   : (p._transfSugerido > 0 ? p._transfSugerido : costoProd);
+      const definido = transfManual > 0 || p._transfSugerido > 0;
+
+      // Cómo se despacha: por kilo, o por porción de X gramos. El precio de
+      // transferencia SIEMPRE se carga por kilo; la porción se deriva. Así, si
+      // el CP cambia el gramaje, no hay que tocar ningún precio.
+      const unidad = d.unidad === 'porcion' ? 'porcion' : 'kg';
+      const gramos = +d.gramos || 0;
+
+      return {
+        ...p,
+        costoXkg: transf,                       // lo único que ve el local
+        precioTransfManual: transfManual,
+        tienePrecioTransferencia: definido,
+        margenXkg: transf - costoProd,
+        despachoUnidad: unidad,
+        gramosPorcion: gramos,
+        precioPorcion: (unidad === 'porcion' && gramos > 0) ? transf * gramos / 1000 : null,
+      };
+    })
     .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es'));
+}
+
+// El CP define cómo despacha cada producto. Se guarda en un mapa aparte
+// (cp._despacho) para que sirva igual a los productos que salen de una receta
+// y a los cargados a mano, sin tocar ninguna de las dos estructuras.
+function updDespachoCP(prodId, campo, val){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  if(!cp._despacho) cp._despacho = {};
+  if(!cp._despacho[prodId]) cp._despacho[prodId] = { unidad:'kg', gramos:0 };
+  cp._despacho[prodId][campo] = val;
+  guardarEnFirestore();
+  renderCP();
 }
 
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
@@ -6491,9 +6571,16 @@ function renderCP(){
                     : p.tipoProd==='porcionado'  ? '<span class="badge badge-sc">Porcionado</span>'
                     : '<span style="background:#E8F4F8;color:#1A5276;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">Redistribuido</span>';
 
-    const precioTransf = p.costoXkg > 0 ? `$${fmt(p.costoXkg)}/kg` : '<span style="color:var(--gris-3)">Sin precio</span>';
+    const precioTransf = `
+      <input type="number" min="0" step="10"
+        value="${p.precioTransfManual > 0 ? p.precioTransfManual : (p.tienePrecioTransferencia ? Math.round(p.costoXkg) : '')}"
+        placeholder="${Math.round(p.costoProduccionXkg||0) || 'precio'}"
+        onchange="updDespachoCP('${escJs(p.id)}','precioTransf',+this.value)"
+        style="font-size:13px;width:100px;text-align:right;font-weight:700${p.tienePrecioTransferencia?'':';border-color:#B8540A'}">
+      <div style="font-size:10px;color:var(--gris-2);margin-top:2px">$/kg al local</div>
+      ${p.tienePrecioTransferencia ? '' : '<div style="font-size:10px;color:#B8540A;margin-top:2px">⚠ va al costo</div>'}`;
     const costoProd = p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg` : '—';
-    const margen = p.margenXkg !== undefined && p.costoXkg > 0
+    const margen = p.costoXkg > 0
       ? `<span style="color:${p.margenXkg>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(p.margenXkg))}/kg</span>`
       : '—';
     const costoDisplay = precioTransf;
@@ -6520,6 +6607,24 @@ function renderCP(){
            onchange="updProductoCP('${p.id}','precioXkg',+this.value)">
          <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg</span>`;
 
+    // Cómo sale del CP: a granel por kilo, o ya porcionado. Si va porcionado,
+    // el local pide porciones enteras y la app deriva el precio del kilo.
+    const _dUn = p.despachoUnidad || 'kg';
+    const despachoCell = `
+      <select onchange="updDespachoCP('${escJs(p.id)}','unidad',this.value)" style="font-size:12px;display:block;margin-bottom:4px;width:100%">
+        <option value="kg"${_dUn!=='porcion'?' selected':''}>⚖️ Por kilo</option>
+        <option value="porcion"${_dUn==='porcion'?' selected':''}>🍽️ Por porción</option>
+      </select>
+      ${_dUn==='porcion' ? `
+        <input type="number" min="1" step="10" value="${p.gramosPorcion||''}" placeholder="gramos"
+          onchange="updDespachoCP('${escJs(p.id)}','gramos',+this.value)"
+          style="font-size:12px;width:78px">
+        <span style="font-size:11px;color:var(--gris-2)">g c/u</span>
+        ${p.precioPorcion
+          ? `<div style="font-size:11px;color:var(--oliva);font-weight:700;margin-top:3px">$${fmt(p.precioPorcion)} la porción</div>`
+          : `<div style="font-size:11px;color:#B8540A;margin-top:3px">⚠ falta el gramaje</div>`}
+      ` : ''}`;
+
     return `<tr>
       <td><input type="text" value="${esc(p.nombre)}" placeholder="Nombre del producto"
         style="border:none;background:transparent;font-weight:600;width:100%"
@@ -6537,6 +6642,7 @@ function renderCP(){
         </select>
       </td>
       <td>${selector}</td>
+      <td>${despachoCell}</td>
       <td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}</td>
       <td style="text-align:right;font-weight:700;color:var(--negro)">${precioTransf}</td>
       <td style="text-align:right">${margen}</td>
@@ -6573,6 +6679,7 @@ function renderCP(){
             <th>Producto</th>
             <th style="width:130px">Tipo</th>
             <th>Cómo se arma su costo</th>
+            <th style="width:150px">Cómo se despacha</th>
             <th style="text-align:right;width:120px">Costo prod.</th>
             <th style="text-align:right;width:130px">Precio transf.</th>
             <th style="text-align:right;width:100px">Margen/kg</th>
@@ -7132,6 +7239,8 @@ function renderPedidoSugerido(){
   const catalogoCP = cpVinculado ? getProductosCP() : [];
   // Nombres del catálogo del CP, en minúscula, para clasificar los ingredientes de la sucursal
   const nombresCP = new Set(catalogoCP.map(p=>(p.nombre||'').toLowerCase().trim()));
+  // Para saber cómo despacha el CP cada producto (kilo o porción)
+  const prodPorNombre = new Map(catalogoCP.map(p=>[(p.nombre||'').toLowerCase().trim(), p]));
 
   // Stock actual: última toma de inventario
   const conteos = (op.conteosStock||[]).slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
@@ -7174,7 +7283,26 @@ function renderPedidoSugerido(){
       i.proveedor === 'cp' ||
       (!i.proveedor && nombresCP.has((i.nombre||'').toLowerCase().trim()))
     );
-    return { id:i.id, nombre:i.nombre, cat, unidad, sugerido, tipo, detalle, precio:i.precio/(i.bulto||1), vaAlCP };
+
+    // Si el CP lo despacha porcionado, el local pide PORCIONES ENTERAS, no kilos.
+    // La sugerencia viene calculada en kg, así que se traduce y se redondea para
+    // arriba: media porción no existe en una cocina.
+    const _pCP = vaAlCP ? prodPorNombre.get((i.nombre||'').toLowerCase().trim()) : null;
+    const porPorcion = !!(_pCP && _pCP.despachoUnidad === 'porcion' && _pCP.gramosPorcion > 0);
+    let unidadPedido = unidad, sugeridoFinal = sugerido, detalleFinal = detalle;
+    if(porPorcion){
+      unidadPedido = 'porciones';
+      if(sugerido != null && sugerido > 0){
+        sugeridoFinal = Math.ceil(sugerido * 1000 / _pCP.gramosPorcion);
+        detalleFinal = `${detalle} · ${fmt1(sugerido)} kg ≈ ${sugeridoFinal} porc. de ${_pCP.gramosPorcion}g`;
+      } else {
+        detalleFinal = `porciones de ${_pCP.gramosPorcion}g`;
+      }
+    }
+    return { id:i.id, nombre:i.nombre, cat,
+             unidad: unidadPedido, sugerido: sugeridoFinal, tipo, detalle: detalleFinal,
+             precio:i.precio/(i.bulto||1), vaAlCP, porPorcion,
+             gramosPorcion: porPorcion ? _pCP.gramosPorcion : 0 };
   });
 
   // Separar: lo que va al CP (si hay CP vinculado) va a su propia sección.
@@ -7253,7 +7381,7 @@ function renderPedidoSugerido(){
           }).map(it=>`<tr data-cp-row="1" data-nombre="${escJs(it.nombre)}" data-unidad="${escJs(it.unidad)}" data-ing="${escJs(it.id)}">
             <td><strong>${esc(it.nombre)}</strong></td>
             <td style="text-align:right;white-space:nowrap">
-              <input type="number" min="0" step="0.1" value="${it.sugerido!=null?it.sugerido:''}" placeholder="—"
+              <input type="number" min="0" step="${it.porPorcion?'1':'0.1'}" value="${it.sugerido!=null?it.sugerido:''}" placeholder="—"
                 data-ped-cp="${escJs(it.id)}"
                 style="width:85px;text-align:right;${it.sugerido>0?'border-color:var(--dorado,#C9A961);font-weight:600':''}">
               <span style="font-size:11px;color:var(--gris-2)">${esc(it.unidad)}</span>
