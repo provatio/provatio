@@ -1701,8 +1701,59 @@ function esDueno(){
      && window._empresaDuenoUid === currentUser.uid) return true;
   return false;
 }
-function puedeGestionarUsuarios(){ return esDueno(); }
-function verDinero(){ return getMiRol() !== 'cocina'; }
+
+// ═══════════════════════════════════════════════════════════════════════
+// CAPACIDADES POR PERSONA
+// En una cocina real el organigrama se rompe todos los días: el mismo que
+// ordena la cámara a la mañana está en la plancha a la noche. Por eso acá
+// no hay etiquetas de puesto: hay una persona y lo que esa persona puede
+// hacer. Los perfiles de abajo son solo un atajo para dar de alta rápido.
+//
+// LÍMITE IMPORTANTE: esto lo controla la app, no la base de datos. Las
+// reglas de Firestore siguen controlando A QUÉ operación entra cada uno.
+// Un tilde apagado esconde la pantalla; no es una caja fuerte.
+// ═══════════════════════════════════════════════════════════════════════
+const CAPACIDADES = {
+  verDinero:         { nombre:'Ve los números',        desc:'Costos, márgenes, rentabilidad y salud del negocio' },
+  cargaRecetas:      { nombre:'Carga recetas',         desc:'Ingredientes, mermas, recetas y subproductos' },
+  armaPedidos:       { nombre:'Arma pedidos',          desc:'Prepara el pedido al CP y a proveedores' },
+  autorizaPedidos:   { nombre:'Autoriza pedidos',      desc:'Da el visto bueno y puede corregir cantidades' },
+  recibeMercaderia:  { nombre:'Recibe mercadería',     desc:'Controla el remito, acepta o devuelve con motivo' },
+  gestionaEquipo:    { nombre:'Gestiona el equipo',    desc:'Da de alta personas y define qué puede hacer cada una' },
+};
+
+// Perfiles de arranque. Son un punto de partida, no una jaula: después de
+// aplicarlos se ajusta persona por persona.
+const PERFILES_CAP = {
+  dueno:      ['verDinero','cargaRecetas','armaPedidos','autorizaPedidos','recibeMercaderia','gestionaEquipo'],
+  supervisor: ['verDinero','cargaRecetas','armaPedidos','autorizaPedidos','recibeMercaderia'],
+  encargado:  ['verDinero','cargaRecetas','armaPedidos','autorizaPedidos','recibeMercaderia'],
+  cp:         ['verDinero','cargaRecetas','armaPedidos','recibeMercaderia'],
+  cocina:     ['cargaRecetas','armaPedidos'],
+};
+
+// ¿Puede esta persona hacer tal cosa?
+// Si todavía no tiene capacidades cargadas (cuentas de antes de este cambio),
+// se derivan de su perfil de arranque para que nada deje de funcionar.
+function tieneCap(nombre){
+  if(esAdminProvatio()) return true;
+  if(esDueno()) return true;
+  const c = currentUser && currentUser.capacidades;
+  if(c && typeof c === 'object' && Object.keys(c).length) return c[nombre] === true;
+  const perfil = PERFILES_CAP[getMiRol()] || PERFILES_CAP.encargado;
+  return perfil.includes(nombre);
+}
+function capsDeMiembro(m){
+  const c = m && m.capacidades;
+  if(c && typeof c === 'object' && Object.keys(c).length) return c;
+  const perfil = PERFILES_CAP[(m&&m.rol)] || PERFILES_CAP.encargado;
+  const out = {};
+  Object.keys(CAPACIDADES).forEach(k => out[k] = perfil.includes(k));
+  return out;
+}
+
+function puedeGestionarUsuarios(){ return esDueno() || tieneCap('gestionaEquipo'); }
+function verDinero(){ return tieneCap('verDinero'); }
 function verMargenCP(){ const r = getMiRol(); return r === 'dueno' || r === 'cp'; }
 
 // Operaciones que el usuario tiene permitidas (lista vacía en dueño = todas)
@@ -1730,9 +1781,13 @@ function refOperaciones(){
 // esta función solo miraba el viejo, así que en una empresa real un cocinero
 // recibía el menú completo del encargado — con rentabilidad, salud del negocio
 // y control de stock — aunque los precios sí se le escondieran.
+// Menú reducido: no depende de la etiqueta del puesto sino de lo que la
+// persona puede hacer. Quien no ve los números no necesita rentabilidad,
+// salud del negocio ni informe de ventas en su menú.
 function esNivelCocina(){
-  if(getMiRol() === 'cocina') return true;
-  return !!(currentUser && currentUser.rol==='cliente' && currentUser.nivel==='cocina');
+  if(currentUser && currentUser.rol==='cliente' && currentUser.nivel==='cocina') return true;
+  if(esDueno() || esAdminProvatio()) return false;
+  return !tieneCap('verDinero');
 }
 
 // ── AUTORIZACIÓN DE PEDIDOS ──────────────────────────────────────────────
@@ -1742,11 +1797,9 @@ function esNivelCocina(){
 function esRolCocina(){
   return getMiRol() === 'cocina' || esNivelCocina();
 }
-function puedeAutorizarPedidos(){
-  if(esAdminProvatio()) return true;
-  const r = getMiRol();
-  return (r === 'dueno' || r === 'supervisor' || r === 'encargado') && !esRolCocina();
-}
+function puedeAutorizarPedidos(){ return tieneCap('autorizaPedidos'); }
+function puedeRecibirMercaderia(){ return tieneCap('recibeMercaderia'); }
+function puedeArmarPedidos(){ return tieneCap('armaPedidos'); }
 // ¿Esta operación exige visto bueno antes de que un pedido salga?
 // Se define POR OPERACIÓN: dos marcas de la misma empresa no trabajan igual.
 function exigeAutorizacion(){
@@ -2620,6 +2673,9 @@ async function cargarUsuarioFirebase(firebaseUser){
             empresaId: _ud.empresaId,
             rolEmpresa: _esDuenaEmpresa ? 'dueno' : (m.rol || 'encargado'),
             operacionesAsignadas: m.operacionesAsignadas || [],
+            // Lo que esta persona puede hacer. Si su ficha es anterior a las
+            // capacidades, queda vacío y tieneCap() cae al perfil de arranque.
+            capacidades: (m.capacidades && typeof m.capacidades==='object') ? m.capacidades : null,
           };
         } else if(window._empresaDuenoUid === firebaseUser.uid){
           // Es dueña pero no tiene ficha de miembro: igual la dejamos entrar como dueña
@@ -7809,8 +7865,8 @@ const MOTIVOS_RECHAZO = [
 ];
 
 function abrirRecepcionPedido(pedidoId){
-  if(!puedeAutorizarPedidos()){
-    showToast('La recepción la confirma el encargado — avisale que llegó la mercadería','info');
+  if(!puedeRecibirMercaderia()){
+    showToast('No tenés habilitado recibir mercadería — avisale a quien controla los remitos','info');
     return;
   }
   const op = getOp();
@@ -7898,7 +7954,7 @@ function _recepTodoConforme(){
 }
 
 async function confirmarRecepcionDetallada(pedidoId){
-  if(!puedeAutorizarPedidos()){ showToast('La recepción la confirma el encargado','error'); return; }
+  if(!puedeRecibirMercaderia()){ showToast('No tenés habilitado recibir mercadería','error'); return; }
   const op = getOp();
   if(!op || !op.grupoId){ showToast('Esta operación no está vinculada a un CP','error'); return; }
 
@@ -8253,8 +8309,8 @@ async function confirmarRecepcionPedido(pedidoId){
   // La recepción la da SIEMPRE el encargado: es el máximo responsable de la
   // operación y el que puede rechazar por estado, precio, cadena de frío o
   // porque llegó otra cosa. La cocina avisa; el encargado firma.
-  if(!puedeAutorizarPedidos()){
-    showToast('La recepción la confirma el encargado — avisale que llegó la mercadería','info');
+  if(!puedeRecibirMercaderia()){
+    showToast('No tenés habilitado recibir mercadería — avisale a quien controla los remitos','info');
     return;
   }
   if(!confirm('¿Confirmar que recibiste este pedido?\n\nEl CP lo va a dar por cerrado.')) return;
@@ -10803,7 +10859,16 @@ async function renderEquipo(){
     return `<tr${m.activo===false?' style="opacity:.45"':''}>
       <td><strong>${esc(m.nombre || m.email || m.uid)}</strong><br>
           <span style="font-size:11px;color:var(--gris-2)">${esc(m.email||'')}</span></td>
-      <td>${esc(rolInfo.nombre)}<br><span style="font-size:11px;color:var(--gris-2)">${esc(rolInfo.desc||'')}</span></td>
+      <td style="font-size:12px;line-height:1.8">
+        ${m.rol==='dueno'
+          ? '<span style="color:var(--gris-2)">Todo</span>'
+          : (()=>{
+              const c = capsDeMiembro(m);
+              const si = Object.keys(CAPACIDADES).filter(k=>c[k]);
+              if(!si.length) return '<span style="color:var(--bordo)">Sin permisos</span>';
+              return si.map(k=>`<span style="display:inline-block;background:var(--crema);border-radius:4px;padding:2px 7px;margin:1px 2px 1px 0;font-size:11px">${esc(CAPACIDADES[k].nombre)}</span>`).join('');
+            })()}
+      </td>
       <td style="font-size:13px">${locales}</td>
       <td>${m.activo===false?'<span style="color:var(--bordo);font-size:12px">Desactivado</span>':'<span style="color:var(--verde);font-size:12px">Activo</span>'}</td>
       <td style="white-space:nowrap">
@@ -10817,8 +10882,9 @@ async function renderEquipo(){
 
   setContent('Equipo', `
     <div class="alert alert-info" style="margin-bottom:16px">
-      Cada persona entra con su propio mail y ve únicamente los locales que le asignes.
-      Para sumar a alguien, primero tiene que registrarse en Provatio; después lo agregás acá con su mail.
+      Acá no se reparten puestos, se reparten permisos: en una cocina el mismo que ordena la cámara
+      a la mañana está en la plancha a la noche. Definí <strong>qué puede hacer cada persona</strong> y
+      a qué locales entra. Para sumar a alguien, primero tiene que registrarse en Provatio.
     </div>
     <div style="margin-bottom:16px">
       <button class="btn btn-primary" onclick="modalInvitarMiembro()">+ Agregar persona</button>
@@ -10826,7 +10892,7 @@ async function renderEquipo(){
     <div class="card">
       <div class="card-header"><span class="card-title">Equipo (${miembros.length})</span></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Persona</th><th>Rol</th><th>Locales</th><th>Estado</th><th></th></tr></thead>
+        <thead><tr><th>Persona</th><th style="width:38%">Qué puede hacer</th><th>Locales</th><th>Estado</th><th></th></tr></thead>
         <tbody>${filas || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gris-3)">Todavía no hay nadie más en el equipo</td></tr>'}</tbody>
       </table></div>
     </div>`);
@@ -10839,6 +10905,26 @@ function _selectorLocales(seleccionadas){
       <input type="checkbox" class="miem-op" value="${esc(id)}"${sel.includes(id)?' checked':''}>
       <span>${esc(op.nombre||id)}</span>
     </label>`).join('');
+}
+
+
+// Los tildes de capacidades. El selector de perfil de arriba solo los
+// pre-marca: después se ajusta uno por uno. Nadie queda encasillado.
+function _selectorCapacidades(caps){
+  return Object.entries(CAPACIDADES).map(([k,v])=>`
+    <label style="display:flex;gap:9px;align-items:flex-start;padding:9px 4px;cursor:pointer;border-bottom:1px solid var(--crema-2)">
+      <input type="checkbox" class="miem-cap" value="${k}" ${caps[k]?'checked':''} style="width:16px;height:16px;margin-top:2px;flex-shrink:0">
+      <span>
+        <span style="font-weight:600;font-size:13px">${esc(v.nombre)}</span>
+        <span style="display:block;font-size:11px;color:var(--gris-2);line-height:1.4">${esc(v.desc)}</span>
+      </span>
+    </label>`).join('');
+}
+
+// Marca los tildes según el perfil elegido, sin guardar nada todavía.
+function _aplicarPerfilCap(perfil){
+  const lista = PERFILES_CAP[perfil] || [];
+  document.querySelectorAll('.miem-cap').forEach(c=>{ c.checked = lista.includes(c.value); });
 }
 
 function modalInvitarMiembro(){
@@ -10860,11 +10946,20 @@ function modalInvitarMiembro(){
         <input type="text" id="miem-nombre" placeholder="Jorge — encargado Devoto" style="width:100%">
       </div>
       <div class="form-group">
-        <label>Rol</label>
-        <select id="miem-rol" style="width:100%">
+        <label>Arrancá desde un perfil (después lo ajustás)</label>
+        <select id="miem-rol" style="width:100%" onchange="_aplicarPerfilCap(this.value)">
           ${Object.entries(ROLES).filter(([k])=>k!=='dueno')
-            .map(([k,v])=>`<option value="${k}">${esc(v.nombre)} — ${esc(v.desc)}</option>`).join('')}
+            .map(([k,v])=>`<option value="${k}"${k==='encargado'?' selected':''}>${esc(v.nombre)} — ${esc(v.desc)}</option>`).join('')}
         </select>
+        <div style="font-size:11px;color:var(--gris-2);margin-top:5px">
+          Es solo un atajo para marcar los tildes de abajo. Lo que vale es lo que quede tildado.
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Qué puede hacer esta persona</label>
+        <div style="border:1px solid var(--borde,#E5DED0);border-radius:6px;padding:4px 10px">
+          ${_selectorCapacidades((()=>{const o={};(PERFILES_CAP.encargado||[]).forEach(k=>o[k]=true);return o;})())}
+        </div>
       </div>
       <div class="form-group">
         <label>Locales a los que accede</label>
@@ -10890,12 +10985,22 @@ async function modalEditarMiembro(uid){
       <button class="btn btn-icon" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:12px;font-size:12px">
+        En la app esta persona aparece siempre por su nombre, no por un puesto.
+        Acá definís qué puede hacer.
+      </div>
       <div class="form-group">
-        <label>Rol</label>
-        <select id="miem-rol" style="width:100%">
+        <label>Aplicar un perfil (opcional, solo remarca los tildes)</label>
+        <select id="miem-rol" style="width:100%" onchange="_aplicarPerfilCap(this.value)">
           ${Object.entries(ROLES).filter(([k])=>k!=='dueno')
             .map(([k,v])=>`<option value="${k}"${m.rol===k?' selected':''}>${esc(v.nombre)} — ${esc(v.desc)}</option>`).join('')}
         </select>
+      </div>
+      <div class="form-group">
+        <label>Qué puede hacer ${esc((m.nombre||m.email||'').split('@')[0])}</label>
+        <div style="border:1px solid var(--borde,#E5DED0);border-radius:6px;padding:4px 10px">
+          ${_selectorCapacidades(capsDeMiembro(m))}
+        </div>
       </div>
       <div class="form-group">
         <label>Locales a los que accede</label>
@@ -10915,10 +11020,15 @@ async function guardarMiembro(uidExistente){
   const eid = getEmpresaId();
   const rol = document.getElementById('miem-rol').value;
   const ops = [...document.querySelectorAll('.miem-op:checked')].map(c => c.value);
+  // Se guarda el mapa completo, con los apagados en false: así queda explícito
+  // lo que NO puede hacer y no se cae al perfil de arranque sin querer.
+  const marcadas = new Set([...document.querySelectorAll('.miem-cap:checked')].map(c=>c.value));
+  const capacidades = {};
+  Object.keys(CAPACIDADES).forEach(k => capacidades[k] = marcadas.has(k));
   try{
     if(uidExistente){
       await db.collection('empresas').doc(eid).collection('miembros').doc(uidExistente)
-        .set({ rol, operacionesAsignadas: ops }, {merge:true});
+        .set({ rol, capacidades, operacionesAsignadas: ops }, {merge:true});
       showToast('Permisos actualizados','success');
     }else{
       const email = (document.getElementById('miem-email').value||'').trim().toLowerCase();
@@ -10934,7 +11044,7 @@ async function guardarMiembro(uidExistente){
       }
       const uid = idx.data().uid;
       await db.collection('empresas').doc(eid).collection('miembros').doc(uid).set({
-        uid, email, nombre: nombre || email, rol,
+        uid, email, nombre: nombre || email, rol, capacidades,
         operacionesAsignadas: ops, activo: true, altaEn: Date.now(),
         invitadoPor: currentUser.email || '',
       });
