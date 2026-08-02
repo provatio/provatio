@@ -1421,6 +1421,10 @@ async function guardarEnFirestore(){
     // Metadatos ligeros de las otras operaciones (sin sus datos pesados)
     for(const [opId, op] of Object.entries(demoData.operaciones)){
       if(opId===currentOpId) continue;
+      // El CP que un encargado tiene en memoria solo para pedirle insumos no es
+      // suyo: no debe escribirle nada más que el buzón de pedidos (y eso lo hace
+      // confirmarPedidoCP, no este loop). Las reglas además lo rechazarían.
+      if(op._soloProveedor) continue;
       const meta = {...op}; delete meta._datos;
       // Los pedidos que las sucursales le confirman al CP viven en el documento
       // del CP y los escribe cada sucursal por su cuenta. Si los mandáramos desde
@@ -1504,6 +1508,7 @@ async function cargarDesdeFirestore(uid){
     // (operacionesAsignadas), y Firestore rechaza el listado entero.
     // Por eso, para miembros con lista, se trae cada operación por su ID.
     let _docs = [];
+    let _docsCP = [];   // el CP, traído solo como proveedor
     if(_permitidas === null){
       const opsSnap = await conTimeout(_origen.get(), 20000, 'La carga de operaciones');
       opsSnap.forEach(d => _docs.push(d));
@@ -1512,6 +1517,26 @@ async function cargarDesdeFirestore(uid){
         Promise.all(_permitidas.map(id => _origen.doc(id).get())),
         20000, 'La carga de operaciones');
       _docs = snaps.filter(s => s.exists);
+
+      // El encargado de un local NO tiene asignado el CP, pero necesita verlo:
+      // es quien arma el pedido, lo controla y da el OK. Sin el documento del
+      // CP en memoria, la pantalla de pedido no encuentra ni el catálogo ni
+      // dónde dejarle el pedido. Se trae SOLO como proveedor — no es una
+      // operación suya y no aparece para trabajar adentro.
+      const _yaTengo = new Set(_docs.map(d => d.id));
+      const _cpIds = [...new Set(_docs
+        .map(d => (d.data()||{}).grupoId)
+        .filter(g => g && !_yaTengo.has(g)))];
+      if(_cpIds.length){
+        try{
+          const cpSnaps = await conTimeout(
+            Promise.all(_cpIds.map(id => _origen.doc(id).get())),
+            20000, 'La carga del Centro de Producción');
+          _docsCP = cpSnaps.filter(s => s.exists);
+        }catch(e){
+          console.warn('[Provatio] no pude cargar el CP proveedor:', e);
+        }
+      }
     }
 
     if(!_docs.length && _permitidas === null){
@@ -1534,6 +1559,13 @@ async function cargarDesdeFirestore(uid){
       navigate('dashboard');
       return false;
     }
+
+    // Recién ahora sumamos el CP. Va después del control de arriba para que un
+    // miembro sin locales asignados siga viendo el aviso correcto, y no crea
+    // que tiene una operación por el solo hecho de existir un CP.
+    _docsCP.forEach(doc => {
+      demoData.operaciones[doc.id] = { ...doc.data(), _soloProveedor: true };
+    });
 
     // Usar primera operación como activa
     currentOpId = Object.keys(demoData.operaciones)[0];
@@ -1679,6 +1711,37 @@ function refOperaciones(){
 }
 
 function esNivelCocina(){ return currentUser && currentUser.rol==='cliente' && currentUser.nivel==='cocina'; }
+
+// ── AUTORIZACIÓN DE PEDIDOS ──────────────────────────────────────────────
+// Quién puede firmar un pedido y quién queda del lado de la cocina. El
+// encargado es el máximo responsable de la operación: autoriza, corrige
+// cantidades, y es el único que da por recibida la mercadería.
+function esRolCocina(){
+  return getMiRol() === 'cocina' || esNivelCocina();
+}
+function puedeAutorizarPedidos(){
+  if(esAdminProvatio()) return true;
+  const r = getMiRol();
+  return (r === 'dueno' || r === 'supervisor' || r === 'encargado') && !esRolCocina();
+}
+// ¿Esta operación exige visto bueno antes de que un pedido salga?
+// Se define POR OPERACIÓN: dos marcas de la misma empresa no trabajan igual.
+function exigeAutorizacion(){
+  const op = getOp();
+  return !!(op && op.requiereAutorizacionPedido);
+}
+function toggleAutorizacionPedidos(val){
+  const op = getOp();
+  if(!op) return;
+  if(!puedeAutorizarPedidos()){ showToast('Solo el encargado o el dueño cambian esto','error'); return; }
+  op.requiereAutorizacionPedido = !!val;
+  guardarEnFirestore();
+  renderPedidoSugerido();
+  showToast(val
+    ? 'Ahora los pedidos de cocina esperan tu visto bueno'
+    : 'Los pedidos de cocina salen directo al CP','success');
+}
+
 function esDarkKitchen(){
   const op = getOp();
   return op && (op.tipo==='darkKitchen' || op.tipo==='Dark Kitchen');
@@ -7341,14 +7404,89 @@ function renderPedidoSugerido(){
   const _esperando  = _misPedidos.filter(p=>p.estado==='confirmado');
 
   setContent('Pedido sugerido', `
+    ${(() => {
+      const pend = (op._pedidosPendientes)||[];
+      const rech = (op._pedidosRechazados)||[];
+      let html = '';
+
+      // ── El encargado firma ────────────────────────────────────────────
+      if(pend.length && puedeAutorizarPedidos()){
+        html += pend.map(p=>`
+        <div class="card" style="margin-bottom:14px;border:1.5px solid #B8540A;background:#FFFBF5">
+          <div class="card-header" style="background:#FFF3E6">
+            <span class="card-title">✍️ Esperando tu visto bueno — ${(p.lineas||[]).length} producto(s)</span>
+            <span style="font-size:12px;color:var(--gris-2)">${esc(p.autorPor||'cocina')} · ${esc(p.fecha||'')} ${esc(p.hora||'')}</span>
+          </div>
+          <div style="padding:10px 14px;font-size:12px;color:var(--gris-2)">
+            Podés corregir las cantidades antes de firmar. Lo que quede en cero no se pide.
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Producto</th><th style="text-align:right">Cantidad</th></tr></thead>
+            <tbody>
+              ${(p.lineas||[]).map((l,ix)=>`<tr>
+                <td><strong>${esc(l.nombre||'')}</strong></td>
+                <td style="text-align:right;white-space:nowrap">
+                  <input type="number" min="0" step="${(l.unidad==='porciones')?'1':'0.1'}" value="${l.cantidad}"
+                    onchange="updCantPendiente('${escJs(p.id)}',${ix},this.value)"
+                    style="width:85px;text-align:right">
+                  <span style="font-size:11px;color:var(--gris-2)">${esc(l.unidad||'')}</span>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>
+          <div style="padding:12px 14px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--crema-2)">
+            <button class="btn btn-secondary btn-sm" onclick="rechazarPedidoLocal('${escJs(p.id)}')">Rechazar</button>
+            <button class="btn btn-primary btn-sm" onclick="autorizarPedidoLocal('${escJs(p.id)}')">Autorizar y enviar al CP →</button>
+          </div>
+        </div>`).join('');
+      }
+
+      // ── La cocina espera ──────────────────────────────────────────────
+      if(pend.length && !puedeAutorizarPedidos()){
+        html += `<div class="alert alert-info" style="margin-bottom:14px">
+          ✍️ Mandaste ${pend.length} pedido(s) a autorización. El encargado los tiene que firmar antes de que salgan al CP.
+        </div>`;
+      }
+
+      // ── Rechazos recientes: la cocina tiene que saber por qué ─────────
+      if(rech.length){
+        const ult = rech[rech.length-1];
+        html += `<div class="card" style="margin-bottom:14px;border:1.5px solid var(--bordo,#8B1A1A)">
+          <div class="card-header" style="background:#FBF0F0">
+            <span class="card-title">✕ Pedido rechazado — ${esc(ult.fecha||'')} ${esc(ult.hora||'')}</span>
+          </div>
+          <div style="padding:12px 14px;font-size:13px">
+            <strong>Motivo:</strong> ${esc(ult.motivo||'')}
+            <div style="font-size:12px;color:var(--gris-2);margin-top:4px">
+              ${esc(ult.rechazadoPor||'El encargado')} · ${(ult.lineas||[]).length} producto(s)
+            </div>
+          </div>
+        </div>`;
+      }
+      return html;
+    })()}
+
+    ${puedeAutorizarPedidos() ? `
+    <div style="display:flex;align-items:center;gap:9px;background:var(--blanco);border:1px solid var(--crema-2);border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px">
+      <input type="checkbox" id="cfg-autorizacion" ${exigeAutorizacion()?'checked':''}
+        onchange="toggleAutorizacionPedidos(this.checked)" style="width:16px;height:16px">
+      <label for="cfg-autorizacion" style="margin:0;cursor:pointer">
+        Los pedidos que arma la cocina necesitan mi visto bueno antes de salir
+        <span style="display:block;font-size:11px;color:var(--gris-2);margin-top:2px">
+          Se configura por operación: cada local trabaja distinto.
+        </span>
+      </label>
+    </div>` : ''}
+
     ${_enCamino.map(p=>`
     <div class="card" style="margin-bottom:14px;border:1.5px solid #2E7D32;background:#F4FAF4">
       <div class="card-header" style="background:#EAF5EA">
         <span class="card-title">🚚 Tu pedido al CP ya salió — ${(p.lineas||[]).length} producto(s) del ${esc(p.fecha||'')}</span>
-        <button class="btn btn-primary btn-sm" onclick="confirmarRecepcionPedido('${escJs(p.id)}')">Confirmar que lo recibí</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirRecepcionPedido('${escJs(p.id)}')">Controlar y recibir</button>
       </div>
       <div style="padding:10px 14px;font-size:12px;color:var(--gris-2)">
-        Cuando llegue la mercadería y la controles, confirmá la recepción. Hasta que lo hagas, el CP lo ve como pendiente de llegada.
+        Cuando llegue la mercadería, controlala contra el pedido. Podés aceptar unos productos y
+        devolver otros con el motivo. Hasta que cierres, el CP lo ve como pendiente de llegada.
       </div>
     </div>`).join('')}
 
@@ -7524,6 +7662,258 @@ function sumarProductoDelCP(prodId){
   guardarEnFirestore();
 }
 
+// El encargado corrige una cantidad del pedido que le mandó la cocina.
+// Tiene la última palabra: puede ajustar antes de firmar.
+function updCantPendiente(pedId, ix, val){
+  const op = getOp();
+  const p = ((op&&op._pedidosPendientes)||[]).find(x=>x.id===pedId);
+  if(!p || !p.lineas[ix]) return;
+  p.lineas[ix].cantidad = Math.max(0, +val||0);
+}
+
+// Firma. El pedido sale del local y recién ahora viaja al CP.
+async function autorizarPedidoLocal(pedId){
+  if(!puedeAutorizarPedidos()){ showToast('Solo el encargado autoriza pedidos','error'); return; }
+  const op = getOp();
+  const p = ((op&&op._pedidosPendientes)||[]).find(x=>x.id===pedId);
+  if(!p){ showToast('Ese pedido ya no está','info'); renderPedidoSugerido(); return; }
+
+  const lineas = (p.lineas||[]).filter(l => (+l.cantidad||0) > 0);
+  if(!lineas.length){ showToast('Quedó sin cantidades: no hay nada para pedir','error'); return; }
+  if(!confirm(`¿Autorizar y mandar ${lineas.length} producto(s) al CP?`)) return;
+
+  const cpId = op.grupoId;
+  const cp = cpId ? demoData.operaciones[cpId] : null;
+  if(!cp){ showToast('Esta operación no está vinculada a un CP','error'); return; }
+
+  try{
+    mostrarProgreso && mostrarProgreso('Autorizando y enviando al CP…');
+    const pedidos = await _leerPedidosCP(cpId);
+    const pend = pedidos.find(x=>x.sucursalId===currentOpId && x.estado==='confirmado');
+    const nuevo = {
+      id: 'ped-'+Date.now(),
+      sucursalId: currentOpId,
+      sucursalNombre: op.nombre || 'Sucursal',
+      fecha: new Date().toISOString().slice(0,10),
+      hora: new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
+      lineas,
+      estado: 'confirmado',
+      corregido: !!pend,
+      lineasAntes: pend ? (pend.lineas||[]).length : null,
+      horaAntes: pend ? (pend.hora || null) : null,
+      pedidoPor: p.autorPor || null,
+      autorizadoPor: (currentUser && currentUser.email) || null,
+    };
+    const resto = pedidos.filter(x=>!(pend && x.id===pend.id));
+    const recibidos = resto.filter(x=>x.estado==='recibido').slice(-20);
+    const activos   = resto.filter(x=>x.estado!=='recibido');
+    await _guardarPedidosCP(cpId, [...recibidos, ...activos, nuevo]);
+
+    op._pedidosPendientes = (op._pedidosPendientes||[]).filter(x=>x.id!==pedId);
+    ocultarProgreso && ocultarProgreso();
+    showToast(`✓ Autorizado y enviado al CP (${lineas.length} productos)`,'success');
+    renderPedidoSugerido();
+    guardarEnFirestore();
+  }catch(err){
+    ocultarProgreso && ocultarProgreso();
+    showToast('No se pudo enviar: '+err.message,'error');
+  }
+}
+
+// Rechazo. Vuelve a la cocina con el motivo, para que sepan por qué.
+function rechazarPedidoLocal(pedId){
+  if(!puedeAutorizarPedidos()){ showToast('Solo el encargado rechaza pedidos','error'); return; }
+  const op = getOp();
+  const p = ((op&&op._pedidosPendientes)||[]).find(x=>x.id===pedId);
+  if(!p) return;
+  const motivo = prompt('¿Por qué lo rechazás? (la cocina lo va a ver)');
+  if(motivo === null) return;
+  op._pedidosPendientes = (op._pedidosPendientes||[]).filter(x=>x.id!==pedId);
+  if(!op._pedidosRechazados) op._pedidosRechazados = [];
+  op._pedidosRechazados = [...op._pedidosRechazados.slice(-9), {
+    ...p, motivo: (motivo||'').trim() || 'Sin motivo indicado',
+    rechazadoPor: (currentUser && currentUser.email) || null,
+    rechazadoEn: Date.now(),
+  }];
+  guardarEnFirestore();
+  renderPedidoSugerido();
+  showToast('Pedido rechazado — la cocina va a ver el motivo','info');
+}
+
+// ── RECEPCIÓN CON CONTROL LÍNEA POR LÍNEA ────────────────────────────────
+// Casi nunca se rechaza un remito entero: llega el bife impecable y el panaché
+// sin frío. El encargado acepta lo que está bien y devuelve lo que no, con el
+// motivo en cada línea. Eso es lo que después explica un desvío de stock.
+const MOTIVOS_RECHAZO = [
+  'Mal estado',
+  'Cortó la cadena de frío',
+  'Vino otra mercadería',
+  'Diferencia de precio',
+  'Vino de menos',
+  'No llegó',
+  'Otro',
+];
+
+function abrirRecepcionPedido(pedidoId){
+  if(!puedeAutorizarPedidos()){
+    showToast('La recepción la confirma el encargado — avisale que llegó la mercadería','info');
+    return;
+  }
+  const op = getOp();
+  const cp = (op && op.grupoId) ? demoData.operaciones[op.grupoId] : null;
+  const p = ((cp && cp._pedidosSucursales)||[]).find(x=>x.id===pedidoId);
+  if(!p){ showToast('Ese pedido ya no está — actualizá la pantalla','info'); renderPedidoSugerido(); return; }
+
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Recepción del pedido · ${esc(p.fecha||'')}</span>
+      <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:14px;font-size:13px">
+        Controlá contra la mercadería que tenés adelante. Dejá la cantidad que
+        <strong>realmente recibiste</strong>. Si no coincide con lo pedido, marcá el motivo.
+      </div>
+      <div style="margin-bottom:10px">
+        <button class="btn btn-secondary btn-sm" onclick="_recepTodoConforme()">✓ Llegó todo conforme</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Producto</th>
+          <th style="text-align:right;width:90px">Pedido</th>
+          <th style="text-align:right;width:110px">Recibido</th>
+          <th style="width:180px">Motivo si difiere</th>
+        </tr></thead>
+        <tbody>
+          ${(p.lineas||[]).map((l,ix)=>`<tr data-recep-row="${ix}">
+            <td><strong>${esc(l.nombre||'')}</strong></td>
+            <td style="text-align:right;color:var(--gris-2);white-space:nowrap">
+              ${fmt1(l.cantidad)} <span style="font-size:11px">${esc(l.unidad||'')}</span>
+            </td>
+            <td style="text-align:right;white-space:nowrap">
+              <input type="number" min="0" step="${(l.unidad==='porciones')?'1':'0.1'}"
+                value="${l.cantidad}" data-recep-cant="${ix}"
+                oninput="_recepMarcarFila(${ix})"
+                style="width:80px;text-align:right">
+            </td>
+            <td>
+              <select data-recep-motivo="${ix}" style="font-size:12px;width:100%">
+                <option value="">—</option>
+                ${MOTIVOS_RECHAZO.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}
+              </select>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="form-group" style="margin-top:14px">
+        <label>Observación general (opcional)</label>
+        <input type="text" id="recep-obs" placeholder="Ej: el remito vino sin firmar">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarRecepcionDetallada('${escJs(pedidoId)}')">Confirmar recepción</button>
+    </div>
+  `);
+}
+
+// Pinta la fila cuando lo recibido no coincide con lo pedido, para que la
+// diferencia se vea sin tener que comparar número por número.
+function _recepMarcarFila(ix){
+  const fila = document.querySelector(`[data-recep-row="${ix}"]`);
+  const inp  = document.querySelector(`[data-recep-cant="${ix}"]`);
+  const sel  = document.querySelector(`[data-recep-motivo="${ix}"]`);
+  if(!fila || !inp) return;
+  const pedido = +fila.querySelectorAll('td')[1].textContent.trim().split(' ')[0].replace(',','.') || 0;
+  const dif = Math.abs((+inp.value||0) - pedido) > 0.001;
+  fila.style.background = dif ? '#FFF3E6' : '';
+  if(sel) sel.style.borderColor = dif && !sel.value ? '#B8540A' : '';
+}
+
+function _recepTodoConforme(){
+  document.querySelectorAll('[data-recep-row]').forEach(fila=>{
+    const ix = fila.getAttribute('data-recep-row');
+    const inp = fila.querySelector(`[data-recep-cant="${ix}"]`);
+    const sel = fila.querySelector(`[data-recep-motivo="${ix}"]`);
+    const pedido = fila.querySelectorAll('td')[1].textContent.trim().split(' ')[0].replace(',','.');
+    if(inp) inp.value = +pedido || 0;
+    if(sel) sel.value = '';
+    fila.style.background = '';
+  });
+  showToast('Cargado todo conforme — revisá antes de confirmar','info');
+}
+
+async function confirmarRecepcionDetallada(pedidoId){
+  if(!puedeAutorizarPedidos()){ showToast('La recepción la confirma el encargado','error'); return; }
+  const op = getOp();
+  if(!op || !op.grupoId){ showToast('Esta operación no está vinculada a un CP','error'); return; }
+
+  const cpId = op.grupoId;
+  const cpMem = demoData.operaciones[cpId];
+  const pMem = ((cpMem && cpMem._pedidosSucursales)||[]).find(x=>x.id===pedidoId);
+  if(!pMem){ showToast('Ese pedido ya no está','info'); closeModal(); renderPedidoSugerido(); return; }
+
+  // Armar el detalle desde el formulario
+  const detalle = [];
+  let faltaMotivo = false;
+  document.querySelectorAll('[data-recep-row]').forEach(fila=>{
+    const ix = +fila.getAttribute('data-recep-row');
+    const linea = (pMem.lineas||[])[ix];
+    if(!linea) return;
+    const recibido = +(fila.querySelector(`[data-recep-cant="${ix}"]`)||{}).value || 0;
+    const motivo = ((fila.querySelector(`[data-recep-motivo="${ix}"]`)||{}).value||'').trim();
+    const pedido = +linea.cantidad || 0;
+    const difiere = Math.abs(recibido - pedido) > 0.001;
+    if(difiere && !motivo) faltaMotivo = true;
+    detalle.push({
+      ingId: linea.ingId, nombre: linea.nombre, unidad: linea.unidad,
+      pedido, recibido, motivo: difiere ? motivo : '',
+    });
+  });
+
+  if(faltaMotivo){
+    showToast('Marcá el motivo en los productos donde la cantidad no coincide','error');
+    return;
+  }
+
+  const conDif = detalle.filter(d => Math.abs(d.recibido - d.pedido) > 0.001);
+  const obs = (document.getElementById('recep-obs')||{}).value || '';
+  const resumen = conDif.length
+    ? `Vas a cerrar el pedido con ${conDif.length} diferencia(s):\n\n` +
+      conDif.map(d=>`· ${d.nombre}: pediste ${fmt1(d.pedido)}, recibiste ${fmt1(d.recibido)} — ${d.motivo}`).join('\n') +
+      '\n\n¿Confirmás?'
+    : '¿Confirmás que llegó todo conforme?';
+  if(!confirm(resumen)) return;
+
+  try{
+    mostrarProgreso && mostrarProgreso('Confirmando recepción…');
+    const pedidos = await _leerPedidosCP(cpId);
+    const p = pedidos.find(x=>x.id===pedidoId);
+    if(!p){
+      ocultarProgreso && ocultarProgreso();
+      showToast('Ese pedido ya no está — se actualizó la pantalla','info');
+      closeModal(); renderPedidoSugerido(); return;
+    }
+    p.estado = 'recibido';
+    p.recibidoEn = Date.now();
+    p.recibidoPor = (currentUser && currentUser.email) || null;
+    p.recepcion = detalle;
+    p.conDiferencias = conDif.length > 0;
+    p.observacionRecepcion = obs;
+    await _guardarPedidosCP(cpId, pedidos);
+
+    ocultarProgreso && ocultarProgreso();
+    closeModal();
+    showToast(conDif.length
+      ? `Recepción cerrada con ${conDif.length} diferencia(s) — el CP las ve`
+      : '✓ Recepción confirmada — llegó todo conforme','success');
+    renderPedidoSugerido();
+  }catch(err){
+    ocultarProgreso && ocultarProgreso();
+    showToast('No se pudo confirmar: '+err.message,'error');
+  }
+}
+
 // Copiar un bloque de categoría al portapapeles (solo lo que tiene cantidad > 0)
 function _copiarCategoria(cat){
   const filas = document.querySelectorAll(`[data-cat-row="${CSS.escape(cat)}"]`);
@@ -7599,10 +7989,32 @@ async function confirmarPedidoCP(){
   });
   if(!lineas.length){ showToast('No hay nada para pedir al CP','info'); return; }
 
-  if(!confirm(`¿Confirmar el pedido de ${lineas.length} producto(s) al CP "${cp.nombre||''}"?\n\nDespués de confirmar, el CP lo va a ver para prepararlo.`)) return;
-
   const opId = currentOpId;
   const hoy = new Date().toISOString().slice(0,10);
+  const _ahora = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+
+  // ¿La operación exige visto bueno y quien pide no lo puede dar? Entonces el
+  // pedido NO viaja al CP: queda guardado acá, esperando la firma. El CP no
+  // tiene por qué ver borradores de otra cocina.
+  if(exigeAutorizacion() && !puedeAutorizarPedidos()){
+    if(!confirm(`¿Mandar ${lineas.length} producto(s) a autorización?\n\nEl encargado lo va a revisar antes de que salga al CP.`)) return;
+    if(!op._pedidosPendientes) op._pedidosPendientes = [];
+    // Un pedido pendiente por vez: si volvés a mandar, reemplaza al anterior.
+    op._pedidosPendientes = op._pedidosPendientes.filter(p => p.autorPor !== (currentUser&&currentUser.email));
+    op._pedidosPendientes.push({
+      id: 'pend-'+Date.now(),
+      lineas,
+      fecha: hoy,
+      hora: _ahora,
+      autorPor: (currentUser && currentUser.email) || 'cocina',
+    });
+    guardarEnFirestore();
+    showToast('✓ Mandado a autorización — el encargado lo tiene que firmar','success');
+    renderPedidoSugerido();
+    return;
+  }
+
+  if(!confirm(`¿Confirmar el pedido de ${lineas.length} producto(s) al CP "${cp.nombre||''}"?\n\nDespués de confirmar, el CP lo va a ver para prepararlo.`)) return;
 
   try{
     mostrarProgreso && mostrarProgreso('Confirmando pedido al CP…');
@@ -7673,6 +8085,13 @@ async function marcarPedidoDespachado(pedidoId){
 async function confirmarRecepcionPedido(pedidoId){
   const op = getOp();
   if(!op || !op.grupoId){ showToast('Esta operación no está vinculada a un CP','error'); return; }
+  // La recepción la da SIEMPRE el encargado: es el máximo responsable de la
+  // operación y el que puede rechazar por estado, precio, cadena de frío o
+  // porque llegó otra cosa. La cocina avisa; el encargado firma.
+  if(!puedeAutorizarPedidos()){
+    showToast('La recepción la confirma el encargado — avisale que llegó la mercadería','info');
+    return;
+  }
   if(!confirm('¿Confirmar que recibiste este pedido?\n\nEl CP lo va a dar por cerrado.')) return;
   try{
     mostrarProgreso && mostrarProgreso('Confirmando recepción…');
@@ -7807,12 +8226,23 @@ async function renderPedidosCP(){
     ${recibidos.length ? `
       <div style="font-size:13px;font-weight:700;color:var(--gris-1);margin:24px 0 10px">✓ Cerrados (últimos ${recibidos.length})</div>
       <div class="card"><div class="table-wrap"><table>
-        <thead><tr><th>Local</th><th>Fecha</th><th style="text-align:right">Productos</th></tr></thead>
+        <thead><tr><th>Local</th><th>Fecha</th><th style="text-align:right">Productos</th><th>Cómo se recibió</th></tr></thead>
         <tbody>
           ${recibidos.map(p=>`<tr>
             <td>${esc(p.sucursalNombre||'Local')}</td>
             <td>${esc(p.fecha||'')}</td>
             <td style="text-align:right">${(p.lineas||[]).length}</td>
+            <td style="font-size:12px">
+              ${p.conDiferencias ? `
+                <span style="color:#B8540A;font-weight:700">⚠ Con diferencias</span>
+                <div style="color:var(--gris-2);margin-top:3px;line-height:1.5">
+                  ${(p.recepcion||[]).filter(d=>Math.abs(d.recibido-d.pedido)>0.001).map(d=>
+                    `${esc(d.nombre)}: pidió ${fmt1(d.pedido)}, recibió ${fmt1(d.recibido)} — ${esc(d.motivo||'')}`
+                  ).join('<br>')}
+                  ${p.observacionRecepcion ? `<br><em>${esc(p.observacionRecepcion)}</em>` : ''}
+                </div>`
+              : '<span style="color:var(--oliva)">✓ Conforme</span>'}
+            </td>
           </tr>`).join('')}
         </tbody>
       </table></div></div>
