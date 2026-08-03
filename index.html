@@ -11800,6 +11800,8 @@ function procesarImportacion(data){
         <tr><td style="padding:6px 0;color:var(--gris-3)">Ingredientes</td><td><strong>${(data.ingredientes||[]).length}</strong></td></tr>
         <tr><td style="padding:6px 0;color:var(--gris-3)">Mermas</td><td><strong>${(data.mermas||[]).length}</strong></td></tr>
         <tr><td style="padding:6px 0;color:var(--gris-3)">Recetas</td><td><strong>${(data.recetas||[]).length}</strong></td></tr>
+        ${data.operacion.ventasPorMes ? `<tr><td style="padding:6px 0;color:var(--gris-3)">Ventas</td><td><strong>${Object.keys(data.operacion.ventasPorMes).sort().join(', ')}</strong></td></tr>` : ''}
+        ${data.operacion.gastosFijos ? `<tr><td style="padding:6px 0;color:var(--gris-3)">Gastos fijos</td><td><strong>${data.operacion.gastosFijos.length} conceptos</strong></td></tr>` : ''}
         <tr><td style="padding:6px 0;color:var(--gris-3)">Exportado el</td><td>${(()=>{const d=new Date(data.exportDate); return isNaN(d)?(data.timestamp||'—'):d.toLocaleDateString('es-AR');})()}</td></tr>
       </table>
       <div class="alert alert-warn">⚠ Elegí qué querés importar. Los datos existentes con el mismo ID se actualizarán.</div>
@@ -11814,7 +11816,13 @@ function procesarImportacion(data){
           <input type="checkbox" id="imp-recetas" checked> Recetas
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="imp-config"> Configuración de la operación (precio venta, tipos de servicio)
+          <input type="checkbox" id="imp-config"${(data.operacion.ventasPorMes||data.operacion.gastosFijos)?' checked':''}>
+          <span>
+            Configuración de la operación
+            <span style="display:block;font-size:11px;color:var(--gris-2)">
+              Tipos de servicio y de plato${data.operacion.ventasPorMes?`, <strong>ventas de ${Object.keys(data.operacion.ventasPorMes).length} mes(es)</strong>`:''}${data.operacion.gastosFijos?`, <strong>${data.operacion.gastosFijos.length} gastos fijos</strong>`:''}
+            </span>
+          </span>
         </label>
       </div>
     </div>
