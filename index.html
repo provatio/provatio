@@ -11881,7 +11881,12 @@ async function confirmarImportacion(){
     op.precioVenta = data.operacion.precioVenta || op.precioVenta;
     op.tiposServicio = data.operacion.tiposServicio || op.tiposServicio;
     op.tiposPlato = data.operacion.tiposPlato || op.tiposPlato;
-    importados.push('configuración');
+    // Ventas y gastos fijos: sin esto, Salud del negocio y la matriz de menú
+    // quedan vacías después de importar una carta entera.
+    if(data.operacion.ventasPorMes)   op.ventasPorMes   = data.operacion.ventasPorMes;
+    if(data.operacion.gastosFijos)    op.gastosFijos    = data.operacion.gastosFijos;
+    if(data.operacion.diasOperativos) op.diasOperativos = data.operacion.diasOperativos;
+    importados.push('configuración, ventas y gastos');
   }
 
   window._importData = null;
