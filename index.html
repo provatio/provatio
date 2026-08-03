@@ -4344,7 +4344,10 @@ function renderDashboardOperacion(){
   }
 
   const esAdmin = currentUser && currentUser.rol === 'admin';
-  const cocina = esNivelCocina();
+  // Quien no tiene habilitado ver los números no ve NINGÚN peso en esta
+  // pantalla: ni el costo promedio, ni el costo por porción de cada receta.
+  // (Antes el menú se lo escondía pero el Resumen se lo mostraba igual.)
+  const cocina = !verDinero();
   const s = opStats(op.id);
 
   setContent(esAdmin ? op.nombre : 'Resumen', `
@@ -4376,11 +4379,11 @@ function renderDashboardOperacion(){
         <div class="metric-value">${s.total}</div>
         <div class="metric-sub">${s.conPrecio} con precio de venta</div>
       </div>
-      <div class="metric">
+      ${cocina ? '' : `<div class="metric">
         <div class="metric-label">Costo merc. promedio</div>
         <div class="metric-value">$${fmt(s.mercProm)}</div>
         <div class="metric-sub">por porción</div>
-      </div>
+      </div>`}
       ${cocina ? '' : `<div class="metric">
         <div class="metric-label">% costo sobre venta</div>
         <div class="metric-value">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : '—'}</div>
@@ -4397,8 +4400,8 @@ function renderDashboardOperacion(){
         <table>
           <thead><tr>
             <th>Receta</th><th>Servicio</th>
-            <th style="text-align:right">Costo merc./p</th>
-            ${cocina ? '' : `<th style="text-align:right">Precio venta</th>
+            ${cocina ? '' : `<th style="text-align:right">Costo merc./p</th>
+            <th style="text-align:right">Precio venta</th>
             <th style="text-align:right">% sobre venta</th>
             <th>Estado</th>`}
           </tr></thead>
@@ -4409,8 +4412,8 @@ function renderDashboardOperacion(){
               return `<tr>
                 <td><strong>${esc(r.nombre)}</strong></td>
                 <td>${badgeLinea(r.tipoServicio)}</td>
-                <td style="text-align:right">$${fmt(merc)}</td>
-                ${cocina ? '' : `<td style="text-align:right">${r.precioVenta>0 ? '$'+fmt(r.precioVenta) : '<span style="color:var(--gris-3)">—</span>'}</td>
+                ${cocina ? '' : `<td style="text-align:right">$${fmt(merc)}</td>
+                <td style="text-align:right">${r.precioVenta>0 ? '$'+fmt(r.precioVenta) : '<span style="color:var(--gris-3)">—</span>'}</td>
                 <td style="text-align:right">${pct!==null ? fmtD(pct)+'%' : '<span style="color:var(--gris-3)">—</span>'}</td>
                 <td>${pct!==null ? semaforo(pct) : '<span class="badge badge-gray">Sin precio</span>'}</td>`}
               </tr>`;
@@ -4423,11 +4426,11 @@ function renderDashboardOperacion(){
     <div class="card">
       <div class="card-header"><span class="card-title">Accesos rápidos</span></div>
       <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
-        <button class="btn btn-secondary" onclick="navigate('evento')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
+        ${cocina ? '' : `<button class="btn btn-secondary" onclick="navigate('evento')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
           <span style="opacity:.75">${ico('target', 26)}</span>
           <strong>Presupuesto de evento</strong>
           <span style="font-size:12px;color:#5A5A52">Cotizá en segundos</span>
-        </button>
+        </button>`}
         <button class="btn btn-secondary" onclick="navigate('semanal')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
           <span style="opacity:.75">${ico('calendar', 26)}</span>
           <strong>Planificación semanal</strong>
