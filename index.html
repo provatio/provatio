@@ -4624,7 +4624,7 @@ function renderIngredientes(){
               </tr></thead>
               <tbody>
                 ${items.map(item=>`<tr>
-                  <td><strong>${esc(item.nombre)}</strong></td>
+                  <td><strong>${esc(item.nombre)}</strong>${item._estimado ? ` <span title="Precio propuesto por la IA al leer la carta. Confirmalo contra una factura tuya." style="font-size:10px;background:#FFF3E6;color:#B8540A;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">estimado</span>` : ''}</td>
                   <td>${item.unidadTipo||item.unidad||'kg'}</td>
                   <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
                   <td style="text-align:right"><input type="number" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',+this.value)"></td>
@@ -5038,6 +5038,9 @@ function guardarNuevoIng(idExistente){
   };
   // El selector solo existe si el local está vinculado a un CP.
   if(_selProv) nuevo.proveedor = _selProv.value;
+  // Si alguien abrió la ficha y la guardó, el precio ya no es una estimación
+  // de la IA: lo revisó una persona. Se le saca la marca.
+  delete nuevo._estimado;
   // El tilde solo existe estando parado en el CP.
   const _chkVende = document.getElementById('ni-vende-locales');
   if(_chkVende) nuevo.vendeALocales = _chkVende.checked;
@@ -11995,10 +11998,282 @@ function descargarPlantilla(){
 }
 
 // ── RENDERIZAR MÓDULO DE IMPORTACIÓN/EXPORTACIÓN ──
+
+// ═══════════════════════════════════════════════════════════════════════
+// CARGAR LA OPERACIÓN DESDE LA CARTA (PDF o foto)
+//
+// Dos pasadas contra /api/carta: primero qué dice la carta, después cómo se
+// hace cada plato. Va por tandas porque una carta de hotel tiene más de 100
+// platos y pedirle todo junto a la IA da respuestas cortadas.
+//
+// NADA se guarda hasta que el chef aprieta "Aplicar". Todo lo que propone la
+// IA queda marcado como estimado.
+// ═══════════════════════════════════════════════════════════════════════
+const CARTA_LOTE = 30;   // platos por tanda
+
+function _cartaPaso(html, pct){
+  const el = document.getElementById('carta-progreso');
+  if(!el) return;
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="margin-bottom:8px">${html}</div>
+    <div style="height:6px;background:var(--crema-2);border-radius:3px;overflow:hidden">
+      <div style="height:100%;width:${Math.round(pct)}%;background:var(--dorado,#C9A961);transition:width .3s"></div>
+    </div>`;
+}
+
+async function procesarCartaPDF(file){
+  const inp = document.getElementById('carta-file'); if(inp) inp.value = '';
+  if(file.size > 30 * 1024 * 1024){
+    showToast('El archivo pesa más de 30 MB. Probá con un PDF más liviano.','error'); return;
+  }
+  try{
+    _cartaPaso('Subiendo la carta…', 5);
+    const b64 = await new Promise((ok,err)=>{
+      const r = new FileReader();
+      r.onload = ()=>ok(r.result.split(',')[1]);
+      r.onerror = ()=>err(new Error('No se pudo leer el archivo'));
+      r.readAsDataURL(file);
+    });
+
+    // ── PASADA 1 ──
+    _cartaPaso('Leyendo la carta… esto tarda entre 30 segundos y un minuto.', 15);
+    const r1 = await fetch('/api/carta', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ accion:'platos', mediaType:file.type||'application/pdf', data:b64 }) });
+    if(!r1.ok) throw new Error(r1.status===404
+      ? 'Falta subir api/carta.js al repositorio — todavía no está publicado en el servidor.'
+      : (await r1.json().catch(()=>({}))).error || ('Error del servidor ('+r1.status+')'));
+    const { operacion, platos } = await r1.json();
+    if(!platos || !platos.length) throw new Error('No pude reconocer platos en ese archivo. ¿Es la carta?');
+
+    // ── PASADA 2, por tandas ──
+    const lotes = [];
+    for(let i=0; i<platos.length; i+=CARTA_LOTE) lotes.push(platos.slice(i, i+CARTA_LOTE));
+
+    const ings = new Map();   // nombre normalizado → ingrediente
+    const merm = new Map();   // "nombre|tecnica"   → merma
+    const recs = [];
+
+    for(let k=0; k<lotes.length; k++){
+      _cartaPaso(`Armando recetas… tanda ${k+1} de ${lotes.length} · ${recs.length} de ${platos.length} platos listos`,
+                 20 + (k/lotes.length)*70);
+      const r2 = await fetch('/api/carta', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ accion:'recetas', platos: lotes[k], yaExisten: [...ings.values()].map(i=>i.nombre) }) });
+      if(!r2.ok) throw new Error((await r2.json().catch(()=>({}))).error || ('Error del servidor ('+r2.status+')'));
+      const j = await r2.json();
+
+      (j.ingredientes||[]).forEach(i=>{
+        const clave = (i.nombre||'').toLowerCase().trim();
+        if(!clave || ings.has(clave)) return;
+        ings.set(clave, {
+          nombre: i.nombre, cat: i.cat || 'Secos y almacén',
+          unidadMedida: i.unidadMedida === 'unidades' ? 'unidades' : 'kg',
+          bulto: +i.bulto || 1, precio: +i.precio || 0,
+        });
+      });
+      (j.mermas||[]).forEach(m=>{
+        const clave = (m.ingrediente||'').toLowerCase().trim() + '|' + (m.tecnica||'').trim();
+        if(!merm.has(clave)) merm.set(clave, { ingrediente:m.ingrediente, tecnica:m.tecnica, pct:+m.pct||0 });
+      });
+      (j.recetas||[]).forEach(r=>recs.push(r));
+    }
+
+    _cartaPaso('Listo — revisá antes de guardar.', 100);
+    window._cartaDraft = { operacion, ings, merm, recs, archivo: file.name, totalPlatos: platos.length };
+    renderRevisionCarta();
+  }catch(e){
+    _cartaPaso('', 0);
+    const el = document.getElementById('carta-progreso');
+    if(el) el.innerHTML = `<span style="color:var(--bordo,#8B1A1A)">✕ ${esc(e.message)}</span>`;
+    showToast('⚠ '+e.message,'error');
+  }
+}
+
+// ── Pantalla de revisión ─────────────────────────────────────────────────
+function renderRevisionCarta(){
+  const d = window._cartaDraft;
+  if(!d){ renderImportExport(); return; }
+
+  // Armar objetos con id para poder costear antes de guardar nada
+  const ingArr = [...d.ings.values()].map((i,ix)=>({ ...i, id:'ci'+ix,
+    unidadTipo: i.unidadMedida==='unidades'?'unidades':'kg', unidad: i.unidadMedida==='unidades'?'unidades':'kg',
+    pesoUnitario: i.unidadMedida==='unidades' ? 60 : undefined }));
+  const porNombre = new Map(ingArr.map(i=>[i.nombre.toLowerCase().trim(), i]));
+  const mermaPct = new Map([...d.merm.values()].map(m=>[m.ingrediente.toLowerCase().trim()+'|'+m.tecnica, +m.pct||0]));
+
+  let sinMerma = 0, sinIng = 0;
+  const filas = d.recs.map(r=>{
+    let costo = 0, ok = true;
+    (r.ingredientes||[]).forEach(l=>{
+      const ing = porNombre.get((l.ingrediente||'').toLowerCase().trim());
+      if(!ing){ sinIng++; ok = false; return; }
+      const clave = ing.nombre.toLowerCase().trim()+'|'+(l.tecnica||'');
+      if(!mermaPct.has(clave)){ sinMerma++; ok = false; return; }
+      const pct = mermaPct.get(clave);
+      const precioU = (ing.precio||0)/(ing.bulto||1);
+      const neto = +l.neto||0;
+      costo += ing.unidadMedida==='unidades'
+        ? precioU * neto / (1 - pct/100)
+        : precioU * (neto/(1 - pct/100)) / 1000;
+    });
+    const porc = +r.porciones || 1;
+    const cp = costo/porc, pv = +r.precioVenta||0;
+    const pctCosto = pv>0 ? cp/pv*100 : 0;
+    return { nombre:r.nombre, serv:r.tipoServicio, porc, cp, pv, pctCosto, ok, nIng:(r.ingredientes||[]).length };
+  });
+
+  const conPrecio = filas.filter(f=>f.pv>0 && f.ok);
+  const prom = conPrecio.length ? conPrecio.reduce((a,f)=>a+f.pctCosto,0)/conPrecio.length : 0;
+  const rojos = conPrecio.filter(f=>f.pctCosto>38).length;
+  const color = p => p<=30 ? 'var(--oliva)' : (p<=38 ? '#B8540A' : 'var(--bordo,#8B1A1A)');
+
+  setContent('Revisar la carta leída', `
+    <button class="btn btn-secondary btn-sm" style="margin-bottom:16px" onclick="window._cartaDraft=null;renderImportExport()">← Cancelar y volver</button>
+
+    <div class="alert alert-info" style="margin-bottom:16px">
+      Leí <strong>${esc(d.archivo)}</strong> y armé ${d.recs.length} recetas de los ${d.totalPlatos} platos de la carta.
+      Los <strong>precios de venta salen de tu carta</strong>. Los gramajes, las mermas y los precios de
+      los insumos <strong>los propuso la IA</strong> y hay que revisarlos contra tu cocina y tus facturas.
+    </div>
+
+    <div class="metrics-grid" style="margin-bottom:16px">
+      <div class="metric"><div class="metric-label">Recetas</div><div class="metric-value">${d.recs.length}</div><div class="metric-sub">de ${d.totalPlatos} platos leídos</div></div>
+      <div class="metric"><div class="metric-label">Ingredientes</div><div class="metric-value">${ingArr.length}</div><div class="metric-sub">con precio estimado</div></div>
+      <div class="metric"><div class="metric-label">Mermas</div><div class="metric-value">${d.merm.size}</div><div class="metric-sub">combinaciones de proceso</div></div>
+      <div class="metric"><div class="metric-label">Food cost promedio</div><div class="metric-value" style="color:${color(prom)}">${prom.toFixed(1)}%</div><div class="metric-sub">${rojos} plato(s) sobre 38%</div></div>
+    </div>
+
+    ${(sinIng||sinMerma) ? `<div class="alert alert-warning" style="margin-bottom:16px">
+      ⚠ Hay ${sinIng} renglón(es) sin ingrediente y ${sinMerma} sin merma cargada. Esas recetas se van a
+      importar igual, pero van a quedar sin costear hasta que completes lo que falta.
+    </div>` : ''}
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Las recetas armadas</span></div>
+      <div class="table-wrap" style="max-height:520px;overflow:auto"><table>
+        <thead><tr>
+          <th>Receta</th><th>Servicio</th>
+          <th style="text-align:right">Insumos</th>
+          <th style="text-align:right">Costo/porción</th>
+          <th style="text-align:right">Precio carta</th>
+          <th style="text-align:right">% costo</th>
+        </tr></thead>
+        <tbody>
+          ${filas.map(f=>`<tr>
+            <td><strong>${esc(f.nombre)}</strong>${f.porc>1?` <span style="font-size:11px;color:var(--gris-2)">(${f.porc} porciones)</span>`:''}</td>
+            <td style="font-size:12px;color:var(--gris-2)">${esc(f.serv||'')}</td>
+            <td style="text-align:right;font-size:12px">${f.nIng}</td>
+            <td style="text-align:right">${f.ok?'$'+fmt(f.cp):'<span style="color:#B8540A;font-size:12px">incompleta</span>'}</td>
+            <td style="text-align:right">${f.pv>0?'$'+fmt(f.pv):'—'}</td>
+            <td style="text-align:right;font-weight:700;color:${f.ok&&f.pv>0?color(f.pctCosto):'var(--gris-3)'}">
+              ${f.ok&&f.pv>0?f.pctCosto.toFixed(1)+'%':'—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Aplicar a la operación</span></div>
+      <div style="padding:16px 18px">
+        <label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;margin-bottom:12px">
+          <input type="checkbox" id="carta-reemplazar" style="width:16px;height:16px;margin-top:2px">
+          <span>
+            <strong>Reemplazar lo que ya tengo cargado</strong>
+            <span style="display:block;font-size:12px;color:var(--gris-2)">
+              Sin tildar, se agrega a lo que ya está y se saltean los ingredientes que ya existen con el mismo nombre.
+            </span>
+          </span>
+        </label>
+        <button class="btn btn-primary" onclick="aplicarCartaLeida()">Aplicar a mi operación</button>
+        <button class="btn btn-secondary" style="margin-left:8px" onclick="window._cartaDraft=null;renderImportExport()">Descartar</button>
+      </div>
+    </div>
+  `);
+}
+
+function aplicarCartaLeida(){
+  const d = window._cartaDraft;
+  if(!d) return;
+  const reemplazar = document.getElementById('carta-reemplazar').checked;
+  if(!confirm(reemplazar
+      ? `Se van a REEMPLAZAR tus ingredientes, mermas y recetas por los ${d.recs.length} platos de la carta.\n\n¿Seguís?`
+      : `Se van a AGREGAR ${d.recs.length} recetas a lo que ya tenés.\n\n¿Seguís?`)) return;
+
+  if(reemplazar){ demoData.ingredientes = []; demoData.mermas = []; demoData.recetas = []; }
+
+  // Ingredientes. Marcados como estimados: son precios que puso la IA, no facturas.
+  const idPorNombre = new Map(demoData.ingredientes.map(i=>[(i.nombre||'').toLowerCase().trim(), i.id]));
+  const cats = getCategorias();
+  [...d.ings.values()].forEach(i=>{
+    const clave = i.nombre.toLowerCase().trim();
+    if(idPorNombre.has(clave)) return;              // ya lo tenía: no lo piso
+    if(i.cat && !cats.includes(i.cat)) cats.push(i.cat);
+    const id = 'i'+demoData.nextId.i++;
+    demoData.ingredientes.push({
+      id, nombre:i.nombre, cat:i.cat,
+      unidadTipo: i.unidadMedida==='unidades'?'unidades':'kg',
+      unidadMedida: i.unidadMedida, unidad: i.unidadMedida==='unidades'?'unidades':'kg',
+      bulto:i.bulto, precio:i.precio,
+      pesoUnitario: i.unidadMedida==='unidades' ? 60 : undefined,
+      _estimado: true,
+    });
+    idPorNombre.set(clave, id);
+  });
+
+  // Mermas
+  const yaMerma = new Set(demoData.mermas.map(m=>(m.ingrediente||'').toLowerCase().trim()+'|'+m.tecnica));
+  [...d.merm.values()].forEach(m=>{
+    const clave = m.ingrediente.toLowerCase().trim()+'|'+m.tecnica;
+    if(yaMerma.has(clave)) return;
+    demoData.mermas.push({ id:'mf'+demoData.nextId.m++, ingrediente:m.ingrediente, tecnica:m.tecnica, pct:m.pct, _estimado:true });
+    yaMerma.add(clave);
+  });
+
+  // Recetas
+  let sumadas = 0;
+  d.recs.forEach(r=>{
+    const items = (r.ingredientes||[]).map(l=>{
+      const ingId = idPorNombre.get((l.ingrediente||'').toLowerCase().trim());
+      return ingId ? { ingId, tecnica:l.tecnica||'Sin merma', neto:+l.neto||0 } : null;
+    }).filter(Boolean);
+    demoData.recetas.push({
+      id: 'r'+demoData.nextId.r++, nombre:r.nombre, tipoServicio:r.tipoServicio||'Almuerzo',
+      porciones:+r.porciones||1, precioVenta:+r.precioVenta||0, rendimientoG:0,
+      ingredientes: items, opId: currentOpId, _estimado: true,
+    });
+    sumadas++;
+  });
+
+  window._cartaDraft = null;
+  guardarEnFirestore();
+  showToast(`✓ Carta cargada: ${sumadas} recetas, ${demoData.ingredientes.length} ingredientes. Revisá los precios contra tus facturas.`,'success');
+  navigate('recetas');
+}
+
 function renderImportExport(){
   setContent('Importar / Exportar datos', `
     <div class="alert alert-info">
       ${ico('bulb',14)} Usá esta sección para migrar datos desde otro sistema, compartir configuraciones entre operaciones o hacer backup de tus datos.
+    </div>
+
+    <div class="card" style="margin-bottom:16px;border:1.5px solid var(--dorado,#C9A961);background:#FBF7EE">
+      <div class="card-header" style="background:#F5EEDF">
+        <span class="card-title">📖 Cargar mi operación desde la carta</span>
+      </div>
+      <div style="padding:16px 18px">
+        <div style="font-size:13px;line-height:1.6;color:var(--gris-1);margin-bottom:14px">
+          Subí tu carta en PDF o una foto y Provatio arma la operación entera: ingredientes,
+          mermas y recetas, con los precios de venta que ya tenés impresos.
+          <strong>Todo queda para que lo revises antes de guardarlo</strong> — los gramajes y las
+          mermas los propone la IA y los corregís vos, que conocés tu cocina.
+        </div>
+        <input type="file" id="carta-file" accept="application/pdf,image/*" style="display:none"
+          onchange="if(this.files[0]) procesarCartaPDF(this.files[0])">
+        <button class="btn btn-primary" onclick="document.getElementById('carta-file').click()">
+          Elegir la carta (PDF o foto)
+        </button>
+        <div id="carta-progreso" style="display:none;margin-top:14px;background:var(--blanco);border-radius:8px;padding:12px;font-size:13px"></div>
+      </div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
