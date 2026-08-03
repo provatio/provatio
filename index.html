@@ -10759,8 +10759,18 @@ async function modalGestionarCuenta(uid){
         <button class="btn btn-secondary" onclick="_gestCambiarRol('${escJs(uid)}','${escJs(cuenta.empresaId)}')">Guardar rol y locales</button>
       </div>` : ''}
 
+      ${!cuenta.empresaId ? `
+      <div style="border:1.5px solid var(--dorado,#C9A961);border-radius:10px;padding:14px;margin-bottom:12px;background:#FBF7EE">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:6px">Crearle la empresa</div>
+        <div style="font-size:12px;color:var(--gris-2);margin-bottom:10px;line-height:1.5">
+          Para un cliente nuevo que todavía no tiene nada. Queda a su nombre, como dueño,
+          y con su primera operación ya creada. Es el mismo resultado que si la creara él solo.
+        </div>
+        <button class="btn btn-primary" onclick="modalCrearEmpresaParaCliente('${escJs(uid)}','${escJs(cuenta.email||'')}','${escJs(cuenta.displayName||cuenta.nombre||'')}')">+ Crear empresa nueva para esta cuenta</button>
+      </div>` : ''}
+
       <div style="border:1px solid var(--crema-2);border-radius:10px;padding:14px">
-        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:8px">Asignar a una empresa</div>
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3A3A32;margin-bottom:8px">O sumarla a una empresa que ya existe</div>
         <select id="gest-empresa" style="width:100%;margin-bottom:10px">
           <option value="">— Elegí una empresa —</option>
           ${empresasList.map(e=>`<option value="${esc(e.id)}"${e.id===cuenta.empresaId?' selected':''}>${esc(e.nombre||e.id)}</option>`).join('')}
@@ -10816,6 +10826,107 @@ async function _gestCambiarRol(uid, empresaId){
     showToast('Rol y locales actualizados ✓','success');
     closeModal(); renderAdminProvatio();
   }catch(err){ showToast('Error: '+err.message,'error'); }
+}
+
+
+// ── EL ADMIN LE CREA LA EMPRESA A UN CLIENTE ─────────────────────────────
+// Dos caminos para lo mismo: el cliente se la crea solo desde su pantalla de
+// arranque, o se la armamos nosotros en el onboarding conjunto. Este es el
+// segundo. La empresa queda a nombre del CLIENTE (él es el dueño), no nuestro.
+function modalCrearEmpresaParaCliente(uid, email, nombreCta){
+  if(!esAdminProvatio()){ showToast('Solo el admin de Provatio','error'); return; }
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Crear la empresa de ${esc(nombreCta||email||'')}</span>
+      <button class="btn btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:14px;font-size:13px">
+        La empresa queda a nombre de <strong>${esc(email||'')}</strong>, que entra como dueño
+        con todos los permisos. Vos podés seguir entrando para acompañarlo en el onboarding.
+      </div>
+      <div class="form-group">
+        <label>Nombre de la empresa</label>
+        <input type="text" id="cec-emp" placeholder="Ej: Grupo Elementos" style="width:100%">
+        <div style="font-size:11px;color:var(--gris-2);margin-top:5px">
+          Es el paraguas. Si tiene un solo local, poné el nombre del negocio.
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Su primera operación</label>
+        <input type="text" id="cec-op" placeholder="Ej: La Esquina de Palermo" style="width:100%">
+      </div>
+      <div class="form-group">
+        <label>Tipo de operación</label>
+        <select id="cec-tipo" style="width:100%">
+          <option value="Restaurante">🍽 Restaurante</option>
+          <option value="Centro de Producción">🏭 Centro de Producción</option>
+          <option value="Hotel">🏨 Hotel</option>
+          <option value="Catering">📦 Catering</option>
+          <option value="Pastelería">🥐 Pastelería</option>
+          <option value="Viandas">🍱 Viandas</option>
+          <option value="darkKitchen">🌑 Dark Kitchen</option>
+        </select>
+      </div>
+      <div id="cec-log" style="display:none;background:var(--crema);border-radius:8px;padding:12px;font-size:12px;font-family:monospace;margin-top:10px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="cec-btn" onclick="ejecutarCrearEmpresaParaCliente('${escJs(uid)}','${escJs(email||'')}','${escJs(nombreCta||'')}')">Crear empresa</button>
+    </div>`);
+}
+
+async function ejecutarCrearEmpresaParaCliente(uid, email, nombreCta){
+  if(!esAdminProvatio()){ showToast('Solo el admin de Provatio','error'); return; }
+  const nomEmp = (document.getElementById('cec-emp').value||'').trim();
+  const nomOp  = (document.getElementById('cec-op').value||'').trim();
+  const tipo   = document.getElementById('cec-tipo').value;
+  if(!nomEmp){ showToast('Falta el nombre de la empresa','error'); return; }
+  if(!nomOp){  showToast('Falta el nombre de la primera operación','error'); return; }
+
+  const btn = document.getElementById('cec-btn');
+  const logEl = document.getElementById('cec-log');
+  logEl.style.display='block'; btn.disabled=true; btn.textContent='Creando…';
+  const log=[]; const paso=(t)=>{ log.push(t); logEl.innerHTML=log.map(x=>'<div style="padding:2px 0">'+esc(x)+'</div>').join(''); };
+
+  try{
+    const empresaId = 'emp-' + Date.now().toString(36);
+    const opId = 'op-' + Date.now();
+
+    paso('1/4 · Creando la empresa…');
+    await db.collection('empresas').doc(empresaId).set({
+      nombre: nomEmp, duenoUid: uid, creadaEn: Date.now(), creadaPor: currentUser.email || 'admin',
+    });
+
+    // El alta como dueño va ANTES de la operación: las reglas exigen ser
+    // miembro de la empresa para poder escribir dentro de ella.
+    paso('2/4 · Registrando a ' + (nombreCta || email) + ' como dueño…');
+    await db.collection('empresas').doc(empresaId).collection('miembros').doc(uid).set({
+      uid, email: email || '', nombre: nombreCta || email || 'Dueño',
+      rol: 'dueno', operacionesAsignadas: [], activo: true, altaEn: Date.now(),
+    });
+
+    paso('3/4 · Creando "' + nomOp + '"…');
+    await db.collection('empresas').doc(empresaId).collection('operaciones').doc(opId).set({
+      id: opId, nombre: nomOp, tipo, grupoId: null, umbralAlerta: 3,
+      tiposServicio: ['Almuerzo','Cena'], tiposPlato: ['Entrada','Principal','Guarnición','Postre'],
+      _datos: { ingredientes: [], mermas: [], recetas: [], eventos: [], facturas: [] },
+      _rev: 0,
+    });
+
+    paso('4/4 · Vinculando la cuenta…');
+    await db.collection('usuarios').doc(uid).set({ empresaId }, {merge:true});
+
+    paso('✓ Listo. La empresa está creada y el cliente ya puede entrar.');
+    btn.textContent = 'Cerrar';
+    btn.disabled = false;
+    btn.onclick = () => { closeModal(); renderAdminProvatio(); };
+    showToast('Empresa "' + nomEmp + '" creada ✓','success');
+  }catch(err){
+    paso('✗ ERROR: ' + err.message);
+    btn.disabled = false; btn.textContent = 'Reintentar';
+    showToast('No se pudo crear: ' + err.message,'error');
+  }
 }
 
 async function _gestAsignar(uid){
@@ -11412,8 +11523,13 @@ async function guardarNuevaOperacion(){
   // operación "desaparecía" en el próximo login.)
   if(currentUser && !getEmpresaId()){
     closeModal();
-    showToast('Primero creá tu empresa con "Crear mi operación"','error');
-    navigate('dashboard');
+    // El admin de Provatio no tiene empresa propia y no debe tenerla: gestiona
+    // las de los clientes. Decirle "creá tu empresa" lo manda para el lado
+    // equivocado. Su camino es entrar a la empresa del cliente primero.
+    showToast(esAdminProvatio()
+      ? 'Entrá primero a la empresa del cliente desde Admin Provatio (botón "Entrar"). La operación se crea adentro de esa empresa, no de la tuya.'
+      : 'Primero creá tu empresa con "Crear mi operación"','error');
+    navigate(esAdminProvatio() ? 'adminProvatio' : 'dashboard');
     return;
   }
 
