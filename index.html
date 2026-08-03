@@ -2976,6 +2976,16 @@ function initApp(user){
   if(user && user.empresaId && !currentUser.empresaId){
     currentUser.empresaId = user.empresaId;
   }
+
+  // El campo 'rol' del modelo viejo: toda cuenta nueva nacía marcada como
+  // 'admin', y ese campo le ganaba a todo lo demás — armaba el menú del
+  // administrador de plataforma antes de que las capacidades pudieran opinar.
+  // Resultado: un cocinero entraba viendo "clientes en gestión" y "+ Nueva
+  // operación". Administrador de Provatio hay uno solo, y se reconoce por mail.
+  if(currentUser.rol === 'admin' && !esAdminProvatio()){
+    currentUser.rol = 'cliente';
+  }
+
   document.getElementById('auth-screen').style.display = 'none';
 
   // El admin de Provatio siempre entra. El resto entra si su cuenta está activada
@@ -3464,6 +3474,13 @@ function aplicarFactura(){
 
 function buildSidebar(rol){
   const nav = document.getElementById('sidebar-nav');
+
+  // SEGUNDO CANDADO. El menú de administrador de plataforma es SOLO para el
+  // admin de Provatio, que se reconoce por mail. Cualquier cuenta que llegue
+  // acá arrastrando el 'rol: admin' del modelo viejo entra como cliente.
+  // Va acá además de en initApp: si esa normalización no corriera por
+  // cualquier motivo, un cocinero volvería a ver el panel entero.
+  if(rol === 'admin' && !esAdminProvatio()) rol = 'cliente';
 
   // ── Cliente en ARRANQUE (activado, sin empresa ni operaciones) ─────────
   // Menú mínimo: todavía no hay operación a la que apunten las pantallas.
