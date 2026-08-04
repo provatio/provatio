@@ -12063,30 +12063,88 @@ async function procesarCartaPDF(file){
       const j = await r2.json();
 
       (j.ingredientes||[]).forEach(i=>{
-        const clave = (i.nombre||'').toLowerCase().trim();
+        const nom = String(i && i.nombre || '').trim();
+        const clave = nom.toLowerCase();
         if(!clave || ings.has(clave)) return;
         ings.set(clave, {
-          nombre: i.nombre, cat: i.cat || 'Secos y almacén',
+          nombre: nom, cat: i.cat || 'Secos y almacén',
           unidadMedida: i.unidadMedida === 'unidades' ? 'unidades' : 'kg',
           bulto: +i.bulto || 1, precio: +i.precio || 0,
         });
       });
       (j.mermas||[]).forEach(m=>{
-        const clave = (m.ingrediente||'').toLowerCase().trim() + '|' + (m.tecnica||'').trim();
-        if(!merm.has(clave)) merm.set(clave, { ingrediente:m.ingrediente, tecnica:m.tecnica, pct:+m.pct||0 });
+        // Si la IA manda un renglón sin ingrediente o sin técnica, se descarta.
+        // Guardarlo a medias hacía caer toda la pantalla de revisión después de
+        // cinco minutos de trabajo.
+        const nom = String(m && m.ingrediente || '').trim();
+        const tec = String(m && m.tecnica || '').trim() || 'Sin merma';
+        if(!nom) return;
+        const clave = nom.toLowerCase() + '|' + tec;
+        if(!merm.has(clave)) merm.set(clave, { ingrediente:nom, tecnica:tec, pct:+m.pct||0 });
       });
-      (j.recetas||[]).forEach(r=>recs.push(r));
+      (j.recetas||[]).forEach(r=>{
+        if(!r || !String(r.nombre||'').trim()) return;
+        r.ingredientes = (r.ingredientes||[]).filter(l => l && String(l.ingrediente||'').trim());
+        r.ingredientes.forEach(l => { if(!String(l.tecnica||'').trim()) l.tecnica = 'Sin merma'; });
+        recs.push(r);
+      });
     }
 
     _cartaPaso('Listo — revisá antes de guardar.', 100);
     window._cartaDraft = { operacion, ings, merm, recs, archivo: file.name, totalPlatos: platos.length };
-    renderRevisionCarta();
+    // Red de seguridad: leer la carta lleva varios minutos. Si algo falla al
+    // dibujar la pantalla de revisión, NO se pierde el trabajo: se ofrece
+    // bajarlo como JSON para importarlo por el camino de siempre.
+    try{
+      renderRevisionCarta();
+    }catch(err){
+      console.error('[Provatio] falló la revisión:', err);
+      const el = document.getElementById('carta-progreso');
+      if(el) el.innerHTML = `
+        <div style="color:var(--bordo,#8B1A1A);margin-bottom:8px">
+          ✕ La carta se leyó bien pero no pude armar la pantalla de revisión (${esc(err.message)}).
+        </div>
+        <div style="margin-bottom:8px">No perdiste el trabajo: bajalo como archivo y luego importalo con "Importar operación completa".</div>
+        <button class="btn btn-secondary btn-sm" onclick="descargarCartaLeida()">Descargar lo leído</button>`;
+    }
   }catch(e){
     _cartaPaso('', 0);
     const el = document.getElementById('carta-progreso');
     if(el) el.innerHTML = `<span style="color:var(--bordo,#8B1A1A)">✕ ${esc(e.message)}</span>`;
     showToast('⚠ '+e.message,'error');
   }
+}
+
+// Salvavidas: baja lo leído en el formato del importador de siempre.
+function descargarCartaLeida(){
+  const d = window._cartaDraft;
+  if(!d){ showToast('No hay nada para descargar','error'); return; }
+  const ing = [...d.ings.values()].map((i,ix)=>({
+    id:'i'+(ix+1), nombre:i.nombre, cat:i.cat,
+    unidadTipo:i.unidadMedida==='unidades'?'unidades':'kg',
+    unidadMedida:i.unidadMedida, unidad:i.unidadMedida==='unidades'?'unidades':'kg',
+    bulto:i.bulto, precio:i.precio,
+  }));
+  const idPorNom = new Map(ing.map(i=>[String(i.nombre||'').toLowerCase().trim(), i.id]));
+  const data = {
+    version:'1.0', exportDate:new Date().toISOString(),
+    operacion:{ nombre: d.operacion || 'Carta leída', tipo:'Restaurante' },
+    ingredientes: ing,
+    mermas: [...d.merm.values()].map((m,ix)=>({ id:'mf'+(ix+1), ingrediente:m.ingrediente, tecnica:m.tecnica, pct:m.pct })),
+    recetas: d.recs.map((r,ix)=>({
+      id:'r'+(ix+1), nombre:r.nombre, tipoServicio:r.tipoServicio||'Almuerzo',
+      porciones:+r.porciones||1, precioVenta:+r.precioVenta||0, rendimientoG:0,
+      ingredientes:(r.ingredientes||[]).map(l=>({
+        ingId: idPorNom.get(String(l.ingrediente||'').toLowerCase().trim()),
+        tecnica: l.tecnica||'Sin merma', neto:+l.neto||0,
+      })).filter(l=>l.ingId),
+    })),
+  };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data,null,1)], {type:'application/json'}));
+  a.download = 'carta-leida-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  showToast('Descargado. Importalo con "Importar operación completa".','success');
 }
 
 // ── Pantalla de revisión ─────────────────────────────────────────────────
@@ -12098,16 +12156,17 @@ function renderRevisionCarta(){
   const ingArr = [...d.ings.values()].map((i,ix)=>({ ...i, id:'ci'+ix,
     unidadTipo: i.unidadMedida==='unidades'?'unidades':'kg', unidad: i.unidadMedida==='unidades'?'unidades':'kg',
     pesoUnitario: i.unidadMedida==='unidades' ? 60 : undefined }));
-  const porNombre = new Map(ingArr.map(i=>[i.nombre.toLowerCase().trim(), i]));
-  const mermaPct = new Map([...d.merm.values()].map(m=>[m.ingrediente.toLowerCase().trim()+'|'+m.tecnica, +m.pct||0]));
+  const _norm = v => String(v==null?'':v).toLowerCase().trim();
+  const porNombre = new Map(ingArr.map(i=>[_norm(i.nombre), i]));
+  const mermaPct = new Map([...d.merm.values()].map(m=>[_norm(m.ingrediente)+'|'+(m.tecnica||'Sin merma'), +m.pct||0]));
 
   let sinMerma = 0, sinIng = 0;
   const filas = d.recs.map(r=>{
     let costo = 0, ok = true;
     (r.ingredientes||[]).forEach(l=>{
-      const ing = porNombre.get((l.ingrediente||'').toLowerCase().trim());
+      const ing = porNombre.get(_norm(l.ingrediente));
       if(!ing){ sinIng++; ok = false; return; }
-      const clave = ing.nombre.toLowerCase().trim()+'|'+(l.tecnica||'');
+      const clave = _norm(ing.nombre)+'|'+(l.tecnica||'Sin merma');
       if(!mermaPct.has(clave)){ sinMerma++; ok = false; return; }
       const pct = mermaPct.get(clave);
       const precioU = (ing.precio||0)/(ing.bulto||1);
@@ -12202,11 +12261,12 @@ function aplicarCartaLeida(){
   if(reemplazar){ demoData.ingredientes = []; demoData.mermas = []; demoData.recetas = []; }
 
   // Ingredientes. Marcados como estimados: son precios que puso la IA, no facturas.
-  const idPorNombre = new Map(demoData.ingredientes.map(i=>[(i.nombre||'').toLowerCase().trim(), i.id]));
+  const _n = v => String(v==null?'':v).toLowerCase().trim();
+  const idPorNombre = new Map(demoData.ingredientes.map(i=>[_n(i.nombre), i.id]));
   const cats = getCategorias();
   [...d.ings.values()].forEach(i=>{
-    const clave = i.nombre.toLowerCase().trim();
-    if(idPorNombre.has(clave)) return;              // ya lo tenía: no lo piso
+    const clave = _n(i.nombre);
+    if(!clave || idPorNombre.has(clave)) return;    // vacío o ya lo tenía: no lo piso
     if(i.cat && !cats.includes(i.cat)) cats.push(i.cat);
     const id = 'i'+demoData.nextId.i++;
     demoData.ingredientes.push({
@@ -12221,9 +12281,10 @@ function aplicarCartaLeida(){
   });
 
   // Mermas
-  const yaMerma = new Set(demoData.mermas.map(m=>(m.ingrediente||'').toLowerCase().trim()+'|'+m.tecnica));
+  const yaMerma = new Set(demoData.mermas.map(m=>_n(m.ingrediente)+'|'+m.tecnica));
   [...d.merm.values()].forEach(m=>{
-    const clave = m.ingrediente.toLowerCase().trim()+'|'+m.tecnica;
+    const clave = _n(m.ingrediente)+'|'+m.tecnica;
+    if(!_n(m.ingrediente)) return;
     if(yaMerma.has(clave)) return;
     demoData.mermas.push({ id:'mf'+demoData.nextId.m++, ingrediente:m.ingrediente, tecnica:m.tecnica, pct:m.pct, _estimado:true });
     yaMerma.add(clave);
@@ -12233,7 +12294,7 @@ function aplicarCartaLeida(){
   let sumadas = 0;
   d.recs.forEach(r=>{
     const items = (r.ingredientes||[]).map(l=>{
-      const ingId = idPorNombre.get((l.ingrediente||'').toLowerCase().trim());
+      const ingId = idPorNombre.get(_n(l.ingrediente));
       return ingId ? { ingId, tecnica:l.tecnica||'Sin merma', neto:+l.neto||0 } : null;
     }).filter(Boolean);
     demoData.recetas.push({
