@@ -108,7 +108,33 @@ async function llamarClaude(mensajes, maxTokens, sistema) {
   const desde = limpio.indexOf('{');
   const hasta = limpio.lastIndexOf('}');
   if (desde < 0 || hasta < 0) throw new Error('La IA no devolvió un JSON legible');
-  return JSON.parse(limpio.slice(desde, hasta + 1));
+  const crudo = limpio.slice(desde, hasta + 1);
+
+  try {
+    return JSON.parse(crudo);
+  } catch (e) {
+    // La IA a veces deja un salto de línea DENTRO de un texto entre comillas
+    // (una descripción de plato que le quedó cortada en dos renglones). Eso
+    // rompe el formato JSON. Acá se recorre carácter por carácter y se
+    // reemplazan esos saltos por un espacio, respetando los que están afuera.
+    let arreglado = '';
+    let dentroDeTexto = false;
+    let escapado = false;
+    for (const c of crudo) {
+      if (escapado) { arreglado += c; escapado = false; continue; }
+      if (c === '\\') { arreglado += c; escapado = true; continue; }
+      if (c === '"') { dentroDeTexto = !dentroDeTexto; arreglado += c; continue; }
+      if (dentroDeTexto && (c === '\n' || c === '\r' || c === '\t')) { arreglado += ' '; continue; }
+      // Cualquier otro carácter de control dentro de un texto también molesta
+      if (dentroDeTexto && c.charCodeAt(0) < 32) continue;
+      arreglado += c;
+    }
+    try {
+      return JSON.parse(arreglado);
+    } catch (e2) {
+      throw new Error('La IA devolvió un JSON con formato roto: ' + e2.message);
+    }
+  }
 }
 
 export default async function handler(req, res) {
