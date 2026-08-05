@@ -58,11 +58,15 @@ Te paso una lista de platos de una carta. Devolvé SOLO un objeto JSON, sin text
  "recetas":[{"nombre":"...","tipoServicio":"...","porciones":1,"precioVenta":0,
              "ingredientes":[{"ingrediente":"...","tecnica":"...","neto":0}]}]}
 
+("neto" va en GRAMOS: 300, no 0,3)
+
 REGLAS DE COCINA — esto es lo que hace que sirva o no sirva:
 
 1. GRAMAJES REALES DE SERVICIO. Un plato principal de carne lleva 250-350 g netos. Una guarnición, 200-250 g. Una entrada, 100-180 g. Una salsa de pasta, 100-150 g. Un postre individual, 120-180 g. No inventes cantidades de más ni de menos.
 
-2. "neto" es lo que va AL PLATO, ya limpio y porcionado. La merma la agrega el sistema.
+2. "neto" SIEMPRE EN GRAMOS, número entero. Aunque el ingrediente se compre por kilo, acá va en gramos: un bife de chorizo es 300, NO 0,3. Una guarnición es 220, NO 0,22. Si escribís kilos, el sistema costea mil veces menos y el trabajo no sirve. Excepción: los ingredientes con unidadMedida "unidades" (huevos) van en cantidad de unidades (3 huevos = 3).
+   "neto" es lo que va AL PLATO, ya limpio y porcionado. La merma la agrega el sistema.
+   ANTES DE RESPONDER, sumá los gramos de cada receta: un plato entero tiene que dar entre 150 y 900. Si te da menos de 10, escribiste kilos — corregilo.
 
 3. MERMAS DE OFICIO, no genéricas. Cada par ingrediente+técnica que uses en una receta TIENE que estar en la lista de mermas, si no el sistema no puede costear ese renglón. Valores reales:
    - papa pelada 22% · torneada 38% · en bastones 28%
