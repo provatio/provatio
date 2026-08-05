@@ -12020,7 +12020,7 @@ function descargarPlantilla(){
 // IA queda marcado como estimado.
 // ═══════════════════════════════════════════════════════════════════════
 const CARTA_LOTE     = 6;   // platos por tanda
-const CARTA_PARALELO = 3;   // tandas simultáneas
+const CARTA_PARALELO = 8;   // tandas simultáneas
 const CARTA_MB_MAX   = 4;   // el servidor rechaza pedidos más grandes
 
 function _cartaPaso(html, pct){
@@ -12078,6 +12078,43 @@ async function _cartaTandaConReintento(lote, yaExisten, avisar){
   }
   // Un solo plato que no hay forma de leer: se lo deja afuera con nombre.
   return { partes:[], perdidos: lote.map(p => String(p && p.nombre || 'sin nombre')) };
+}
+
+// RED DE SEGURIDAD DE ESCALA. La IA a veces escribe los gramajes en kilos
+// (0,3 en lugar de 300) porque el ingrediente se compra por kilo. Eso hace que
+// todo cueste mil veces menos y el costeo no sirva para nada. Un plato de
+// verdad pesa cientos de gramos: si la receta entera suma menos de 10, estaba
+// en kilos y se multiplica por mil.
+function _cartaCorregirEscala(recs, ings){
+  let corregidas = 0;
+  recs.forEach(r=>{
+    const pesadas = (r.ingredientes||[]).filter(l=>{
+      const ing = ings.get(String(l.ingrediente||'').toLowerCase().trim());
+      return !ing || ing.unidadMedida !== 'unidades';
+    });
+    if(!pesadas.length) return;
+    const total = pesadas.reduce((a,l)=>a + (+l.neto||0), 0);
+    if(total > 0 && total < 10){
+      pesadas.forEach(l => l.neto = Math.round((+l.neto||0) * 1000));
+      corregidas++;
+    }
+  });
+  return corregidas;
+}
+
+// Si una receta usa un par ingrediente+técnica que la IA no puso en la lista de
+// mermas, la receta quedaba "incompleta" y sin costear. Se completa con 0% para
+// que al menos costee: el chef corrige el porcentaje después.
+function _cartaCompletarMermas(recs, merm){
+  let agregadas = 0;
+  recs.forEach(r => (r.ingredientes||[]).forEach(l=>{
+    const nom = String(l.ingrediente||'').trim();
+    if(!nom) return;
+    const tec = String(l.tecnica||'').trim() || 'Sin merma';
+    const clave = nom.toLowerCase() + '|' + tec;
+    if(!merm.has(clave)){ merm.set(clave, { ingrediente:nom, tecnica:tec, pct:0 }); agregadas++; }
+  }));
+  return agregadas;
 }
 
 async function procesarCartaPDF(file){
@@ -12175,6 +12212,10 @@ async function procesarCartaPDF(file){
     await Promise.all(Array.from({length: Math.min(CARTA_PARALELO, lotes.length)}, obrero));
 
     if(!recs.length) throw new Error('Ninguna tanda pudo leerse. Probá con un PDF más nítido o con menos páginas.');
+
+    const enKilos = _cartaCorregirEscala(recs, ings);
+    const mermasPuestas = _cartaCompletarMermas(recs, merm);
+    if(enKilos || mermasPuestas) console.warn('[carta] escala corregida en ' + enKilos + ' recetas · ' + mermasPuestas + ' mermas completadas en 0%');
 
     _cartaPaso('Listo — revisá antes de guardar.', 100);
     window._cartaDraft = { operacion, ings, merm, recs, archivo: file.name,
