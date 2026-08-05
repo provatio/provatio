@@ -12006,10 +12006,22 @@ function descargarPlantilla(){
 // hace cada plato. Va por tandas porque una carta de hotel tiene más de 100
 // platos y pedirle todo junto a la IA da respuestas cortadas.
 //
+// POR QUÉ LAS TANDAS SON CHICAS: con 30 platos por tanda la IA tiene que
+// escribir un JSON larguísimo, y cualquier tropiezo rompe el lote entero.
+// Con 6 la salida es corta y casi no se equivoca. Si igual falla, se
+// reintenta esa tanda sola; si vuelve a fallar se parte al medio; y si una
+// mitad tampoco sale, se saltean esos platos y se avisa al final. Perder 3
+// platos de 119 es aceptable; perder los 119 no.
+//
+// POR QUÉ VAN DE A TRES A LA VEZ: 119 platos son 20 tandas. En fila india
+// serían diez minutos de espera. De a tres en paralelo, tres o cuatro.
+//
 // NADA se guarda hasta que el chef aprieta "Aplicar". Todo lo que propone la
 // IA queda marcado como estimado.
 // ═══════════════════════════════════════════════════════════════════════
-const CARTA_LOTE = 30;   // platos por tanda
+const CARTA_LOTE     = 6;   // platos por tanda
+const CARTA_PARALELO = 3;   // tandas simultáneas
+const CARTA_MB_MAX   = 4;   // el servidor rechaza pedidos más grandes
 
 function _cartaPaso(html, pct){
   const el = document.getElementById('carta-progreso');
@@ -12022,10 +12034,59 @@ function _cartaPaso(html, pct){
     </div>`;
 }
 
+// Pide UNA tanda de recetas. Si el servidor contesta mal o el JSON viene
+// roto, tira error y el que llama decide qué hacer.
+async function _cartaPedirTanda(lote, yaExisten){
+  const r = await fetch('/api/carta', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ accion:'recetas', platos: lote, yaExisten })
+  });
+  if(!r.ok){
+    const msg = (await r.json().catch(()=>({}))).error || ('Error del servidor ('+r.status+')');
+    throw new Error(msg);
+  }
+  const j = await r.json();
+  if(!j || (!j.recetas && !j.ingredientes)) throw new Error('La IA devolvió una respuesta vacía');
+  return j;
+}
+
+// Intenta una tanda con reintento y, si insiste en fallar, la parte al medio.
+// Devuelve { partes:[...respuestas...], perdidos:[...nombres de platos...] }
+async function _cartaTandaConReintento(lote, yaExisten, avisar){
+  for(let intento=1; intento<=2; intento++){
+    try{
+      return { partes:[ await _cartaPedirTanda(lote, yaExisten) ], perdidos:[] };
+    }catch(e){
+      console.warn('[Provatio] tanda falló (intento '+intento+'):', e.message);
+      if(intento===1) await new Promise(ok=>setTimeout(ok, 800));
+    }
+  }
+  // Dos intentos fallidos. Si todavía hay más de un plato, se parte al medio:
+  // una salida más corta casi siempre sale bien.
+  if(lote.length > 1){
+    if(avisar) avisar();
+    const mitad = Math.ceil(lote.length/2);
+    const [a,b] = [lote.slice(0,mitad), lote.slice(mitad)];
+    const res = await Promise.all([
+      _cartaTandaConReintento(a, yaExisten, null),
+      _cartaTandaConReintento(b, yaExisten, null),
+    ]);
+    return {
+      partes:   [...res[0].partes,   ...res[1].partes],
+      perdidos: [...res[0].perdidos, ...res[1].perdidos],
+    };
+  }
+  // Un solo plato que no hay forma de leer: se lo deja afuera con nombre.
+  return { partes:[], perdidos: lote.map(p => String(p && p.nombre || 'sin nombre')) };
+}
+
 async function procesarCartaPDF(file){
   const inp = document.getElementById('carta-file'); if(inp) inp.value = '';
-  if(file.size > 30 * 1024 * 1024){
-    showToast('El archivo pesa más de 30 MB. Probá con un PDF más liviano.','error'); return;
+  const mb = file.size / (1024*1024);
+  if(mb > CARTA_MB_MAX){
+    showToast(`La carta pesa ${mb.toFixed(1)} MB y el máximo son ${CARTA_MB_MAX} MB. `
+            + `Probá sacando las páginas de vinos y las fotos sin precios.`, 'error');
+    return;
   }
   try{
     _cartaPaso('Subiendo la carta…', 5);
@@ -12046,22 +12107,18 @@ async function procesarCartaPDF(file){
     const { operacion, platos } = await r1.json();
     if(!platos || !platos.length) throw new Error('No pude reconocer platos en ese archivo. ¿Es la carta?');
 
-    // ── PASADA 2, por tandas ──
+    // ── PASADA 2, por tandas chicas y de a varias a la vez ──
     const lotes = [];
     for(let i=0; i<platos.length; i+=CARTA_LOTE) lotes.push(platos.slice(i, i+CARTA_LOTE));
 
     const ings = new Map();   // nombre normalizado → ingrediente
     const merm = new Map();   // "nombre|tecnica"   → merma
     const recs = [];
+    const perdidos = [];      // platos que no se pudieron leer
+    let hechas = 0, reintentadas = 0;
 
-    for(let k=0; k<lotes.length; k++){
-      _cartaPaso(`Armando recetas… tanda ${k+1} de ${lotes.length} · ${recs.length} de ${platos.length} platos listos`,
-                 20 + (k/lotes.length)*70);
-      const r2 = await fetch('/api/carta', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ accion:'recetas', platos: lotes[k], yaExisten: [...ings.values()].map(i=>i.nombre) }) });
-      if(!r2.ok) throw new Error((await r2.json().catch(()=>({}))).error || ('Error del servidor ('+r2.status+')'));
-      const j = await r2.json();
-
+    // Guarda en los mapas lo que devolvió una tanda.
+    const guardar = j => {
       (j.ingredientes||[]).forEach(i=>{
         const nom = String(i && i.nombre || '').trim();
         const clave = nom.toLowerCase();
@@ -12088,10 +12145,44 @@ async function procesarCartaPDF(file){
         r.ingredientes.forEach(l => { if(!String(l.tecnica||'').trim()) l.tecnica = 'Sin merma'; });
         recs.push(r);
       });
-    }
+    };
+
+    const mostrarAvance = () => {
+      const extra = reintentadas ? ` · ${reintentadas} rehaciéndose` : '';
+      _cartaPaso(`Armando recetas… ${hechas} de ${lotes.length} tandas · ${recs.length} de ${platos.length} platos listos${extra}`,
+                 20 + (hechas/lotes.length)*70);
+    };
+    mostrarAvance();
+
+    // Cinta de trabajo: CARTA_PARALELO obreros tomando tandas de la pila.
+    let siguiente = 0;
+    const obrero = async () => {
+      while(siguiente < lotes.length){
+        const lote = lotes[siguiente++];
+        // Los nombres ya conocidos ayudan a la IA a no inventar variantes
+        // ("cebolla" y "cebolla blanca" como dos ingredientes distintos).
+        const yaExisten = [...ings.values()].map(i=>i.nombre).slice(-200);
+        const { partes, perdidos:p } = await _cartaTandaConReintento(
+          lote, yaExisten, () => { reintentadas++; mostrarAvance(); }
+        );
+        partes.forEach(guardar);
+        perdidos.push(...p);
+        hechas++;
+        if(reintentadas > 0) reintentadas = Math.max(0, reintentadas-1);
+        mostrarAvance();
+      }
+    };
+    await Promise.all(Array.from({length: Math.min(CARTA_PARALELO, lotes.length)}, obrero));
+
+    if(!recs.length) throw new Error('Ninguna tanda pudo leerse. Probá con un PDF más nítido o con menos páginas.');
 
     _cartaPaso('Listo — revisá antes de guardar.', 100);
-    window._cartaDraft = { operacion, ings, merm, recs, archivo: file.name, totalPlatos: platos.length };
+    window._cartaDraft = { operacion, ings, merm, recs, archivo: file.name,
+                           totalPlatos: platos.length, perdidos };
+    if(perdidos.length){
+      showToast(`Quedaron ${perdidos.length} platos afuera: ${perdidos.slice(0,5).join(', ')}`
+              + (perdidos.length>5 ? '…' : '') + '. Los podés cargar a mano después.', 'error');
+    }
     // Red de seguridad: leer la carta lleva varios minutos. Si algo falla al
     // dibujar la pantalla de revisión, NO se pierde el trabajo: se ofrece
     // bajarlo como JSON para importarlo por el camino de siempre.
