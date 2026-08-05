@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════════════════════
 // PROVATIO — /api/carta
 //
 // Lee la carta de un restaurante (PDF o foto) y devuelve la operación armada:
@@ -42,7 +42,11 @@ Reglas:
 - "descripcion": lo que la carta aclara entre paréntesis sobre qué lleva el plato. Si no aclara nada, dejalo vacío.
 - "servicio": deducilo de la sección. Postres, guarniciones, entradas y pastas → Almuerzo. Cortes de parrilla y platos de autor → Cena. Omelettes y revueltos → Desayuno.
 - NO incluyas vinos, cervezas, gaseosas ni aguas. Solo comida.
-- Si un plato dice "para 2 personas", ponelo igual y dejá constancia en la descripción.`;
+- Si un plato dice "para 2 personas", ponelo igual y dejá constancia en la descripción.
+
+FORMATO DEL JSON — el sistema lee la respuesta con una máquina, no con ojos:
+- Todo en una sola línea por objeto. Nunca cortes un texto con un Enter en el medio.
+- Si un nombre lleva comillas o pulgadas, escribilas como \\" o cambialas por comillas simples.`;
 
 // ── PASADA 2 · Cómo se hace cada plato ────────────────────────────────────
 const PROMPT_RECETAS = `Sos un chef con treinta años de cocina cargando recetas en un sistema de costos gastronómico.
@@ -85,9 +89,107 @@ REGLAS DE COCINA — esto es lo que hace que sirva o no sirva:
 
 9. Si el plato dice "para 2 personas", poné porciones 2 y los gramajes para las dos.
 
-10. Respetá el precioVenta y el nombre EXACTOS que te paso. No los cambies.`;
+10. Respetá el precioVenta y el nombre EXACTOS que te paso. No los cambies.
 
-async function llamarClaude(mensajes, maxTokens, sistema) {
+FORMATO DEL JSON — el sistema lee la respuesta con una máquina, no con ojos:
+- Un objeto por línea. Nunca cortes un texto con un Enter en el medio.
+- Sin comas de más antes de cerrar un } o un ].
+- Si un nombre lleva comillas, escribilas como \\" o cambialas por comillas simples.
+- No agregues comentarios ni explicaciones. Solo el objeto JSON.`;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LECTURA DEL JSON QUE DEVUELVE LA IA
+//
+// Por qué esto es tan largo: antes se hacía un JSON.parse de una sola pieza.
+// Una coma mal puesta en la receta 17 tiraba abajo las otras 29 — y con ellas
+// cinco minutos de lectura. Ahora hay tres escalones, del más limpio al más
+// desesperado, y el último rescata receta por receta: lo que está bien
+// escrito entra, lo que está roto se descarta solo.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Escalón 2: arregla lo que suele romperse — saltos de línea dentro de un
+// texto entrecomillado, tabulaciones, y comas colgando antes de cerrar.
+function repararJSON(txt) {
+  let out = '', dentro = false, escapado = false;
+  for (let i = 0; i < txt.length; i++) {
+    const ch = txt[i];
+    if (escapado) { out += ch; escapado = false; continue; }
+    if (ch === '\\') { out += ch; escapado = true; continue; }
+    if (ch === '"') { dentro = !dentro; out += ch; continue; }
+    if (dentro) {
+      if (ch === '\n') { out += '\\n'; continue; }
+      if (ch === '\r') { continue; }
+      if (ch === '\t') { out += '\\t'; continue; }
+      if (ch.charCodeAt(0) < 32) { continue; }
+    }
+    out += ch;
+  }
+  return out.replace(/,\s*([}\]])/g, '$1');
+}
+
+// Escalón 3: rescate por objeto. Busca "clave":[ y va sacando los objetos de
+// adentro uno por uno, contando llaves. Cada uno se parsea por separado: si
+// uno viene roto se saltea y se sigue con el siguiente. Si la respuesta quedó
+// cortada por la mitad, se queda con todo lo completo hasta ahí.
+function rescatarObjetos(txt, clave) {
+  const m = new RegExp('"' + clave + '"\\s*:\\s*\\[').exec(txt);
+  if (!m) return { ok: [], rotos: 0 };
+  let i = m.index + m[0].length;
+  const ok = [];
+  let rotos = 0;
+  while (i < txt.length) {
+    while (i < txt.length && (txt[i] === ' ' || txt[i] === ',' || txt[i] === '\n' || txt[i] === '\r' || txt[i] === '\t')) i++;
+    if (txt[i] !== '{') break;              // fin del array (o basura)
+    let prof = 0, dentro = false, escapado = false, j = i, cerrado = false;
+    for (; j < txt.length; j++) {
+      const c = txt[j];
+      if (escapado) { escapado = false; continue; }
+      if (c === '\\') { escapado = true; continue; }
+      if (c === '"') { dentro = !dentro; continue; }
+      if (dentro) continue;
+      if (c === '{') prof++;
+      else if (c === '}') { prof--; if (prof === 0) { j++; cerrado = true; break; } }
+    }
+    if (!cerrado) break;                    // se cortó la respuesta acá
+    const frag = txt.slice(i, j);
+    try { ok.push(JSON.parse(frag)); }
+    catch (_) {
+      try { ok.push(JSON.parse(repararJSON(frag))); }
+      catch (_2) { rotos++; }               // este objeto se pierde, el resto no
+    }
+    i = j;
+  }
+  return { ok, rotos };
+}
+
+// Devuelve { datos, rotos, modo } — nunca tira error si hay algo rescatable.
+function leerRespuesta(texto, claves) {
+  const limpio0 = texto.replace(/```json/g, '').replace(/```/g, '').trim();
+  const desde = limpio0.indexOf('{');
+  const hasta = limpio0.lastIndexOf('}');
+  const bruto = desde >= 0 ? limpio0.slice(desde, hasta > desde ? hasta + 1 : undefined) : limpio0;
+
+  // Escalón 1: tal cual vino.
+  try { return { datos: JSON.parse(bruto), rotos: 0, modo: 'directo' }; } catch (_) { }
+  // Escalón 2: reparado.
+  const arreglado = repararJSON(bruto);
+  try { return { datos: JSON.parse(arreglado), rotos: 0, modo: 'reparado' }; } catch (_) { }
+  // Escalón 3: rescate objeto por objeto.
+  const datos = {};
+  let rotos = 0, algo = false;
+  for (const c of claves) {
+    const r = rescatarObjetos(arreglado, c);
+    datos[c] = r.ok;
+    rotos += r.rotos;
+    if (r.ok.length) algo = true;
+  }
+  const op = /"operacion"\s*:\s*"([^"]*)"/.exec(arreglado);
+  if (op) datos.operacion = op[1];
+  if (!algo) return null;
+  return { datos, rotos, modo: 'rescate' };
+}
+
+async function llamarClaude(mensajes, maxTokens, sistema, claves) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: CABECERAS,
@@ -104,37 +206,28 @@ async function llamarClaude(mensajes, maxTokens, sistema) {
   }
   const j = await r.json();
   const texto = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-  const limpio = texto.replace(/```json/g, '').replace(/```/g, '').trim();
-  const desde = limpio.indexOf('{');
-  const hasta = limpio.lastIndexOf('}');
-  if (desde < 0 || hasta < 0) throw new Error('La IA no devolvió un JSON legible');
-  const crudo = limpio.slice(desde, hasta + 1);
 
-  try {
-    return JSON.parse(crudo);
-  } catch (e) {
-    // La IA a veces deja un salto de línea DENTRO de un texto entre comillas
-    // (una descripción de plato que le quedó cortada en dos renglones). Eso
-    // rompe el formato JSON. Acá se recorre carácter por carácter y se
-    // reemplazan esos saltos por un espacio, respetando los que están afuera.
-    let arreglado = '';
-    let dentroDeTexto = false;
-    let escapado = false;
-    for (const c of crudo) {
-      if (escapado) { arreglado += c; escapado = false; continue; }
-      if (c === '\\') { arreglado += c; escapado = true; continue; }
-      if (c === '"') { dentroDeTexto = !dentroDeTexto; arreglado += c; continue; }
-      if (dentroDeTexto && (c === '\n' || c === '\r' || c === '\t')) { arreglado += ' '; continue; }
-      // Cualquier otro carácter de control dentro de un texto también molesta
-      if (dentroDeTexto && c.charCodeAt(0) < 32) continue;
-      arreglado += c;
+  const res = leerRespuesta(texto, claves);
+  if (!res) {
+    // No se rescató NADA. Acá sí hay que avisar bien, con el pedazo exacto
+    // donde se rompió, para no volver a diagnosticar a ciegas.
+    let pista = '';
+    try { JSON.parse(texto); } catch (e) {
+      const pos = /position (\d+)/.exec(e.message);
+      pista = e.message.slice(0, 120);
+      if (pos) pista += ' → «' + texto.slice(Math.max(0, +pos[1] - 60), +pos[1] + 60).replace(/\s+/g, ' ') + '»';
     }
-    try {
-      return JSON.parse(arreglado);
-    } catch (e2) {
-      throw new Error('La IA devolvió un JSON con formato roto: ' + e2.message);
-    }
+    console.error('[carta] respuesta ilegible · stop_reason=' + j.stop_reason + ' · ' + pista);
+    throw new Error(
+      j.stop_reason === 'max_tokens'
+        ? 'La respuesta de la IA se cortó por ser demasiado larga. Probá con menos platos por tanda.'
+        : 'La IA no devolvió un JSON legible. ' + pista
+    );
   }
+  if (res.modo !== 'directo' || j.stop_reason === 'max_tokens') {
+    console.warn('[carta] lectura por ' + res.modo + ' · descartados=' + res.rotos + ' · stop_reason=' + j.stop_reason);
+  }
+  return { ...res.datos, _rotos: res.rotos, _modo: res.modo, _cortado: j.stop_reason === 'max_tokens' };
 }
 
 export default async function handler(req, res) {
@@ -156,10 +249,13 @@ export default async function handler(req, res) {
 
       const out = await llamarClaude(
         [{ role: 'user', content: [bloque, { type: 'text', text: 'Leé esta carta y devolvé el JSON de platos.' }] }],
-        16000, PROMPT_PLATOS);
+        16000, PROMPT_PLATOS, ['platos']);
 
       const lista = Array.isArray(out.platos) ? out.platos : [];
-      return res.status(200).json({ operacion: out.operacion || '', platos: lista });
+      return res.status(200).json({
+        operacion: out.operacion || '', platos: lista,
+        _rotos: out._rotos, _modo: out._modo, _cortado: out._cortado,
+      });
     }
 
     // ── Pasada 2: armar las recetas de un lote ──
@@ -175,12 +271,13 @@ export default async function handler(req, res) {
 
       const out = await llamarClaude(
         [{ role: 'user', content: [{ type: 'text', text: contexto }] }],
-        32000, PROMPT_RECETAS);
+        32000, PROMPT_RECETAS, ['ingredientes', 'mermas', 'recetas']);
 
       return res.status(200).json({
         ingredientes: Array.isArray(out.ingredientes) ? out.ingredientes : [],
         mermas: Array.isArray(out.mermas) ? out.mermas : [],
         recetas: Array.isArray(out.recetas) ? out.recetas : [],
+        _rotos: out._rotos, _modo: out._modo, _cortado: out._cortado,
       });
     }
 
