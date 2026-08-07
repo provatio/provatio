@@ -1404,6 +1404,8 @@ async function guardarEnFirestore(){
         recetas: recetasOp,
         eventos: (demoData.eventos||[]).filter(e=>e.opId===currentOpId),
         facturas: demoData.facturas || [],
+        serviciosDiarios: (demoData.serviciosDiarios||[]).filter(s=>s.opId===currentOpId && !s._temp),
+        menusDia: demoData.menusDia || {},
       },
       _rev: (window._revLocal||0) + 1,
       _ultimoEditor: (currentUser && currentUser.email) || 'usuario',
@@ -1597,6 +1599,8 @@ async function cargarDesdeFirestore(uid){
       demoData.recetas = (opActiva._datos.recetas||[]).map(r=>({...r, opId:currentOpId}));
       demoData.eventos = (opActiva._datos.eventos||[]).map(e=>({...e, opId:currentOpId}));
       demoData.facturas = opActiva._datos.facturas || [];
+      demoData.serviciosDiarios = (opActiva._datos.serviciosDiarios||[]).map(s=>({...s, opId:currentOpId}));
+      demoData.menusDia = opActiva._datos.menusDia || {};
       window._revLocal = opActiva._rev || 0;
       hideLoading();
       return true;
@@ -2030,7 +2034,10 @@ let demoData = {
     //     {nombre: 'Desperdicio (grasa/nervios)', pct: 5, tipo: 'desperdicio'},
     //   ]
     // }
-  ]
+  ],
+  // Módulo Servicio diario / Rodaje
+  serviciosDiarios: [],
+  menusDia: {}
 };
 
 // ── HELPERS ──
@@ -3601,6 +3608,7 @@ function buildSidebar(rol){
       {icon:'calendar', label:'Planificación semanal', vista:'semanal'},
       {icon:'target', label:'Evento / Presupuesto', vista:'evento'},
       {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
+      {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
     ] : []),
     {section:'Análisis'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
@@ -3628,6 +3636,7 @@ function buildSidebar(rol){
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
+    {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
     {section:'Compras'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
     {icon:'cart', label:'Pedido sugerido', vista:'pedido'},
@@ -3920,6 +3929,8 @@ function navigate(vista, params={}){
     subproductos: renderSubproductos,
     personal: renderPersonal,
     desvios: renderDesvios,
+    cierreServicio: renderCierreServicio,
+    historialServicio: renderHistorialServicio,
   };
   
   if(vistas[vista]) vistas[vista](params);
@@ -12319,7 +12330,10 @@ function renderRevisionCarta(){
   const color = p => p<=30 ? 'var(--oliva)' : (p<=38 ? '#B8540A' : 'var(--bordo,#8B1A1A)');
 
   setContent('Revisar la carta leída', `
-    <button class="btn btn-secondary btn-sm" style="margin-bottom:16px" onclick="window._cartaDraft=null;renderImportExport()">← Cancelar y volver</button>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn btn-secondary btn-sm" onclick="window._cartaDraft=null;renderImportExport()">← Cancelar y volver</button>
+      <button class="btn btn-secondary btn-sm" onclick="descargarCartaLeida()">⤓ Descargar lo leído</button>
+    </div>
 
     <div class="alert alert-info" style="margin-bottom:16px">
       Leí <strong>${esc(d.archivo)}</strong> y armé ${d.recs.length} recetas de los ${d.totalPlatos} platos de la carta.
@@ -13319,6 +13333,455 @@ function toggleServicioPersonal(servicio, checked){
 // ══════════════════════════════════════════════════════════════════════
 // MÓDULO 5 — COSTO REAL VS TEÓRICO
 // ══════════════════════════════════════════════════════════════════════
+
+
+// ═══════════════════════════════════════════════════════════
+// MÓDULO SERVICIO DIARIO / RODAJE — Cierre de servicio
+// ═══════════════════════════════════════════════════════════
+const TIPOS_LINEA_SD = {
+  A: { id:'A', nombre:'Receta / plato' },
+  B: { id:'B', nombre:'Insumo pesado' },
+  C: { id:'C', nombre:'Compuesta pesada' },
+  D: { id:'D', nombre:'Contenedor/batea' },
+  E: { id:'E', nombre:'Unidad' },
+};
+const LLENADO_BATEA = { llena:1, '3/4':0.75, media:0.5, poco:0.25 };
+
+function _sdFechaHoy(){
+  const d = new Date();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return d.getFullYear()+'-'+m+'-'+day;
+}
+function _sdKeyMenu(fecha, servicio){ return fecha+'|'+servicio; }
+
+function getServiciosDiarios(){
+  if(!demoData.serviciosDiarios) demoData.serviciosDiarios = [];
+  return demoData.serviciosDiarios.filter(s => s.opId === currentOpId && !s._temp);
+}
+
+function getCostoKgLineaSD(linea){
+  if(linea.costoKg != null && linea.costoKg !== '') return Number(linea.costoKg)||0;
+  if(linea.tipo==='C' && linea.recetaId){
+    const r = (demoData.recetas||[]).find(x=>x.id===linea.recetaId);
+    if(r){
+      try{
+        const {merc} = calcReceta(r, 1);
+        if(r.baseKg) return merc||0;
+        if(r.rendimientoKg && r.rendimientoKg>0) return (merc||0)/r.rendimientoKg;
+        return merc||0;
+      }catch(e){ return 0; }
+    }
+  }
+  if(linea.tipo==='B' && linea.ingId){
+    const ing = getIngrediente(linea.ingId);
+    if(ing) return (ing.precio||0)/(ing.bulto||1);
+  }
+  return 0;
+}
+
+function calcLineaServicio(linea, comensales){
+  const pax = Number(comensales)||0;
+  const out = { consumido:null, porPersona:null, costo:null, costoPersona:null, equivBateas:null };
+  if(linea.tipo==='B' || linea.tipo==='C'){
+    const usado = Number(linea.aMesada)||0;
+    const sobra = Number(linea.sobrante)||0;
+    out.consumido = Math.max(0, usado - sobra);
+    if(pax>0) out.porPersona = (out.consumido * 1000) / pax;
+    const costoKg = getCostoKgLineaSD(linea);
+    out.costo = out.consumido * costoKg;
+    if(pax>0) out.costoPersona = out.costo / pax;
+  }
+  if(linea.tipo==='E'){
+    const usado = Number(linea.aMesada)||0;
+    const sobra = Number(linea.sobrante)||0;
+    out.consumido = Math.max(0, usado - sobra);
+    if(pax>0) out.porPersona = out.consumido / pax;
+    const cu = Number(linea.costoUnitario)||0;
+    out.costo = out.consumido * cu;
+    if(pax>0) out.costoPersona = out.costo / pax;
+  }
+  if(linea.tipo==='D'){
+    const rec = Number(linea.recibidas)||0;
+    const factor = LLENADO_BATEA[linea.llenado] != null ? LLENADO_BATEA[linea.llenado] : 1;
+    out.equivBateas = rec * factor;
+    const kgRef = Number(linea.kgPorBateaLlena)||0;
+    if(kgRef>0){
+      out.consumido = out.equivBateas * kgRef;
+      if(pax>0) out.porPersona = (out.consumido * 1000) / pax;
+      out.costo = out.consumido * (Number(linea.costoKg)||0);
+      if(pax>0) out.costoPersona = out.costo / pax;
+    }
+  }
+  return out;
+}
+
+function getMenuDia(fecha, servicio){
+  if(!demoData.menusDia) demoData.menusDia = {};
+  const k = _sdKeyMenu(fecha, servicio);
+  return demoData.menusDia[k] || null;
+}
+function setMenuDia(fecha, servicio, lineas){
+  if(!demoData.menusDia) demoData.menusDia = {};
+  demoData.menusDia[_sdKeyMenu(fecha, servicio)] = {
+    opId: currentOpId, fecha, servicio, lineas: lineas||[]
+  };
+}
+function menuDiaEjemplo(fecha, servicio){
+  if(servicio==='merienda'){
+    return [
+      { id:uid(), tipo:'E', nombre:'Medialuna jamón y queso', estacion:'Merienda', aMesada:'', sobrante:'', costoUnitario:0 },
+      { id:uid(), tipo:'E', nombre:'Sanguchito', estacion:'Merienda', aMesada:'', sobrante:'', costoUnitario:0 },
+      { id:uid(), tipo:'E', nombre:'Pizza (porción)', estacion:'Merienda', aMesada:'', sobrante:'', costoUnitario:0 },
+    ];
+  }
+  return [
+    { id:uid(), tipo:'C', nombre:'Coleslaw', estacion:'Salad bar', aMesada:'', sobrante:'', costoKg:0, recetaId:'' },
+    { id:uid(), tipo:'B', nombre:'Rúcula', estacion:'Salad bar', aMesada:'', sobrante:'', costoKg:0, ingId:'' },
+    { id:uid(), tipo:'C', nombre:'Papa y huevo', estacion:'Salad bar', aMesada:'', sobrante:'', costoKg:0, recetaId:'' },
+    { id:uid(), tipo:'C', nombre:'Ensalada mixta', estacion:'Salad bar', aMesada:'', sobrante:'', costoKg:0, recetaId:'' },
+    { id:uid(), tipo:'D', nombre:'Pollo al horno', estacion:'Central', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'', kgPorBateaLlena:5, costoKg:0 },
+    { id:uid(), tipo:'A', nombre:'Guiso / principal', estacion:'Platos', alcanzo:'' },
+  ];
+}
+
+function renderCierreServicio(){
+  if(!currentOpId){
+    setContent('Cierre de servicio', `<div class="alert alert-warn">Abrí una operación para cargar el cierre del día.</div>`);
+    return;
+  }
+  const fecha = window._sdFecha || _sdFechaHoy();
+  const servicio = window._sdServicio || 'almuerzo';
+  let menu = getMenuDia(fecha, servicio);
+  if(!menu){
+    setMenuDia(fecha, servicio, menuDiaEjemplo(fecha, servicio));
+    menu = getMenuDia(fecha, servicio);
+  }
+  const guardado = getServiciosDiarios().find(s => s.fecha===fecha && s.servicio===servicio);
+  const comensales = (window._sdPaxDraft != null && window._sdPaxDraft !== '')
+    ? window._sdPaxDraft
+    : (guardado ? (guardado.comensales||'') : '');
+  const nota = (window._sdNotaDraft != null)
+    ? window._sdNotaDraft
+    : (guardado ? (guardado.nota||'') : '');
+  const lineas = window._sdLineasDraft
+    ? window._sdLineasDraft
+    : (guardado && guardado.lineas && guardado.lineas.length
+        ? guardado.lineas.map(l=>({...l}))
+        : (menu.lineas||[]).map(l=>({...l})));
+
+  window._sdLineasDraft = lineas;
+  window._sdFecha = fecha;
+  window._sdServicio = servicio;
+  const paxNum = Number(comensales)||0;
+
+  const estaciones = [];
+  const map = {};
+  lineas.forEach((l, idx) => {
+    const est = l.estacion || 'Otros';
+    if(!map[est]){ map[est]=[]; estaciones.push(est); }
+    map[est].push({l, idx});
+  });
+
+  function filaHTML(l, idx){
+    const calc = calcLineaServicio(l, paxNum);
+    const tipoNom = (TIPOS_LINEA_SD[l.tipo]||{}).nombre || l.tipo;
+    if(l.tipo==='B' || l.tipo==='C'){
+      return `<div class="card" style="margin-bottom:10px">
+        <div class="card-header" style="padding:10px 14px">
+          <span class="card-title">${esc(l.nombre)}</span>
+          <span class="badge badge-gray">${esc(tipoNom)}</span>
+        </div>
+        <div class="card-body" style="padding:12px 14px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label>A mesada (kg)</label>
+              <input type="number" step="0.1" min="0" value="${l.aMesada??''}"
+                onchange="sdUpdLinea(${idx},'aMesada',this.value)">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Sobrante (kg)</label>
+              <input type="number" step="0.1" min="0" value="${l.sobrante??''}"
+                onchange="sdUpdLinea(${idx},'sobrante',this.value)">
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:12px;color:var(--gris-2)">
+            Consumido: <strong>${calc.consumido!=null?fmtD(calc.consumido,2)+' kg':'—'}</strong>
+            &nbsp;·&nbsp; ${calc.porPersona!=null?fmtD(calc.porPersona,0)+' g/persona':'g/persona: —'}
+            &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
+          </div>
+        </div>
+      </div>`;
+    }
+    if(l.tipo==='E'){
+      return `<div class="card" style="margin-bottom:10px">
+        <div class="card-header" style="padding:10px 14px">
+          <span class="card-title">${esc(l.nombre)}</span>
+          <span class="badge badge-gray">Unidad</span>
+        </div>
+        <div class="card-body" style="padding:12px 14px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label>A mesada (u)</label>
+              <input type="number" step="1" min="0" value="${l.aMesada??''}"
+                onchange="sdUpdLinea(${idx},'aMesada',this.value)">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Sobrante (u)</label>
+              <input type="number" step="1" min="0" value="${l.sobrante??''}"
+                onchange="sdUpdLinea(${idx},'sobrante',this.value)">
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:12px;color:var(--gris-2)">
+            Consumido: <strong>${calc.consumido!=null?fmt(calc.consumido)+' u':'—'}</strong>
+            &nbsp;·&nbsp; ${calc.porPersona!=null?fmtD(calc.porPersona,2)+' u/persona':'—'}
+            &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
+          </div>
+        </div>
+      </div>`;
+    }
+    if(l.tipo==='D'){
+      return `<div class="card" style="margin-bottom:10px">
+        <div class="card-header" style="padding:10px 14px">
+          <span class="card-title">${esc(l.nombre)}</span>
+          <span class="badge badge-gray">Batea</span>
+        </div>
+        <div class="card-body" style="padding:12px 14px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+            <div class="form-group" style="margin:0">
+              <label>Pedidas</label>
+              <input type="number" min="0" value="${l.pedidas??''}" onchange="sdUpdLinea(${idx},'pedidas',this.value)">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Recibidas</label>
+              <input type="number" min="0" value="${l.recibidas??''}" onchange="sdUpdLinea(${idx},'recibidas',this.value)">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Llenado</label>
+              <select onchange="sdUpdLinea(${idx},'llenado',this.value)">
+                ${['llena','3/4','media','poco'].map(v=>`<option value="${v}" ${l.llenado===v?'selected':''}>${v}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:10px">
+            <label>¿Alcanzó?</label>
+            <select onchange="sdUpdLinea(${idx},'alcanzo',this.value)">
+              <option value="">—</option>
+              ${['Alcanzó','Faltó','Sobró'].map(v=>`<option ${l.alcanzo===v?'selected':''}>${v}</option>`).join('')}
+            </select>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--gris-2)">
+            Equiv.: <strong>${calc.equivBateas!=null?fmtD(calc.equivBateas,2)+' bateas llenas':'—'}</strong>
+            ${calc.consumido!=null?' · ~'+fmtD(calc.consumido,1)+' kg':''}
+          </div>
+        </div>
+      </div>`;
+    }
+    return `<div class="card" style="margin-bottom:10px">
+      <div class="card-header" style="padding:10px 14px">
+        <span class="card-title">${esc(l.nombre)}</span>
+        <span class="badge badge-gray">Plato</span>
+      </div>
+      <div class="card-body" style="padding:12px 14px">
+        <div class="form-group" style="margin:0">
+          <label>¿Alcanzó?</label>
+          <select onchange="sdUpdLinea(${idx},'alcanzo',this.value)">
+            <option value="">—</option>
+            ${['Alcanzó','Faltó','Sobró'].map(v=>`<option ${l.alcanzo===v?'selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const body = estaciones.map(est => `
+    <div style="margin:18px 0 8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--gris-2)">${esc(est)}</div>
+    ${map[est].map(({l,idx})=>filaHTML(l,idx)).join('')}
+  `).join('');
+
+  setContent('Cierre de servicio', `
+    <div class="alert alert-info">
+      Solo cargá <strong>a mesada</strong> y <strong>sobrante</strong> (o bateas). El consumido y g/persona se calculan solos.
+      No hace falta indicar si el sobrante fue a sopa o se reusa.
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+          <div class="form-group" style="margin:0">
+            <label>Fecha</label>
+            <input type="date" value="${esc(fecha)}" onchange="sdSetFecha(this.value)">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Servicio</label>
+            <select onchange="sdSetServicio(this.value)">
+              <option value="almuerzo" ${servicio==='almuerzo'?'selected':''}>Almuerzo</option>
+              <option value="merienda" ${servicio==='merienda'?'selected':''}>Merienda</option>
+              <option value="otro" ${servicio==='otro'?'selected':''}>Otro</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Comensales reales</label>
+            <input type="number" min="0" id="sd-pax" value="${esc(comensales)}"
+              onchange="sdSetPax(this.value)" placeholder="ej: 148">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:12px;margin-bottom:0">
+          <label>Nota del día (opcional)</label>
+          <input type="text" id="sd-nota" value="${esc(nota)}" placeholder="ej: doble turno">
+        </div>
+      </div>
+    </div>
+    ${body}
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="sdGuardarCierre()">Guardar cierre</button>
+      <button class="btn btn-secondary" onclick="sdCargarEjemplo()">Cargar ejemplo numérico</button>
+      <button class="btn btn-secondary" onclick="navigate('historialServicio')">Ver historial</button>
+    </div>
+  `, `<button class="btn btn-secondary btn-sm" onclick="navigate('historialServicio')">Historial</button>`);
+}
+
+function sdSetFecha(v){
+  window._sdFecha = v;
+  window._sdLineasDraft = null;
+  window._sdPaxDraft = null;
+  window._sdNotaDraft = null;
+  renderCierreServicio();
+}
+function sdSetServicio(v){
+  window._sdServicio = v;
+  window._sdLineasDraft = null;
+  window._sdPaxDraft = null;
+  window._sdNotaDraft = null;
+  renderCierreServicio();
+}
+function sdSetPax(v){
+  window._sdPaxDraft = v;
+  window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
+  renderCierreServicio();
+}
+function sdUpdLinea(idx, campo, val){
+  if(!window._sdLineasDraft) return;
+  window._sdLineasDraft[idx][campo] = val;
+  window._sdPaxDraft = document.getElementById('sd-pax')?.value || '';
+  window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
+  renderCierreServicio();
+}
+function sdCargarEjemplo(){
+  window._sdPaxDraft = '148';
+  const lineas = window._sdLineasDraft || [];
+  lineas.forEach(l => {
+    if(l.nombre==='Coleslaw'){ l.aMesada='6'; l.sobrante='1.2'; }
+    if(l.nombre==='Rúcula'){ l.aMesada='2'; l.sobrante='0.3'; }
+    if(l.nombre==='Papa y huevo'){ l.aMesada='5'; l.sobrante='0.5'; }
+    if(l.nombre==='Ensalada mixta'){ l.aMesada='4'; l.sobrante='1'; }
+    if(l.tipo==='D'){ l.pedidas='4'; l.recibidas='4'; l.llenado='media'; l.alcanzo='Sobró'; }
+    if(l.tipo==='A'){ l.alcanzo='Alcanzó'; }
+    if(l.tipo==='E' && l.nombre.indexOf('Medialuna')>=0){ l.aMesada='80'; l.sobrante='12'; }
+    if(l.tipo==='E' && l.nombre.indexOf('Sanguchito')>=0){ l.aMesada='60'; l.sobrante='5'; }
+  });
+  window._sdLineasDraft = lineas;
+  renderCierreServicio();
+  showToast('Ejemplo cargado — revisá números y guardá','success');
+}
+function sdGuardarCierre(){
+  if(!currentOpId){ showToast('No hay operación activa','error'); return; }
+  const fecha = window._sdFecha || _sdFechaHoy();
+  const servicio = window._sdServicio || 'almuerzo';
+  const comensales = document.getElementById('sd-pax')?.value || '';
+  const nota = document.getElementById('sd-nota')?.value || '';
+  const lineas = (window._sdLineasDraft||[]).map(l=>({...l}));
+  for(const l of lineas){
+    if((l.tipo==='B'||l.tipo==='C'||l.tipo==='E') && l.aMesada!=='' && l.sobrante!==''){
+      if(Number(l.sobrante) > Number(l.aMesada)){
+        showToast('En "'+l.nombre+'" el sobrante no puede ser mayor que lo de mesada','error');
+        return;
+      }
+    }
+  }
+  if(!demoData.serviciosDiarios) demoData.serviciosDiarios = [];
+  // quitar temps
+  demoData.serviciosDiarios = demoData.serviciosDiarios.filter(s=>!s._temp);
+  const i = demoData.serviciosDiarios.findIndex(s =>
+    s.opId===currentOpId && s.fecha===fecha && s.servicio===servicio);
+  const doc = {
+    id: i>=0 ? demoData.serviciosDiarios[i].id : uid(),
+    opId: currentOpId,
+    fecha, servicio,
+    comensales: Number(comensales)||0,
+    nota,
+    lineas: lineas.map(l => {
+      const c = calcLineaServicio(l, Number(comensales)||0);
+      return {...l, _calc:c};
+    }),
+    cerradoEn: Date.now(),
+  };
+  if(i>=0) demoData.serviciosDiarios[i] = doc;
+  else demoData.serviciosDiarios.push(doc);
+  window._sdLineasDraft = null;
+  window._sdPaxDraft = null;
+  window._sdNotaDraft = null;
+  showToast('Cierre guardado','success');
+  if(typeof guardarEnFirestore==='function') guardarEnFirestore();
+  renderCierreServicio();
+}
+
+function renderHistorialServicio(){
+  const rows = getServiciosDiarios().sort((a,b)=> a.fecha < b.fecha ? 1 : -1);
+  const acc = {};
+  rows.forEach(s => {
+    const pax = s.comensales||0;
+    (s.lineas||[]).forEach(l => {
+      const c = l._calc || calcLineaServicio(l, pax);
+      if(c.consumido==null) return;
+      if(!acc[l.nombre]) acc[l.nombre] = { sum:0, sumPax:0, n:0, tipo:l.tipo };
+      acc[l.nombre].sum += c.consumido;
+      acc[l.nombre].sumPax += pax;
+      acc[l.nombre].n += 1;
+    });
+  });
+  const histRows = Object.entries(acc).map(([nombre,v])=>{
+    let porPax = '—';
+    if(v.sumPax>0){
+      if(v.tipo==='B'||v.tipo==='C') porPax = fmtD((v.sum*1000)/v.sumPax,0)+' g/pax';
+      else if(v.tipo==='E') porPax = fmtD(v.sum/v.sumPax,2)+' u/pax';
+      else porPax = fmtD(v.sum/v.sumPax,2);
+    }
+    return `<tr><td><strong>${esc(nombre)}</strong></td><td>${v.n} cierres</td><td style="text-align:right">${porPax}</td></tr>`;
+  }).join('') || `<tr><td colspan="3" style="color:var(--gris-2)">Todavía no hay cierres guardados</td></tr>`;
+
+  const lista = rows.map(s=>`<tr>
+    <td>${esc(s.fecha)}</td><td>${esc(s.servicio)}</td><td>${s.comensales||'—'}</td>
+    <td>${(s.lineas||[]).length}</td>
+  </tr>`).join('') || `<tr><td colspan="4" style="color:var(--gris-2)">Sin cierres</td></tr>`;
+
+  setContent('Historial de servicio', `
+    <div class="alert alert-info">
+      Promedios a partir de cierres reales (consumido ÷ comensales). Sirve para el pedido del día siguiente.
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Consumo promedio por línea</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Línea</th><th>Muestras</th><th style="text-align:right">Promedio</th></tr></thead>
+          <tbody>${histRows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Cierres guardados</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Servicio</th><th>Comensales</th><th>Líneas</th></tr></thead>
+          <tbody>${lista}</tbody>
+        </table>
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <button class="btn btn-primary" onclick="navigate('cierreServicio')">← Volver al cierre</button>
+    </div>
+  `);
+}
+
 
 function renderDesvios(){
   const op = getOp();
