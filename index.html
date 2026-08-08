@@ -11134,7 +11134,10 @@ async function renderEquipo(){
         ${m.rol==='dueno' ? '' : `
           <button class="btn btn-secondary btn-sm" onclick="modalEditarMiembro('${escJs(m.uid)}')">Permisos</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleMiembro('${escJs(m.uid)}', ${m.activo===false})">
-            ${m.activo===false?'Reactivar':'Desactivar'}</button>`}
+            ${m.activo===false?'Reactivar':'Desactivar'}</button>
+          ${(esDueno() && m.activo!==false && m.uid!==(currentUser&&currentUser.uid)) ? `
+          <button class="btn btn-secondary btn-sm" title="Pasarle la empresa a esta persona"
+            onclick="modalTransferirEmpresa('${escJs(m.uid)}','${escJs(m.email||'')}','${escJs(m.nombre||m.email||m.uid)}')">👑 Hacer dueño</button>` : ''}`}
       </td>
     </tr>`;
   }).join('');
@@ -11155,6 +11158,106 @@ async function renderEquipo(){
         <tbody>${filas || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--gris-3)">Todavía no hay nadie más en el equipo</td></tr>'}</tbody>
       </table></div>
     </div>`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TRANSFERIR LA EMPRESA
+//
+// Sirve para el caso real: alguien arma la operación y después la entrega —
+// un socio que se va, un local que se vende, un chef que la montó para un
+// cliente. Se transfiere LA EMPRESA, no un local suelto: el dueño es uno
+// solo para todo.
+//
+// TRES CUIDADOS, y los tres son por experiencia de que salga mal:
+//  1. El que entrega NO puede quedarse afuera. Pasa a encargado o supervisor
+//     en el mismo movimiento, con todos los locales asignados.
+//  2. Todo va en un solo lote atómico. Si se hiciera en pasos sueltos y uno
+//     fallara, la empresa podía quedar sin dueño válido y no entraba nadie.
+//  3. Hay que escribir el mail de la otra persona para confirmar. Es
+//     irreversible desde este lado: después solo lo revierte el nuevo dueño.
+// ═══════════════════════════════════════════════════════════════════════
+function modalTransferirEmpresa(uid, email, nombre){
+  const eid = getEmpresaId();
+  if(!eid){ showToast('No hay empresa activa','error'); return; }
+  if(!esDueno()){ showToast('Solo el dueño puede transferir la empresa','error'); return; }
+  const nOps = Object.keys(demoData.operaciones||{}).length;
+  openModal(`
+    <div class="modal-header">
+      <span class="modal-title">Transferir la empresa</span>
+      <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;line-height:1.55">
+        <strong>Le vas a pasar la empresa entera a ${esc(nombre)}.</strong><br>
+        Se transfieren <strong>${nOps} operación(es)</strong> con todos sus datos: recetas, ingredientes,
+        facturas, cierres e historial. A partir de ese momento, quien decide quién entra es esta persona.
+      </div>
+
+      <div class="form-group">
+        <label>Vos quedás como</label>
+        <select id="tr-mi-rol">
+          <option value="encargado">Encargado — trabaja en los locales, no gestiona el equipo</option>
+          <option value="supervisor">Supervisor — ve varios locales, no gestiona el equipo</option>
+          <option value="cocina">Cocina — recetas y mermas, sin ver dinero</option>
+        </select>
+        <div style="font-size:12px;color:var(--gris-2);margin-top:6px">
+          No te quedás afuera: seguís entrando con tu mail y con todos los locales asignados.
+          Lo que perdés es la gestión del equipo y la facturación.
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Escribí el mail de ${esc(nombre)} para confirmar</label>
+        <input type="text" id="tr-confirm" placeholder="${esc(email||'su mail')}" autocomplete="off">
+        <div style="font-size:12px;color:var(--gris-2);margin-top:6px">
+          Desde tu cuenta esto no se puede deshacer. Para volver atrás lo tiene que hacer el nuevo dueño.
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="_ejecutarTransferencia('${escJs(uid)}','${escJs(email||'')}')">Transferir la empresa</button>
+    </div>`);
+}
+
+async function _ejecutarTransferencia(uidNuevo, emailNuevo){
+  const eid = getEmpresaId();
+  const miUid = currentUser && currentUser.uid;
+  if(!eid || !miUid){ showToast('Falta la empresa o la sesión','error'); return; }
+  if(!esDueno()){ showToast('Solo el dueño puede transferir la empresa','error'); return; }
+  if(uidNuevo === miUid){ showToast('No podés transferirte la empresa a vos mismo','error'); return; }
+
+  const escrito = (document.getElementById('tr-confirm').value||'').trim().toLowerCase();
+  if(!escrito || escrito !== String(emailNuevo||'').trim().toLowerCase()){
+    showToast('El mail no coincide. Escribilo igual para confirmar.','error');
+    return;
+  }
+  const miNuevoRol = document.getElementById('tr-mi-rol').value || 'encargado';
+  const todasLasOps = Object.keys(demoData.operaciones||{});
+
+  try{
+    // UN SOLO LOTE: o pasan las tres cosas o no pasa ninguna. Si esto se
+    // hiciera en pasos sueltos y fallara el segundo, la empresa quedaba sin
+    // dueño válido y no entraba nadie — ni el que entrega ni el que recibe.
+    const lote = db.batch();
+    const empRef = db.collection('empresas').doc(eid);
+    lote.set(empRef, { duenoUid: uidNuevo, transferidaEn: Date.now(), transferidaPor: miUid }, {merge:true});
+    lote.set(empRef.collection('miembros').doc(uidNuevo),
+             { rol:'dueno', operacionesAsignadas: [], activo:true }, {merge:true});
+    lote.set(empRef.collection('miembros').doc(miUid),
+             { rol: miNuevoRol, operacionesAsignadas: todasLasOps, activo:true }, {merge:true});
+    await lote.commit();
+
+    // Poner la sesión al día sin obligar a volver a entrar.
+    window._empresaDuenoUid = uidNuevo;
+    if(currentUser) currentUser.rolEmpresa = miNuevoRol;
+    closeModal();
+    showToast('Empresa transferida ✓ — ahora sos '+(ROLES[miNuevoRol]||{}).nombre,'success');
+    buildSidebar(currentUser?.rol||'cliente');
+    navigate('dashboard');
+  }catch(err){
+    showToast('No se pudo transferir: '+err.message+' — no se cambió nada.','error');
+  }
 }
 
 function _selectorLocales(seleccionadas){
