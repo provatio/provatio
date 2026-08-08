@@ -1405,7 +1405,10 @@ async function guardarEnFirestore(){
         eventos: (demoData.eventos||[]).filter(e=>e.opId===currentOpId),
         facturas: demoData.facturas || [],
         serviciosDiarios: (demoData.serviciosDiarios||[]).filter(s=>s.opId===currentOpId && !s._temp),
-        menusDia: demoData.menusDia || {},
+        // Igual que serviciosDiarios: se filtra por operación. Si no, un menú
+        // de otra operación que quedó en memoria se escribe en este documento.
+        menusDia: Object.fromEntries(Object.entries(demoData.menusDia||{})
+                    .filter(([,m]) => m && m.opId === currentOpId)),
       },
       _rev: (window._revLocal||0) + 1,
       _ultimoEditor: (currentUser && currentUser.email) || 'usuario',
@@ -1666,6 +1669,69 @@ let currentUser = null;
 let currentOp = null;  // operación activa
 let currentOpId = 'op-patagonia';  // ID de operación activa
 let vistaActual = null;
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODALIDADES DE OPERACIÓN
+//
+// Provatio tiene dos lógicas de costeo conviviendo: por plato vendido (hay
+// carta y precio impreso) y por cubierto servido (hay gente y costo por
+// cabeza). Un tipo único de operación obliga a elegir mal: un hotel no es
+// "restaurante" ni "catering", es las dos cosas a la vez.
+//
+// Por eso cada operación enciende UNA O MÁS modalidades. Cada una habilita
+// sus pantallas y el menú se arma solo. Un restaurante de barrio nunca se
+// cruza con el cierre de servicio; un rodaje nunca ve la matriz de menú.
+// ═══════════════════════════════════════════════════════════════════════
+const MODALIDADES = {
+  carta: {
+    label: 'Carta',
+    icono: '🍽',
+    desc: 'Se vende por plato, con precio impreso. Habilita food cost por receta, rentabilidad y matriz de menú.',
+    ejemplo: 'Restaurante, rotisería, dark kitchen, el restaurante de un hotel',
+  },
+  cubiertoContratado: {
+    label: 'Cubierto contratado',
+    icono: '📋',
+    desc: 'Cantidad de comensales cerrada de antemano y precio pactado. Habilita el presupuesto por evento.',
+    ejemplo: 'Casamientos, empresas, salón de fiestas',
+  },
+  cubiertoContinuo: {
+    label: 'Cubierto continuo',
+    icono: '🍲',
+    desc: 'Se sirve todos los días a una cantidad conocida de gente y no se puede predecir el consumo: hay que medirlo. Habilita el buffet y el cierre de servicio.',
+    ejemplo: 'Catering de rodaje, comedor de personal, buffet de hotel, minería',
+  },
+  centroProduccion: {
+    label: 'Centro de producción',
+    icono: '🏭',
+    desc: 'No tiene comensales: produce y despacha a otros locales. Habilita el catálogo y el precio de transferencia.',
+    ejemplo: 'Cocina central, casa madre de una cadena',
+  },
+};
+
+// Qué enciende cada tipo cuando la operación todavía no eligió a mano.
+const MODALIDADES_POR_TIPO = {
+  restaurante:            ['carta','cubiertoContratado'],
+  hotel:                  ['carta','cubiertoContinuo','cubiertoContratado'],
+  catering:               ['cubiertoContinuo','cubiertoContratado'],
+  comedor:                ['cubiertoContinuo'],
+  viandas:                ['cubiertoContinuo'],
+  darkkitchen:            ['carta'],
+  'dark kitchen':         ['carta'],
+  pasteleria:             ['carta'],
+  'pastelería':           ['carta'],
+  'centro de producción': ['centroProduccion'],
+  centroproduccion:       ['centroProduccion'],
+};
+
+function getModalidades(op){
+  op = op || (typeof getOp==='function' ? getOp() : null);
+  if(!op) return ['carta'];
+  if(Array.isArray(op.modalidades) && op.modalidades.length) return op.modalidades.slice();
+  const t = String(op.tipo||'').trim().toLowerCase();
+  return (MODALIDADES_POR_TIPO[t] || ['carta','cubiertoContratado']).slice();
+}
+function tieneModalidad(m, op){ return getModalidades(op).indexOf(m) >= 0; }
 
 function getOp(){ return demoData.operaciones[currentOpId] || Object.values(demoData.operaciones)[0]; }
 
@@ -3606,9 +3672,14 @@ function buildSidebar(rol){
     ...(!isCP ? [
       {section:'Presupuesto'},
       {icon:'calendar', label:'Planificación semanal', vista:'semanal'},
-      {icon:'target', label:'Evento / Presupuesto', vista:'evento'},
-      {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
-      {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
+      // Cada pantalla aparece solo si la operación tiene esa modalidad encendida.
+      ...(tieneModalidad('cubiertoContratado') ? [
+        {icon:'target', label:'Evento / Presupuesto', vista:'evento'},
+      ] : []),
+      ...(tieneModalidad('cubiertoContinuo') ? [
+        {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
+        {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
+      ] : []),
     ] : []),
     {section:'Análisis'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
@@ -3620,6 +3691,7 @@ function buildSidebar(rol){
     ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
+    {icon:'store', label:'Modalidades de la operación', vista:'modalidades'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
     {icon:'cart', label:'🧾 Facturas', vista:'facturas'},
     {section:'Próximamente'},
@@ -3636,7 +3708,9 @@ function buildSidebar(rol){
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
-    {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
+    ...(tieneModalidad('cubiertoContinuo') ? [
+      {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
+    ] : []),
     {section:'Compras'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
     {icon:'cart', label:'Pedido sugerido', vista:'pedido'},
@@ -3931,6 +4005,7 @@ function navigate(vista, params={}){
     desvios: renderDesvios,
     cierreServicio: renderCierreServicio,
     historialServicio: renderHistorialServicio,
+    modalidades: renderModalidades,
   };
   
   if(vistas[vista]) vistas[vista](params);
@@ -13353,7 +13428,9 @@ function _sdFechaHoy(){
   const day = String(d.getDate()).padStart(2,'0');
   return d.getFullYear()+'-'+m+'-'+day;
 }
-function _sdKeyMenu(fecha, servicio){ return fecha+'|'+servicio; }
+// La etiqueta del menú DEBE llevar la operación. Sin eso, el restaurante y el
+// buffet del mismo hotel que cargan el almuerzo del mismo día se pisan entre sí.
+function _sdKeyMenu(fecha, servicio, opId){ return (opId||currentOpId)+'|'+fecha+'|'+servicio; }
 
 function getServiciosDiarios(){
   if(!demoData.serviciosDiarios) demoData.serviciosDiarios = [];
@@ -13419,7 +13496,16 @@ function calcLineaServicio(linea, comensales){
 function getMenuDia(fecha, servicio){
   if(!demoData.menusDia) demoData.menusDia = {};
   const k = _sdKeyMenu(fecha, servicio);
-  return demoData.menusDia[k] || null;
+  if(demoData.menusDia[k]) return demoData.menusDia[k];
+  // Rescate de los menús guardados antes, cuando la etiqueta no llevaba la
+  // operación. Solo se traen si son de ESTA operación, y se reetiquetan.
+  const viejo = demoData.menusDia[fecha+'|'+servicio];
+  if(viejo && viejo.opId === currentOpId){
+    demoData.menusDia[k] = viejo;
+    delete demoData.menusDia[fecha+'|'+servicio];
+    return demoData.menusDia[k];
+  }
+  return null;
 }
 function setMenuDia(fecha, servicio, lineas){
   if(!demoData.menusDia) demoData.menusDia = {};
@@ -13443,6 +13529,87 @@ function menuDiaEjemplo(fecha, servicio){
     { id:uid(), tipo:'D', nombre:'Pollo al horno', estacion:'Central', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'', kgPorBateaLlena:5, costoKg:0 },
     { id:uid(), tipo:'A', nombre:'Guiso / principal', estacion:'Platos', alcanzo:'' },
   ];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PANTALLA · MODALIDADES DE LA OPERACIÓN
+// Qué se enciende y qué no. Cambiar esto no borra nada: una pantalla apagada
+// conserva sus datos y vuelven a aparecer si se enciende otra vez.
+// ═══════════════════════════════════════════════════════════════════════
+function renderModalidades(){
+  const op = getOp();
+  if(!op){ setContent('Modalidades', '<div class="card"><p>Abrí una operación primero.</p></div>'); return; }
+  const activas = getModalidades(op);
+  const aMano = Array.isArray(op.modalidades) && op.modalidades.length;
+
+  const tarjeta = (clave)=>{
+    const m = MODALIDADES[clave];
+    const on = activas.indexOf(clave) >= 0;
+    return `
+      <label style="display:flex;gap:14px;align-items:flex-start;padding:16px;border:1.5px solid ${on?'var(--dorado,#C9A961)':'var(--crema-2,#E8E0D4)'};
+                    border-radius:10px;cursor:pointer;background:${on?'rgba(201,169,97,.07)':'transparent'};margin-bottom:10px">
+        <input type="checkbox" class="mod-chk" value="${clave}" ${on?'checked':''} style="margin-top:3px;width:17px;height:17px;cursor:pointer">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:15px;margin-bottom:3px">${m.icono} ${m.label}</div>
+          <div style="font-size:13px;color:var(--gris-1,#555);line-height:1.45">${m.desc}</div>
+          <div style="font-size:12px;color:var(--gris-2,#888);margin-top:5px"><em>${m.ejemplo}</em></div>
+        </div>
+      </label>`;
+  };
+
+  setContent('Modalidades de la operación', `
+    <div class="card" style="margin-bottom:16px">
+      <p style="margin:0 0 6px">
+        <strong>${esc(op.nombre||'')}</strong> — qué tipo de servicio da esta cocina.
+        Se puede tener más de uno: un hotel vende a la carta en el restaurante y por cubierto en el buffet.
+      </p>
+      <p style="margin:0;font-size:13px;color:var(--gris-2,#888)">
+        ${aMano ? 'Elegido a mano.' : 'Todavía sin elegir: se está usando lo que corresponde por defecto a una operación de tipo <strong>'+esc(op.tipo||'restaurante')+'</strong>.'}
+        Apagar una modalidad esconde sus pantallas pero <strong>no borra ningún dato</strong>.
+      </p>
+    </div>
+
+    <div class="card">
+      ${Object.keys(MODALIDADES).map(tarjeta).join('')}
+      <div style="display:flex;gap:8px;margin-top:14px;align-items:center">
+        <button class="btn btn-primary" onclick="guardarModalidades()">Guardar</button>
+        <button class="btn btn-secondary" onclick="restablecerModalidades()">Volver a lo que corresponde por el tipo</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin-top:0;font-size:15px">Qué habilita cada una</h3>
+      <table class="table" style="font-size:13px">
+        <thead><tr><th>Modalidad</th><th>Pantallas que aparecen</th></tr></thead>
+        <tbody>
+          <tr><td>🍽 Carta</td><td>Recetas con precio, rentabilidad, matriz de menú, informe de ventas</td></tr>
+          <tr><td>📋 Cubierto contratado</td><td>Evento / Presupuesto</td></tr>
+          <tr><td>🍲 Cubierto continuo</td><td>Buffet, Cierre de servicio, historial de consumo por cubierto</td></tr>
+          <tr><td>🏭 Centro de producción</td><td>Catálogo, despacho a locales, precio de transferencia</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `);
+}
+
+async function guardarModalidades(){
+  const op = getOp(); if(!op) return;
+  const elegidas = [...document.querySelectorAll('.mod-chk')].filter(c=>c.checked).map(c=>c.value);
+  if(!elegidas.length){ showToast('Elegí al menos una modalidad','error'); return; }
+  op.modalidades = elegidas;
+  await guardarEnFirestore();
+  showToast('Modalidades guardadas');
+  buildSidebar(currentUser?.rol||'cliente');
+  navigate('modalidades');
+}
+
+async function restablecerModalidades(){
+  const op = getOp(); if(!op) return;
+  delete op.modalidades;
+  await guardarEnFirestore();
+  showToast('Vuelto a lo que corresponde por el tipo de operación');
+  buildSidebar(currentUser?.rol||'cliente');
+  navigate('modalidades');
 }
 
 function renderCierreServicio(){
