@@ -1409,6 +1409,8 @@ async function guardarEnFirestore(){
         // de otra operación que quedó en memoria se escribe en este documento.
         menusDia: Object.fromEntries(Object.entries(demoData.menusDia||{})
                     .filter(([,m]) => m && m.opId === currentOpId)),
+        plantillasSD: Object.fromEntries(Object.entries(demoData.plantillasSD||{})
+                    .filter(([,m]) => m && m.opId === currentOpId)),
       },
       _rev: (window._revLocal||0) + 1,
       _ultimoEditor: (currentUser && currentUser.email) || 'usuario',
@@ -1604,6 +1606,7 @@ async function cargarDesdeFirestore(uid){
       demoData.facturas = opActiva._datos.facturas || [];
       demoData.serviciosDiarios = (opActiva._datos.serviciosDiarios||[]).map(s=>({...s, opId:currentOpId}));
       demoData.menusDia = opActiva._datos.menusDia || {};
+      demoData.plantillasSD = opActiva._datos.plantillasSD || {};
       window._revLocal = opActiva._rev || 0;
       hideLoading();
       return true;
@@ -2103,7 +2106,8 @@ let demoData = {
   ],
   // Módulo Servicio diario / Rodaje
   serviciosDiarios: [],
-  menusDia: {}
+  menusDia: {},
+  plantillasSD: {}
 };
 
 // ── HELPERS ──
@@ -13467,6 +13471,59 @@ function _sdFechaHoy(){
 // buffet del mismo hotel que cargan el almuerzo del mismo día se pisan entre sí.
 function _sdKeyMenu(fecha, servicio, opId){ return (opId||currentOpId)+'|'+fecha+'|'+servicio; }
 
+// ═══════════════════════════════════════════════════════════════════════
+// PLANTILLAS DE SERVICIO
+// El salad bar son 15 productos y la barra 30, casi siempre los mismos. Nadie
+// va a escribirlos a mano todos los días: se arman una vez y se traen con un
+// clic. Solo se edita lo que cambia de verdad, que es el almuerzo.
+// ═══════════════════════════════════════════════════════════════════════
+function getPlantillasSD(){
+  if(!demoData.plantillasSD) demoData.plantillasSD = {};
+  return Object.values(demoData.plantillasSD).filter(p => p && p.opId === currentOpId);
+}
+function sdGuardarPlantilla(){
+  const lineas = window._sdLineasDraft || [];
+  if(!lineas.length){ showToast('No hay líneas para guardar como plantilla','error'); return; }
+  const nom = prompt('Nombre de la plantilla (ej: Salad bar fijo, Barra):',
+                     window._sdServicio ? ('Plantilla '+window._sdServicio) : 'Plantilla');
+  if(!nom || !nom.trim()) return;
+  if(!demoData.plantillasSD) demoData.plantillasSD = {};
+  const clave = currentOpId + '|' + nom.trim().toLowerCase();
+  demoData.plantillasSD[clave] = {
+    id: clave, opId: currentOpId, nombre: nom.trim(),
+    servicio: window._sdServicio || '',
+    // Se guarda la estructura, no los números del día.
+    lineas: lineas.map(l => ({
+      id: uid(), tipo: l.tipo, nombre: l.nombre, estacion: l.estacion,
+      ingId: l.ingId, recetaId: l.recetaId, costoKg: l.costoKg,
+      costoUnitario: l.costoUnitario, kgPorBateaLlena: l.kgPorBateaLlena,
+      aMesada:'', sobrante:'', reutilizado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'',
+    })),
+    creadaEn: Date.now(),
+  };
+  if(typeof guardarEnFirestore==='function') guardarEnFirestore();
+  showToast('Plantilla "'+nom.trim()+'" guardada','success');
+  renderCierreServicio();
+}
+function sdAplicarPlantilla(id){
+  if(!id) return;
+  const pl = (demoData.plantillasSD||{})[id];
+  if(!pl){ showToast('No encontré esa plantilla','error'); return; }
+  window._sdLineasDraft = pl.lineas.map(l => ({...l, id: uid()}));
+  setMenuDia(window._sdFecha || _sdFechaHoy(), window._sdServicio || 'almuerzo', window._sdLineasDraft.map(l=>({...l})));
+  showToast(pl.lineas.length+' líneas cargadas desde "'+pl.nombre+'"','success');
+  renderCierreServicio();
+}
+function sdBorrarPlantilla(id){
+  const pl = (demoData.plantillasSD||{})[id];
+  if(!pl) return;
+  if(!confirm('¿Borrar la plantilla "'+pl.nombre+'"? Los cierres ya guardados no se tocan.')) return;
+  delete demoData.plantillasSD[id];
+  if(typeof guardarEnFirestore==='function') guardarEnFirestore();
+  showToast('Plantilla borrada','success');
+  renderCierreServicio();
+}
+
 function getServiciosDiarios(){
   if(!demoData.serviciosDiarios) demoData.serviciosDiarios = [];
   return demoData.serviciosDiarios.filter(s => s.opId === currentOpId && !s._temp);
@@ -13492,25 +13549,43 @@ function getCostoKgLineaSD(linea){
   return 0;
 }
 
+// Lo que vuelve del salad bar NO es todo pérdida: parte se recupera y vuelve al
+// stock. Por eso hay tres números y no dos:
+//   consumido  = lo que se comió la gente        (a mesada − sobrante)
+//   reutilizado= lo que vuelve al stock          (no se perdió)
+//   descartado = sobrante − reutilizado          (LA PÉRDIDA REAL)
+// El % de descarte sobre lo sacado es la merma real de servicio, y es un dato
+// que ningún sistema tiene porque hay que estar en la cocina para medirlo.
 function calcLineaServicio(linea, comensales){
   const pax = Number(comensales)||0;
-  const out = { consumido:null, porPersona:null, costo:null, costoPersona:null, equivBateas:null };
+  const out = { consumido:null, porPersona:null, costo:null, costoPersona:null, equivBateas:null,
+                reutilizado:null, descartado:null, costoDescartado:null, pctDescarte:null };
   if(linea.tipo==='B' || linea.tipo==='C'){
     const usado = Number(linea.aMesada)||0;
     const sobra = Number(linea.sobrante)||0;
+    const reuso = Math.min(Number(linea.reutilizado)||0, sobra);
     out.consumido = Math.max(0, usado - sobra);
+    out.reutilizado = reuso;
+    out.descartado = Math.max(0, sobra - reuso);
     if(pax>0) out.porPersona = (out.consumido * 1000) / pax;
     const costoKg = getCostoKgLineaSD(linea);
     out.costo = out.consumido * costoKg;
+    out.costoDescartado = out.descartado * costoKg;
+    if(usado>0) out.pctDescarte = (out.descartado / usado) * 100;
     if(pax>0) out.costoPersona = out.costo / pax;
   }
   if(linea.tipo==='E'){
     const usado = Number(linea.aMesada)||0;
     const sobra = Number(linea.sobrante)||0;
+    const reuso = Math.min(Number(linea.reutilizado)||0, sobra);
     out.consumido = Math.max(0, usado - sobra);
+    out.reutilizado = reuso;
+    out.descartado = Math.max(0, sobra - reuso);
     if(pax>0) out.porPersona = out.consumido / pax;
     const cu = Number(linea.costoUnitario)||0;
     out.costo = out.consumido * cu;
+    out.costoDescartado = out.descartado * cu;
+    if(usado>0) out.pctDescarte = (out.descartado / usado) * 100;
     if(pax>0) out.costoPersona = out.costo / pax;
   }
   if(linea.tipo==='D'){
@@ -13647,6 +13722,154 @@ async function restablecerModalidades(){
   navigate('modalidades');
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// AGREGAR Y QUITAR LÍNEAS DEL CIERRE
+// Las líneas NO se llenan solas con todos los ingredientes de la operación:
+// tener repollo cargado no significa que hoy salió coleslaw. Se agregan a
+// mano una vez, se guardan como plantilla, y de ahí en más entran con un clic.
+// ═══════════════════════════════════════════════════════════════════════
+function sdModalAgregarLinea(){
+  const ings = (demoData.ingredientes||[]).slice()
+    .sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||'')));
+  const recs = (demoData.recetas||[]).filter(r=>r.opId===currentOpId)
+    .sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||'')));
+  openModal(`
+    <div class="modal">
+      <div class="modal-header"><h3>Agregar producto al servicio</h3></div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>¿Cómo se mide?</label>
+          <select id="sdal-tipo" onchange="sdAlTipoCambio()">
+            <option value="B">Insumo solo — se pesa (rúcula, tomate en cubos)</option>
+            <option value="C">Preparación mezclada — se pesa (coleslaw, papa y huevo)</option>
+            <option value="D">Batea / contenedor — se cuenta por llenado</option>
+            <option value="E">Por unidad (medialunas, tequeños)</option>
+            <option value="A">Plato del menú — solo alcanzó / no alcanzó</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="sdal-wrap-ing">
+          <label>Ingrediente</label>
+          <select id="sdal-ing">
+            <option value="">— elegí —</option>
+            ${ings.map(i=>`<option value="${esc(i.id)}">${esc(i.nombre)}</option>`).join('')}
+          </select>
+          ${ings.length ? '' : '<div style="font-size:12px;color:var(--gris-2);margin-top:5px">No hay ingredientes cargados todavía.</div>'}
+        </div>
+
+        <div class="form-group" id="sdal-wrap-rec" style="display:none">
+          <label>Receta</label>
+          <select id="sdal-rec">
+            <option value="">— elegí —</option>
+            ${recs.map(r=>`<option value="${esc(r.id)}">${esc(r.nombre)}</option>`).join('')}
+          </select>
+          ${recs.length ? '' : '<div style="font-size:12px;color:var(--gris-2);margin-top:5px">No hay recetas cargadas todavía. Cargá el coleslaw como receta para que el costo se calcule solo.</div>'}
+        </div>
+
+        <div class="form-group" id="sdal-wrap-nom" style="display:none">
+          <label>Nombre</label>
+          <input type="text" id="sdal-nom" placeholder="ej: Medialunas de jamón y queso">
+        </div>
+
+        <div class="form-group" id="sdal-wrap-cu" style="display:none">
+          <label>Costo por unidad ($, opcional)</label>
+          <input type="number" step="1" min="0" id="sdal-cu" placeholder="dejalo vacío si no lo sabés">
+        </div>
+
+        <div class="form-group" id="sdal-wrap-batea" style="display:none">
+          <label>Kg que entran en una batea llena (opcional)</label>
+          <input type="number" step="0.1" min="0" id="sdal-kgbatea" placeholder="ej: 4">
+        </div>
+
+        <div class="form-group">
+          <label>Estación (dónde se sirve)</label>
+          <input type="text" id="sdal-est" value="${esc(_sdEstacionSugerida())}" placeholder="ej: Salad bar">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="sdAgregarLinea()">Agregar</button>
+      </div>
+    </div>`);
+}
+
+function _sdEstacionSugerida(){
+  const map = { barra:'Barra', almuerzo:'Almuerzo', salad:'Salad bar', merienda:'Merienda', cena:'Cena' };
+  return map[window._sdServicio] || 'Otros';
+}
+
+function sdAlTipoCambio(){
+  const t = document.getElementById('sdal-tipo').value;
+  const ver = (id, on)=>{ const e=document.getElementById(id); if(e) e.style.display = on?'':'none'; };
+  ver('sdal-wrap-ing',   t==='B');
+  ver('sdal-wrap-rec',   t==='C');
+  ver('sdal-wrap-nom',   t==='D' || t==='E' || t==='A');
+  ver('sdal-wrap-cu',    t==='E');
+  ver('sdal-wrap-batea', t==='D');
+}
+
+function sdAgregarLinea(){
+  const t = document.getElementById('sdal-tipo').value;
+  const est = (document.getElementById('sdal-est').value||'').trim() || 'Otros';
+  const linea = { id: uid(), tipo:t, estacion:est,
+                  aMesada:'', sobrante:'', reutilizado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'' };
+
+  if(t==='B'){
+    const id = document.getElementById('sdal-ing').value;
+    if(!id){ showToast('Elegí un ingrediente','error'); return; }
+    const ing = getIngrediente(id);
+    if(!ing){ showToast('No encontré ese ingrediente','error'); return; }
+    linea.ingId = id;
+    linea.nombre = ing.nombre;
+  } else if(t==='C'){
+    const id = document.getElementById('sdal-rec').value;
+    if(!id){ showToast('Elegí una receta','error'); return; }
+    const r = (demoData.recetas||[]).find(x=>x.id===id);
+    if(!r){ showToast('No encontré esa receta','error'); return; }
+    linea.recetaId = id;
+    linea.nombre = r.nombre;
+  } else {
+    const nom = (document.getElementById('sdal-nom').value||'').trim();
+    if(!nom){ showToast('Poné un nombre','error'); return; }
+    linea.nombre = nom;
+    if(t==='E'){
+      const cu = document.getElementById('sdal-cu').value;
+      if(cu!=='') linea.costoUnitario = Number(cu)||0;
+    }
+    if(t==='D'){
+      const kg = document.getElementById('sdal-kgbatea').value;
+      if(kg!=='') linea.kgPorBateaLlena = Number(kg)||0;
+    }
+  }
+
+  if(!window._sdLineasDraft) window._sdLineasDraft = [];
+  window._sdLineasDraft.push(linea);
+  // Se guarda también en el menú del día para que no se pierda al recargar.
+  setMenuDia(window._sdFecha || _sdFechaHoy(), window._sdServicio || 'almuerzo',
+             window._sdLineasDraft.map(l=>({...l})));
+  closeModal();
+  showToast('"'+linea.nombre+'" agregado','success');
+  renderCierreServicio();
+}
+
+function sdQuitarLinea(idx){
+  if(!window._sdLineasDraft) return;
+  const l = window._sdLineasDraft[idx];
+  if(!l) return;
+  if(!confirm('¿Sacar "'+l.nombre+'" del servicio de hoy?')) return;
+  window._sdLineasDraft.splice(idx,1);
+  setMenuDia(window._sdFecha || _sdFechaHoy(), window._sdServicio || 'almuerzo',
+             window._sdLineasDraft.map(x=>({...x})));
+  renderCierreServicio();
+}
+
+function sdVaciarLineas(){
+  if(!confirm('¿Vaciar todas las líneas del servicio de hoy? Los cierres ya guardados no se tocan.')) return;
+  window._sdLineasDraft = [];
+  setMenuDia(window._sdFecha || _sdFechaHoy(), window._sdServicio || 'almuerzo', []);
+  renderCierreServicio();
+}
+
 function renderCierreServicio(){
   if(!currentOpId){
     setContent('Cierre de servicio', `<div class="alert alert-warn">Abrí una operación para cargar el cierre del día.</div>`);
@@ -13656,7 +13879,9 @@ function renderCierreServicio(){
   const servicio = window._sdServicio || 'almuerzo';
   let menu = getMenuDia(fecha, servicio);
   if(!menu){
-    setMenuDia(fecha, servicio, menuDiaEjemplo(fecha, servicio));
+    // Un servicio nuevo arranca VACÍO. Antes se llenaba con un menú de ejemplo
+    // y el cocinero tenía que borrar líneas ajenas antes de cargar las suyas.
+    setMenuDia(fecha, servicio, []);
     menu = getMenuDia(fecha, servicio);
   }
   const guardado = getServiciosDiarios().find(s => s.fecha===fecha && s.servicio===servicio);
@@ -13666,6 +13891,11 @@ function renderCierreServicio(){
   const nota = (window._sdNotaDraft != null)
     ? window._sdNotaDraft
     : (guardado ? (guardado.nota||'') : '');
+  // Las horas de jornada explican el consumo de la barra: con la misma gente,
+  // un día de 14 horas toma casi el doble de café que uno de 9.
+  const horas = (window._sdHorasDraft != null)
+    ? window._sdHorasDraft
+    : (guardado ? (guardado.horasJornada||'') : '');
   const lineas = window._sdLineasDraft
     ? window._sdLineasDraft
     : (guardado && guardado.lineas && guardado.lineas.length
@@ -13688,23 +13918,30 @@ function renderCierreServicio(){
   function filaHTML(l, idx){
     const calc = calcLineaServicio(l, paxNum);
     const tipoNom = (TIPOS_LINEA_SD[l.tipo]||{}).nombre || l.tipo;
+    const quitar = `<button class="btn btn-secondary btn-sm" title="Sacar del servicio de hoy"
+        style="padding:2px 8px;line-height:1.4" onclick="sdQuitarLinea(${idx})">✕</button>`;
     if(l.tipo==='B' || l.tipo==='C'){
       return `<div class="card" style="margin-bottom:10px">
         <div class="card-header" style="padding:10px 14px">
           <span class="card-title">${esc(l.nombre)}</span>
-          <span class="badge badge-gray">${esc(tipoNom)}</span>
+          <span style="display:flex;gap:8px;align-items:center"><span class="badge badge-gray">${esc(tipoNom)}</span>${quitar}</span>
         </div>
         <div class="card-body" style="padding:12px 14px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
             <div class="form-group" style="margin:0">
               <label>A mesada (kg)</label>
               <input type="number" step="0.1" min="0" value="${l.aMesada??''}"
                 onchange="sdUpdLinea(${idx},'aMesada',this.value)">
             </div>
             <div class="form-group" style="margin:0">
-              <label>Sobrante (kg)</label>
+              <label>Volvió (kg)</label>
               <input type="number" step="0.1" min="0" value="${l.sobrante??''}"
                 onchange="sdUpdLinea(${idx},'sobrante',this.value)">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>De eso, se reutiliza (kg)</label>
+              <input type="number" step="0.1" min="0" value="${l.reutilizado??''}"
+                onchange="sdUpdLinea(${idx},'reutilizado',this.value)" placeholder="0">
             </div>
           </div>
           <div style="margin-top:10px;font-size:12px;color:var(--gris-2)">
@@ -13712,6 +13949,13 @@ function renderCierreServicio(){
             &nbsp;·&nbsp; ${calc.porPersona!=null?fmtD(calc.porPersona,0)+' g/persona':'g/persona: —'}
             &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
           </div>
+          ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#8B1A1A)">
+            Se tira: <strong>${fmtD(calc.descartado,2)} kg</strong>
+            ${calc.costoDescartado?' · $'+fmt(calc.costoDescartado):''}
+            ${calc.pctDescarte!=null?' · '+fmtD(calc.pctDescarte,1)+'% de lo que sacaste':''}
+          </div>` : (calc.reutilizado>0 ? `<div style="margin-top:6px;font-size:12px;color:#2D6A4F">
+            Se recupera todo lo que volvió: ${fmtD(calc.reutilizado,2)} kg vuelven al stock
+          </div>` : '')}
         </div>
       </div>`;
     }
@@ -13719,19 +13963,24 @@ function renderCierreServicio(){
       return `<div class="card" style="margin-bottom:10px">
         <div class="card-header" style="padding:10px 14px">
           <span class="card-title">${esc(l.nombre)}</span>
-          <span class="badge badge-gray">Unidad</span>
+          <span style="display:flex;gap:8px;align-items:center"><span class="badge badge-gray">Unidad</span>${quitar}</span>
         </div>
         <div class="card-body" style="padding:12px 14px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
             <div class="form-group" style="margin:0">
               <label>A mesada (u)</label>
               <input type="number" step="1" min="0" value="${l.aMesada??''}"
                 onchange="sdUpdLinea(${idx},'aMesada',this.value)">
             </div>
             <div class="form-group" style="margin:0">
-              <label>Sobrante (u)</label>
+              <label>Volvió (u)</label>
               <input type="number" step="1" min="0" value="${l.sobrante??''}"
                 onchange="sdUpdLinea(${idx},'sobrante',this.value)">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>De eso, se reutiliza (u)</label>
+              <input type="number" step="1" min="0" value="${l.reutilizado??''}"
+                onchange="sdUpdLinea(${idx},'reutilizado',this.value)" placeholder="0">
             </div>
           </div>
           <div style="margin-top:10px;font-size:12px;color:var(--gris-2)">
@@ -13739,6 +13988,11 @@ function renderCierreServicio(){
             &nbsp;·&nbsp; ${calc.porPersona!=null?fmtD(calc.porPersona,2)+' u/persona':'—'}
             &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
           </div>
+          ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#8B1A1A)">
+            Se tira: <strong>${fmt(calc.descartado)} u</strong>
+            ${calc.costoDescartado?' · $'+fmt(calc.costoDescartado):''}
+            ${calc.pctDescarte!=null?' · '+fmtD(calc.pctDescarte,1)+'% de lo que sacaste':''}
+          </div>` : ''}
         </div>
       </div>`;
     }
@@ -13746,7 +14000,7 @@ function renderCierreServicio(){
       return `<div class="card" style="margin-bottom:10px">
         <div class="card-header" style="padding:10px 14px">
           <span class="card-title">${esc(l.nombre)}</span>
-          <span class="badge badge-gray">Batea</span>
+          <span style="display:flex;gap:8px;align-items:center"><span class="badge badge-gray">Batea</span>${quitar}</span>
         </div>
         <div class="card-body" style="padding:12px 14px">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
@@ -13782,7 +14036,7 @@ function renderCierreServicio(){
     return `<div class="card" style="margin-bottom:10px">
       <div class="card-header" style="padding:10px 14px">
         <span class="card-title">${esc(l.nombre)}</span>
-        <span class="badge badge-gray">Plato</span>
+        <span style="display:flex;gap:8px;align-items:center"><span class="badge badge-gray">Plato</span>${quitar}</span>
       </div>
       <div class="card-body" style="padding:12px 14px">
         <div class="form-group" style="margin:0">
@@ -13803,8 +14057,8 @@ function renderCierreServicio(){
 
   setContent('Cierre de servicio', `
     <div class="alert alert-info">
-      Solo cargá <strong>a mesada</strong> y <strong>sobrante</strong> (o bateas). El consumido y g/persona se calculan solos.
-      No hace falta indicar si el sobrante fue a sopa o se reusa.
+      Cargá <strong>lo que sacaste</strong>, <strong>lo que volvió</strong> y <strong>cuánto de eso se reutiliza</strong>.
+      El consumo por persona y la pérdida real se calculan solos.
     </div>
     <div class="card" style="margin-bottom:16px">
       <div class="card-body">
@@ -13816,9 +14070,9 @@ function renderCierreServicio(){
           <div class="form-group" style="margin:0">
             <label>Servicio</label>
             <select onchange="sdSetServicio(this.value)">
-              <option value="almuerzo" ${servicio==='almuerzo'?'selected':''}>Almuerzo</option>
-              <option value="merienda" ${servicio==='merienda'?'selected':''}>Merienda</option>
-              <option value="otro" ${servicio==='otro'?'selected':''}>Otro</option>
+              ${[['barra','Barra continua'],['almuerzo','Almuerzo'],['salad','Salad bar'],
+                 ['merienda','Merienda'],['cena','Cena'],['otro','Otro']]
+                .map(([v,t])=>`<option value="${v}" ${servicio===v?'selected':''}>${t}</option>`).join('')}
             </select>
           </div>
           <div class="form-group" style="margin:0">
@@ -13826,18 +14080,77 @@ function renderCierreServicio(){
             <input type="number" min="0" id="sd-pax" value="${esc(comensales)}"
               onchange="sdSetPax(this.value)" placeholder="ej: 148">
           </div>
+          <div class="form-group" style="margin:0">
+            <label>Horas de jornada</label>
+            <input type="number" min="0" step="0.5" id="sd-horas" value="${esc(horas)}"
+              onchange="sdSetPax(document.getElementById('sd-pax').value)" placeholder="ej: 12">
+          </div>
         </div>
         <div class="form-group" style="margin-top:12px;margin-bottom:0">
           <label>Nota del día (opcional)</label>
-          <input type="text" id="sd-nota" value="${esc(nota)}" placeholder="ej: doble turno">
+          <input type="text" id="sd-nota" value="${esc(nota)}" placeholder="ej: doble turno, exteriores, mucho calor">
         </div>
+        ${(()=>{
+          const pls = getPlantillasSD();
+          return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--crema-2,#E8E0D4)">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span style="font-size:12px;color:var(--gris-2)">Plantillas:</span>
+              ${pls.length ? `<select id="sd-plantilla" style="max-width:230px">
+                  <option value="">— elegí una —</option>
+                  ${pls.map(pl=>`<option value="${esc(pl.id)}">${esc(pl.nombre)} (${pl.lineas.length})</option>`).join('')}
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="sdAplicarPlantilla(document.getElementById('sd-plantilla').value)">Cargar</button>
+                <button class="btn btn-secondary btn-sm" onclick="sdBorrarPlantilla(document.getElementById('sd-plantilla').value)">Borrar</button>`
+                : `<span style="font-size:12px;color:var(--gris-2)"><em>ninguna todavía</em></span>`}
+              <button class="btn btn-secondary btn-sm" onclick="sdGuardarPlantilla()">Guardar estas líneas como plantilla</button>
+            </div>
+          </div>`;
+        })()}
       </div>
     </div>
-    ${body}
+
+    ${(()=>{
+      // EL NÚMERO DEL DÍA. Lo que se sacó, lo que se comió, lo que se recupera y
+      // lo que se tira de verdad — con su costo. Es lo que se lleva a una
+      // conversación: no una opinión, una medición.
+      let sacado=0, comido=0, reuso=0, tirado=0, plata=0, costoTotal=0, hay=false;
+      lineas.forEach(l=>{
+        if(l.tipo!=='B' && l.tipo!=='C' && l.tipo!=='E') return;
+        const c = calcLineaServicio(l, paxNum);
+        if(c.consumido==null) return;
+        const esKg = l.tipo!=='E';
+        if(!esKg) { costoTotal += c.costo||0; plata += c.costoDescartado||0; hay=true; return; }
+        sacado += Number(l.aMesada)||0; comido += c.consumido||0;
+        reuso += c.reutilizado||0; tirado += c.descartado||0;
+        plata += c.costoDescartado||0; costoTotal += c.costo||0;
+        hay = true;
+      });
+      if(!hay) return '';
+      const pct = sacado>0 ? (tirado/sacado)*100 : null;
+      const box = (lbl,val,sub,color)=>`<div class="metric">
+        <div class="metric-label">${lbl}</div>
+        <div class="metric-value" style="${color?'color:'+color:''}">${val}</div>
+        <div class="metric-sub">${sub}</div></div>`;
+      return `<div class="metric-grid" style="margin-bottom:16px">
+        ${box('Sacado al despacho', fmtD(sacado,1)+' kg', 'lo que salió de cocina','')}
+        ${box('Se lo comieron', fmtD(comido,1)+' kg', paxNum>0?fmtD(comido*1000/paxNum,0)+' g por persona':'cargá los comensales','')}
+        ${box('Vuelve al stock', fmtD(reuso,1)+' kg', 'recuperado, no se perdió','#2D6A4F')}
+        ${box('Se tira', fmtD(tirado,1)+' kg', (pct!=null?fmtD(pct,1)+'% de lo sacado':'')+(plata?' · $'+fmt(plata):''), tirado>0?'var(--bordo,#8B1A1A)':'')}
+        ${paxNum>0 ? box('Costo por cubierto', '$'+fmt(costoTotal/paxNum), 'de este servicio','') : ''}
+      </div>`;
+    })()}
+
+    ${lineas.length ? body : `<div class="empty" style="margin:20px 0">
+      <h3>Todavía no hay productos en este servicio</h3>
+      <p>Agregalos una vez con el botón de abajo y después guardalos como plantilla:
+         los días siguientes entran todos con un clic.</p>
+    </div>`}
     <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="sdGuardarCierre()">Guardar cierre</button>
+      <button class="btn btn-primary" onclick="sdModalAgregarLinea()">+ Agregar producto</button>
+      ${lineas.length ? `<button class="btn btn-primary" onclick="sdGuardarCierre()">Guardar cierre</button>` : ''}
       <button class="btn btn-secondary" onclick="sdCargarEjemplo()">Cargar ejemplo numérico</button>
       <button class="btn btn-secondary" onclick="navigate('historialServicio')">Ver historial</button>
+      ${lineas.length ? `<button class="btn btn-secondary" onclick="sdVaciarLineas()">Vaciar</button>` : ''}
     </div>
   `, `<button class="btn btn-secondary btn-sm" onclick="navigate('historialServicio')">Historial</button>`);
 }
@@ -13847,6 +14160,7 @@ function sdSetFecha(v){
   window._sdLineasDraft = null;
   window._sdPaxDraft = null;
   window._sdNotaDraft = null;
+  window._sdHorasDraft = null;
   renderCierreServicio();
 }
 function sdSetServicio(v){
@@ -13854,11 +14168,13 @@ function sdSetServicio(v){
   window._sdLineasDraft = null;
   window._sdPaxDraft = null;
   window._sdNotaDraft = null;
+  window._sdHorasDraft = null;
   renderCierreServicio();
 }
 function sdSetPax(v){
   window._sdPaxDraft = v;
   window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
+  window._sdHorasDraft = document.getElementById('sd-horas')?.value || '';
   renderCierreServicio();
 }
 function sdUpdLinea(idx, campo, val){
@@ -13866,6 +14182,7 @@ function sdUpdLinea(idx, campo, val){
   window._sdLineasDraft[idx][campo] = val;
   window._sdPaxDraft = document.getElementById('sd-pax')?.value || '';
   window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
+  window._sdHorasDraft = document.getElementById('sd-horas')?.value || '';
   renderCierreServicio();
 }
 function sdCargarEjemplo(){
@@ -13891,11 +14208,16 @@ function sdGuardarCierre(){
   const servicio = window._sdServicio || 'almuerzo';
   const comensales = document.getElementById('sd-pax')?.value || '';
   const nota = document.getElementById('sd-nota')?.value || '';
+  const horasJornada = document.getElementById('sd-horas')?.value || '';
   const lineas = (window._sdLineasDraft||[]).map(l=>({...l}));
   for(const l of lineas){
     if((l.tipo==='B'||l.tipo==='C'||l.tipo==='E') && l.aMesada!=='' && l.sobrante!==''){
       if(Number(l.sobrante) > Number(l.aMesada)){
-        showToast('En "'+l.nombre+'" el sobrante no puede ser mayor que lo de mesada','error');
+        showToast('En "'+l.nombre+'" lo que volvió no puede ser mayor que lo que sacaste','error');
+        return;
+      }
+      if(l.reutilizado!=='' && l.reutilizado!=null && Number(l.reutilizado) > Number(l.sobrante)){
+        showToast('En "'+l.nombre+'" no podés reutilizar más de lo que volvió','error');
         return;
       }
     }
@@ -13910,6 +14232,7 @@ function sdGuardarCierre(){
     opId: currentOpId,
     fecha, servicio,
     comensales: Number(comensales)||0,
+    horasJornada: Number(horasJornada)||0,
     nota,
     lineas: lineas.map(l => {
       const c = calcLineaServicio(l, Number(comensales)||0);
@@ -13922,6 +14245,7 @@ function sdGuardarCierre(){
   window._sdLineasDraft = null;
   window._sdPaxDraft = null;
   window._sdNotaDraft = null;
+  window._sdHorasDraft = null;
   showToast('Cierre guardado','success');
   if(typeof guardarEnFirestore==='function') guardarEnFirestore();
   renderCierreServicio();
