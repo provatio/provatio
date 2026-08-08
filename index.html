@@ -4760,17 +4760,23 @@ function renderIngredientes(){
                       ${item.controlaStock?'📦':''}
                     </label>
                   </td>
-                  <td style="text-align:right">
+                  <td style="text-align:right;white-space:nowrap">
                     ${item.controlaStock ? `
                       <input type="number" min="0" step="0.1" value="${item.stockMinimo!=null?item.stockMinimo:''}" placeholder="—"
-                        style="width:80px;text-align:right" title="Stock mínimo de trabajo"
+                        style="width:70px;text-align:right" title="Stock mínimo de trabajo"
                         onchange="updateIng('${item.id}','stockMinimo',this.value===''?null:+this.value)">
                       <span style="font-size:11px;color:var(--gris-2)">${esc(item.unidadMedida||'kg')}</span>
                     ` : '<span style="font-size:11px;color:var(--gris-3)">—</span>'}
                   </td>
-                  <td style="display:flex;gap:6px">
-                    <button class="btn btn-secondary btn-sm" data-ing-id="${item.id}" onclick="editarIng(this.dataset.ingId)">${ico('edit',13)} Editar</button>
-                    <button class="btn btn-danger btn-sm" data-ing-id="${item.id}" onclick="delIng(this.dataset.ingId)">${ico('trash',13)} Eliminar</button>
+                  <!-- OJO: una celda de tabla con display:flex deja de comportarse
+                       como celda. La fila pierde el cálculo de altura y se derrama
+                       sobre la de abajo, tapándole los controles (pasaba con el tilde
+                       de control de stock). El flex va en un div ADENTRO de la celda. -->
+                  <td style="white-space:nowrap">
+                    <div style="display:flex;gap:6px">
+                      <button class="btn btn-secondary btn-sm" data-ing-id="${item.id}" onclick="editarIng(this.dataset.ingId)">${ico('edit',13)} Editar</button>
+                      <button class="btn btn-danger btn-sm" data-ing-id="${item.id}" onclick="delIng(this.dataset.ingId)">${ico('trash',13)} Eliminar</button>
+                    </div>
                   </td>
                 </tr>`).join('')}
               </tbody>
@@ -4837,10 +4843,10 @@ function filtrarIngredientes(q){
               <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
               <td style="text-align:right"><input type="number" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',+this.value)"></td>
               <td style="text-align:right"><span class="calc">$${fmt(Math.round(item.precio/(item.bulto||1)))}/${item.unidadMedida||'kg'}</span></td>
-              <td style="display:flex;gap:6px">
+              <td style="white-space:nowrap"><div style="display:flex;gap:6px">
                 <button class="btn btn-secondary btn-sm" data-ing-id="${item.id}" onclick="editarIng(this.dataset.ingId)">${ico('edit',13)} Editar</button>
                 <button class="btn btn-danger btn-sm" data-ing-id="${item.id}" onclick="delIng(this.dataset.ingId)">${ico('trash',13)} Eliminar</button>
-              </td>
+              </div></td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -5349,10 +5355,10 @@ function renderMermas(){
                         <input type="number" value="${m.pct}" style="width:70px;text-align:right;padding:4px 8px;border:1.5px solid var(--crema-2);border-radius:6px;font-size:13px;color:${m.pct<0?'var(--oliva)':m.pct===0?'var(--gris-2)':'var(--negro)'}" onchange="updateMerma('${m.id}','pct',+this.value)"> %
                       </td>
                       <td style="padding:8px;font-size:12px;color:#5A5A52">${m.pct<0?'Absorbe agua':m.pct===0?'Sin pérdida':'Pérdida en cocción'}</td>
-                      <td style="padding:8px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+                      <td style="padding:8px;text-align:right;white-space:nowrap"><div style="display:flex;gap:6px;justify-content:flex-end">
                         <button class="btn btn-secondary btn-sm" data-merma-id="${m.id}" onclick="editarMerma(this.dataset.mermaId)">${ico('edit',13)} Editar</button>
                         <button class="btn btn-danger btn-sm" data-merma-id="${m.id}" onclick="delMerma(this.dataset.mermaId)">${ico('trash',13)} Eliminar</button>
-                      </td>
+                      </div></td>
                     </tr>`).join('')}
                   </table>
                 </div>
@@ -5547,10 +5553,10 @@ function filtrarMermas(q){
               <input type="number" value="${m.pct}" style="width:70px;text-align:right" onchange="updateMerma('${m.id}','pct',+this.value)"> %
             </td>
             <td style="font-size:12px;color:#5A5A52">${m.pct<0?'Absorbe agua':m.pct===0?'Sin pérdida':'Pérdida en cocción'}</td>
-            <td style="display:flex;gap:6px">
+            <td style="white-space:nowrap"><div style="display:flex;gap:6px">
               <button class="btn btn-secondary btn-sm" data-merma-id="${m.id}" onclick="editarMerma(this.dataset.mermaId)">${ico('edit',13)} Editar</button>
               <button class="btn btn-danger btn-sm" data-merma-id="${m.id}" onclick="delMerma(this.dataset.mermaId)">${ico('trash',13)} Eliminar</button>
-            </td>
+            </div></td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -5723,10 +5729,10 @@ function renderRecetas(){
       <td style="text-align:right">$${fmt(merc)}</td>
       <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'<span style="color:var(--gris-3)">—</span>'}</td>
       <td>${pct!==null?semaforo(pct):'<span class="sem" style="color:var(--gris-2)">Sin precio</span>'}</td>
-      <td style="display:flex;gap:6px">
+      <td style="white-space:nowrap"><div style="display:flex;gap:6px">
         <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
         <button class="btn btn-danger btn-sm" onclick="delReceta('${escJs(r.id)}')">${ico('trash',13)} Eliminar</button>
-      </td>
+      </div></td>
     </tr>`;
   }).join('');
 
@@ -6721,10 +6727,10 @@ function renderEvento(){
                 <td style="text-align:right;font-weight:700;color:${e.margen>=0?'#1B7A34':'#C02626'}">${e.margen>=0?'+':'−'}$${fmt(Math.abs(e.margen))}</td>
                 <td><button class="btn btn-sm ${e.estado==='confirmado'?'btn-primary':'btn-secondary'}"
                   onclick="toggleEstadoEvento('${escJs(e.id)}')">${e.estado==='confirmado'?'Confirmado':'Presupuestado'}</button></td>
-                <td style="display:flex;gap:6px">
+                <td style="white-space:nowrap"><div style="display:flex;gap:6px">
                   <button class="btn btn-secondary btn-sm" onclick="editarEvento('${escJs(e.id)}')" title="Editar este evento">${ico('edit',13)}</button>
                   <button class="btn btn-danger btn-sm" onclick="delEvento('${escJs(e.id)}')">${ico('trash',13)}</button>
-                </td>
+                </div></td>
               </tr>`).join('');
             })()}
           </tbody>
@@ -7537,10 +7543,10 @@ function renderBuffet(){
                   <td style="text-align:right">$${fmt(c.costoMensual)}</td>
                   <td><button class="btn btn-sm ${b.estado==='confirmado'?'btn-primary':'btn-secondary'}"
                     onclick="toggleEstadoBuffet('${escJs(b.id)}')">${b.estado==='confirmado'?'Confirmado':'Borrador'}</button></td>
-                  <td style="display:flex;gap:6px">
+                  <td style="white-space:nowrap"><div style="display:flex;gap:6px">
                     <button class="btn btn-secondary btn-sm" onclick="editarBuffet('${escJs(b.id)}')">${ico('edit',13)}</button>
                     <button class="btn btn-danger btn-sm" onclick="delBuffet('${escJs(b.id)}')">${ico('trash',13)}</button>
-                  </td>
+                  </div></td>
                 </tr>`;
               }).join('');
             })()}
@@ -7604,7 +7610,8 @@ function renderSemanal(){
                       ).join('')}
                     </select>
                     ${sel?`<input type="number" value="${sel.porciones||120}" style="width:70px;margin-top:4px;font-size:12px" placeholder="porciones"
-                      onchange="setPlanPorciones('${dia}','${servicio}',+this.value)">`:''}`
+                      onchange="setPlanPorciones('${dia}','${servicio}',+this.value)">`:''}
+                  </td>`
                   ;
                 }).join('')}
               </tr>
@@ -11554,7 +11561,7 @@ function renderClientes(){
                 <td><strong>${u.email||u.displayName||u.uid}</strong></td>
                 <td><span class="badge ${u.rol==='admin'?'badge-op':'badge-sc'}">${u.rol==='admin'?'admin':(u.nivel==='cocina'?'cocina':'gestión')}</span></td>
                 <td>${u.operacionId ? `<strong>${(demoData.operaciones[u.operacionId]||{}).nombre || u.operacionId}</strong>` : '<span style="color:#B8860B;font-weight:600">Sin asignar</span>'}</td>
-                <td style="display:flex;gap:6px">
+                <td style="white-space:nowrap"><div style="display:flex;gap:6px">
                   <button class="btn ${u.operacionId?'btn-secondary':'btn-primary'} btn-sm" data-uid="${u.id}" data-email="${u.email||''}" onclick="modalAsignarOperacion(this.dataset.uid, this.dataset.email)">
                     ${ico('link',13)} ${u.operacionId ? 'Cambiar operación' : 'Asignar operación'}
                   </button>
@@ -11564,7 +11571,7 @@ function renderClientes(){
                   <button class="btn btn-danger btn-sm" data-uid="${u.id}" data-email="${u.email||u.uid}" onclick="eliminarUsuario(this.dataset.uid, this.dataset.email)">
                     ${ico('trash',13)} Eliminar
                   </button>
-                </td>   </td>
+                </div></td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -11600,12 +11607,12 @@ function renderClientes(){
       <td>${tipoBadgeHtml(op.tipo)}</td>
       <td>${recetasLabel(op)}</td>
       <td><span class="sem sem-v"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor"></span> Activo</span></td>
-      <td style="display:flex;gap:6px;flex-wrap:wrap">
+      <td style="white-space:nowrap"><div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="modalDatosCliente('${escJs(op.id)}')">${ico('edit',13)} Datos</button>
         <button class="btn btn-secondary btn-sm" onclick="modalVincularCadena('${escJs(op.id)}')">${ico('link',13)} Cadena</button>
         <button class="btn btn-secondary btn-sm" onclick="abrirOperacion('${escJs(op.id)}')">Ver operación</button>
         <button class="btn btn-danger btn-sm" onclick="delOperacion('${escJs(op.id)}')">${ico('trash',13)} Eliminar</button>
-      </td>
+      </div></td>
     </tr>`;
   }
 
