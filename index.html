@@ -3654,21 +3654,19 @@ function buildSidebar(rol){
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     ...seccionCadena,
     ...itemIrACabecera,
-    {section: (()=>{
-      const op = getOp();
-      if(!op) return 'Operación';
-      // Si es el CP mismo, solo mostrar el nombre
-      if(isCP) return op.nombre;
-      // Si es local vinculado, mostrar "local · cadena"
-      if(estaVinculadaACP && cpDelLocal && cpDelLocal.nombre !== op.nombre)
-        return op.nombre + ' · ' + cpDelLocal.nombre;
-      return op.nombre;
-    })()},
+    // OPERACIÓN — lo que se carga y se mantiene. Antes esta sección llevaba el
+    // nombre del local, pero ese dato ya está arriba en "OPERACIÓN ACTIVA":
+    // estaba duplicado y no decía qué hay adentro.
+    {section:'Operación'},
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {icon:'tag', label:'Subproductos', vista:'subproductos'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
+    // Inventariar y declarar desperdicio son actos de cocina, no de análisis:
+    // uno se agacha a contar en la cámara y el otro se carga tras el servicio.
+    ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
+    ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
     ...(!isCP ? [
       {section:'Presupuesto'},
       {icon:'calendar', label:'Planificación semanal', vista:'semanal'},
@@ -3681,14 +3679,14 @@ function buildSidebar(rol){
         {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
       ] : []),
     ] : []),
+    // ANÁLISIS — lo que se mira para decidir. Lista de compras y Pedido
+    // sugerido van juntos: son un solo circuito, mirar el stock y comprar.
     {section:'Análisis'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
-    ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
     ...(!isCP ? [{icon:'cart', label:'Pedido sugerido', vista:'pedido'}] : []),
     ...(!isCP && estaVinculadaACP ? [{icon:'clipboard', label:'📋 Historial de pedidos', vista:'historialPedidos'}] : []),
-    ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
     {section:'Herramientas'},
     {icon:'store', label:'Modalidades de la operación', vista:'modalidades'},
@@ -3706,6 +3704,7 @@ function buildSidebar(rol){
     {icon:'clipboard', label:'Mis ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
+    {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
     ...(tieneModalidad('cubiertoContinuo') ? [
@@ -3714,7 +3713,6 @@ function buildSidebar(rol){
     {section:'Compras'},
     {icon:'cart', label:'Lista de compras', vista:'compras'},
     {icon:'cart', label:'Pedido sugerido', vista:'pedido'},
-    {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
   ] : esDarkKitchen() ? [
     {section:'Operación'},
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
@@ -4476,6 +4474,30 @@ function renderDashboardOperacion(){
         <div class="metric-sub">${s.pctProm!==null ? semaforo(s.pctProm)+' promedio de '+s.conPrecio+' receta'+(s.conPrecio!==1?'s':'') : 'cargá precios de venta en tus recetas'}</div>
       </div>`}
     </div>
+
+    ${(()=>{
+      // Qué tipo de servicio da esta cocina. Se muestra acá porque es lo primero
+      // que define una operación; se edita en su propia pantalla, que es una
+      // decisión que se toma una vez y después no se toca en meses.
+      const act = getModalidades(op);
+      const aMano = Array.isArray(op.modalidades) && op.modalidades.length;
+      const chips = act.map(k=>{
+        const m = MODALIDADES[k]; if(!m) return '';
+        return `<span style="display:inline-block;padding:4px 11px;border:1px solid var(--dorado,#C9A961);
+                 border-radius:999px;font-size:12.5px;background:rgba(201,169,97,.10);white-space:nowrap">${m.icono} ${m.label}</span>`;
+      }).join(' ');
+      return `<div class="card" style="margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px">
+            <div class="metric-label" style="margin-bottom:7px">Modalidades de servicio</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
+            ${aMano ? '' : `<div style="font-size:12px;color:var(--gris-2,#888);margin-top:7px">
+              Por defecto según el tipo <strong>${esc(op.tipo||'')}</strong> — todavía sin elegir a mano.</div>`}
+          </div>
+          ${esNivelCocina() ? '' : `<button class="btn btn-secondary btn-sm" onclick="navigate('modalidades')">Cambiar</button>`}
+        </div>
+      </div>`;
+    })()}
 
     <div class="card">
       <div class="card-header">
