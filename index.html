@@ -3728,30 +3728,43 @@ function buildSidebar(rol){
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
     ...seccionCuenta,
   ] : [
-    {section:'Mi operación'},
+    {section:'Principal'},
     {icon:'chart', label:'Resumen', vista:'dashboard'},
     // Navegación de cadena: bajar del CP a los locales, o subir del local a su
     // cabecera. Vale para el dueño de una cadena real, no solo para el admin.
     ...seccionCadena,
     ...itemIrACabecera,
+    // OPERACIÓN — lo que se carga y se mantiene. Inventariar y declarar
+    // desperdicio son actos de cocina, no de análisis.
+    {section:'Operación'},
     {icon:'clipboard', label:'Mis ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
     {icon:'tag', label:'Subproductos', vista:'subproductos'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
+    ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
+    ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
-    {icon:'target', label:'Presupuesto evento', vista:'evento'},
-    {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
-    {section:'Compras y análisis'},
-    ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
-    ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
-    ...(!isCP ? [{icon:'cart', label:'Pedido sugerido', vista:'pedido'}] : []),
-    ...(!isCP && estaVinculadaACP ? [{icon:'clipboard', label:'📋 Historial de pedidos', vista:'historialPedidos'}] : []),
-    ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
+    ...(tieneModalidad('cubiertoContratado') ? [
+      {icon:'target', label:'Presupuesto evento', vista:'evento'},
+    ] : []),
+    ...(tieneModalidad('cubiertoContinuo') ? [
+      {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
+      {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
+    ] : []),
+    // ANÁLISIS — lo que se mira para decidir. Lista de compras y Pedido
+    // sugerido van juntos: son un solo circuito.
+    {section:'Análisis'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
+    ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
+    ...(!isCP ? [{icon:'cart', label:'Pedido sugerido', vista:'pedido'}] : []),
+    ...(!isCP && estaVinculadaACP ? [{icon:'clipboard', label:'📋 Historial de pedidos', vista:'historialPedidos'}] : []),
     {section:'Herramientas'},
+    // Qué modalidades tiene la operación es una decisión de estructura: la
+    // toma quien maneja el equipo, no quien carga el servicio del día.
+    ...(puedeGestionarUsuarios() ? [{icon:'store', label:'Modalidades de la operación', vista:'modalidades'}] : []),
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
     {icon:'cart', label:'🧾 Facturas', vista:'facturas'},
     ...seccionCuenta,
@@ -4494,7 +4507,7 @@ function renderDashboardOperacion(){
             ${aMano ? '' : `<div style="font-size:12px;color:var(--gris-2,#888);margin-top:7px">
               Por defecto según el tipo <strong>${esc(op.tipo||'')}</strong> — todavía sin elegir a mano.</div>`}
           </div>
-          ${esNivelCocina() ? '' : `<button class="btn btn-secondary btn-sm" onclick="navigate('modalidades')">Cambiar</button>`}
+          ${puedeGestionarUsuarios() ? `<button class="btn btn-secondary btn-sm" onclick="navigate('modalidades')">Cambiar</button>` : ''}
         </div>
       </div>`;
     })()}
