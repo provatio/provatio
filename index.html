@@ -2384,8 +2384,8 @@ function calcReceta(receta, porciones){
           <div style="margin-top:3px">${modoBadge}</div>
         </td>
         <td>${tecnicaCell}</td>
-        <td><input type="number" value="${gramosUsados||''}" placeholder="g" style="width:75px;text-align:right"
-          onchange="updIngReceta(${idx},'neto',+this.value)"></td>
+        <td><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="g" style="width:75px;text-align:right"
+          onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
         <td style="text-align:right;font-size:12px">
           ${modo==='granel' && mermaPct!==null ? fmtD(mermaPct)+'%' : '—'}
         </td>
@@ -2566,7 +2566,7 @@ function agregarProductoCP(){
       </div>
       <div class="form-group">
         <label>Cantidad (g o ml)</label>
-        <input type="number" id="cp-prod-neto" placeholder="ej: 200" min="0" style="width:100%">
+        <input type="text" inputmode="decimal" id="cp-prod-neto" placeholder="ej: 200" min="0" style="width:100%">
       </div>
     </div>
     <div class="modal-footer">
@@ -2578,7 +2578,7 @@ function agregarProductoCP(){
 
 function confirmarProductoCP(){
   const prodId = document.getElementById('cp-prod-sel').value;
-  const neto   = +document.getElementById('cp-prod-neto').value || 0;
+  const neto   = num(document.getElementById('cp-prod-neto').value) || 0;
   if(!prodId){ showToast('Elegí un insumo','error'); return; }
   // Buscar en productos elaborados primero, luego en ingredientes CP
   const cp = getCentroProduccion();
@@ -3448,11 +3448,11 @@ function renderConciliacionFactura(){
       : selMatch + chips;
     return `<tr>
       <td><input type="text" value="${(it.desc||'').replace(/"/g,'&quot;')}" placeholder="Descripción en factura" style="min-width:160px" onchange="updFacItem(${ix},'desc',this.value)"></td>
-      <td><input type="number" value="${it.cantidad}" placeholder="cant" style="width:70px;text-align:right" onchange="updFacItem(${ix},'cantidad',this.value)"></td>
+      <td><input type="text" inputmode="decimal" value="${it.cantidad}" placeholder="cant" style="width:70px;text-align:right" onchange="updFacItem(${ix},'cantidad',this.value)"></td>
       <td><select onchange="updFacItem(${ix},'unidad',this.value)">
         ${['kg','litros','unidades'].map(u=>`<option value="${u}"${u===it.unidad?' selected':''}>${u}</option>`).join('')}
       </select></td>
-      <td><input type="number" value="${it.precioTotal}" placeholder="$ total" style="width:95px;text-align:right" onchange="updFacItem(${ix},'precioTotal',this.value)"></td>
+      <td><input type="text" inputmode="decimal" value="${it.precioTotal}" placeholder="$ total" style="width:95px;text-align:right" onchange="updFacItem(${ix},'precioTotal',this.value)"></td>
       <td style="text-align:right">${pu!==null?'<span class="calc">$'+fmt(pu)+'/'+(it.unidad==='unidades'?'u':it.unidad==='litros'?'L':'kg')+'</span>':'—'}</td>
       <td>${celdaMatch}</td>
       <td style="text-align:right">${puAct?'<span class="calc">$'+fmt(puAct)+'</span>':'—'}</td>
@@ -4756,7 +4756,7 @@ function renderIngredientes(){
                   <td><strong>${esc(item.nombre)}</strong>${item._estimado ? ` <span title="Precio propuesto por la IA al leer la carta. Confirmalo contra una factura tuya." style="font-size:10px;background:#FFF3E6;color:#B8540A;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">estimado</span>` : ''}</td>
                   <td>${item.unidadTipo||item.unidad||'kg'}</td>
                   <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
-                  <td style="text-align:right"><input type="number" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',+this.value)"></td>
+                  <td style="text-align:right"><input type="text" inputmode="decimal" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',num(this.value))"></td>
                   <td style="text-align:right"><span class="calc">$${fmt(Math.round(item.precio/(item.bulto||1)))}/${item.unidadMedida||'kg'}</span></td>
                   <td style="text-align:center">
                     <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px" title="Marcar para controlar el stock de este producto (detectar faltantes)">
@@ -4766,9 +4766,9 @@ function renderIngredientes(){
                   </td>
                   <td style="text-align:right;white-space:nowrap">
                     ${item.controlaStock ? `
-                      <input type="number" min="0" step="0.1" value="${item.stockMinimo!=null?item.stockMinimo:''}" placeholder="—"
+                      <input type="text" inputmode="decimal" min="0" step="0.1" value="${item.stockMinimo!=null?item.stockMinimo:''}" placeholder="—"
                         style="width:70px;text-align:right" title="Stock mínimo de trabajo"
-                        onchange="updateIng('${item.id}','stockMinimo',this.value===''?null:+this.value)">
+                        onchange="updateIng('${item.id}','stockMinimo',this.value===''?null:num(this.value))">
                       <span style="font-size:11px;color:var(--gris-2)">${esc(item.unidadMedida||'kg')}</span>
                     ` : '<span style="font-size:11px;color:var(--gris-3)">—</span>'}
                   </td>
@@ -4845,7 +4845,7 @@ function filtrarIngredientes(q){
               <td><span class="badge badge-gray">${item.cat}</span></td>
               <td>${item.unidadTipo||item.unidad||'kg'}</td>
               <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
-              <td style="text-align:right"><input type="number" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',+this.value)"></td>
+              <td style="text-align:right"><input type="text" inputmode="decimal" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',num(this.value))"></td>
               <td style="text-align:right"><span class="calc">$${fmt(Math.round(item.precio/(item.bulto||1)))}/${item.unidadMedida||'kg'}</span></td>
               <td style="white-space:nowrap"><div style="display:flex;gap:6px">
                 <button class="btn btn-secondary btn-sm" data-ing-id="${item.id}" onclick="editarIng(this.dataset.ingId)">${ico('edit',13)} Editar</button>
@@ -4901,6 +4901,78 @@ function toggleTodosIngCat(abrir){
 // Ahora el id se calcula mirando lo que YA existe, no solo el contador. Aunque
 // el contador se pierda o venga mal, no puede repetir.
 // ═══════════════════════════════════════════════════════════════════════
+// Compara nombres de ingredientes como los diría un cocinero: sin importar
+// mayúsculas, tildes, espacios de más ni el plural.
+function _normIng(t){
+  return String(t||'')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')   // saca tildes
+    .replace(/[^a-z0-9\s]/g,' ')                        // saca puntuación
+    .replace(/\s+/g,' ').trim();
+}
+function _sinPlural(t){
+  return _normIng(t).split(' ').map(p =>
+    p.length>3 && (p.endsWith('es') ? p.slice(0,-2) : p.endsWith('s') ? p.slice(0,-1) : p)
+  ).join(' ');
+}
+function _mismoNombreIng(a,b){ return _sinPlural(a) === _sinPlural(b); }
+
+// Parecido = uno contiene al otro entero, o difieren en una sola letra.
+// No alcanza con compartir una palabra: "repollo blanco" y "repollo colorado"
+// son dos productos distintos y no tienen que molestar.
+function _nombreParecidoIng(a,b){
+  const x = _sinPlural(a), y = _sinPlural(b);
+  if(!x || !y || x===y) return false;
+  if(Math.abs(x.length-y.length) <= 2 && _distancia(x,y) <= 1) return true;
+  return false;
+}
+function _distancia(a,b){
+  const m=a.length, n=b.length;
+  if(Math.abs(m-n)>2) return 99;
+  let fila = Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){
+    let ant = fila[0]; fila[0] = i;
+    for(let j=1;j<=n;j++){
+      const tmp = fila[j];
+      fila[j] = Math.min(fila[j]+1, fila[j-1]+1, ant + (a[i-1]===b[j-1]?0:1));
+      ant = tmp;
+    }
+  }
+  return fila[n];
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LEER UN NÚMERO ESCRITO POR UNA PERSONA
+//
+// En la cocina se escribe con coma: "0,5" y no "0.5". Un campo numérico del
+// navegador puede descartar la coma y devolver vacío — el peso medido se
+// pierde y nadie se entera. También llegan "1.500,50" y hasta "0,5 kg".
+//
+// Todas las lecturas de números del sistema pasan por acá. Un solo lugar.
+// ═══════════════════════════════════════════════════════════════════════
+function num(v){
+  if(v==null || v==='') return 0;
+  if(typeof v === 'number') return isFinite(v) ? v : 0;
+  let t = String(v).trim().replace(/\s/g,'').replace(/[^0-9.,+-]/g,'');
+  const coma = t.lastIndexOf(','), punto = t.lastIndexOf('.');
+  if(coma > -1 && punto > -1){
+    // El separador que está más a la derecha es el decimal; el otro es de miles.
+    t = (coma > punto) ? t.replace(/\./g,'').replace(',','.') : t.replace(/,/g,'');
+  } else if(coma > -1){
+    t = t.replace(',','.');
+  } else if(punto > -1){
+    // Punto solo: ambiguo. "12.000" son doce mil, pero "3.2" son tres coma dos.
+    // Regla: punto seguido de EXACTAMENTE tres cifras y con algo distinto de
+    // cero adelante = separador de miles. "0.500" queda como medio kilo.
+    const ent = t.slice(0, punto).replace(/^[+-]/,''), dec = t.slice(punto+1);
+    if(dec.length === 3 && /^\d{1,3}$/.test(ent) && ent !== '0' && t.indexOf('.') === punto){
+      t = t.replace('.','');
+    }
+  }
+  const n = parseFloat(t);
+  return isFinite(n) ? n : 0;
+}
+
 function proximoId(prefijo, clave, ...colecciones){
   if(!demoData.nextId) demoData.nextId = {};
   const re = new RegExp('^'+prefijo+'(\\d+)$');
@@ -5021,7 +5093,7 @@ function _bloqueMermasIng(nombreIng, cat){
         <input type="checkbox" class="ni-merma-chk" data-tec="${esc(tec)}" ${tec==='Sin merma'?'checked':''}
                style="width:16px;height:16px;flex-shrink:0">
         <span style="flex:1;font-size:13px">${esc(tec)}</span>
-        <input type="number" class="ni-merma-pct" data-tec="${esc(tec)}" value="${pct}" step="0.5"
+        <input type="text" inputmode="decimal" class="ni-merma-pct" data-tec="${esc(tec)}" value="${pct}" step="0.5"
                style="width:78px;padding:5px 8px;border:1.5px solid var(--crema-2);border-radius:6px;font-size:13px;text-align:right">
         <span style="font-size:12px;color:var(--gris-2);width:14px">%</span>
       </label>`).join('')}
@@ -5154,7 +5226,7 @@ function modalNuevoIng(ingExistente){
               Cantidad por unidad de compra
             </label>
             <div style="position:relative">
-              <input type="number" id="ni-bulto" value="${ing.bulto||1}" min="0.001" step="0.001"
+              <input type="text" inputmode="decimal" id="ni-bulto" value="${ing.bulto||1}" min="0.001" step="0.001"
                 style="width:100%;padding:9px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px"
                 onchange="calcularPrecioUnitario()">
             </div>
@@ -5164,7 +5236,7 @@ function modalNuevoIng(ingExistente){
             <label style="display:block;font-size:11px;font-weight:600;color:var(--gris-1);margin-bottom:6px">
               Precio por unidad de compra ($)
             </label>
-            <input type="number" id="ni-precio" value="${ing.precio||0}" min="0"
+            <input type="text" inputmode="decimal" id="ni-precio" value="${ing.precio||0}" min="0"
               style="width:100%;padding:9px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px"
               onchange="calcularPrecioUnitario()">
           </div>
@@ -5182,7 +5254,7 @@ function modalNuevoIng(ingExistente){
         <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">
           Peso por unidad (g) — para recetas en gramos
         </label>
-        <input type="number" id="ni-peso-unitario" value="${ing.pesoUnitario||60}" min="1"
+        <input type="text" inputmode="decimal" id="ni-peso-unitario" value="${ing.pesoUnitario||60}" min="1"
           style="width:120px;padding:9px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px"
           placeholder="60">
         <span style="font-size:12px;color:var(--gris-2);margin-left:8px">g/unidad</span>
@@ -5263,8 +5335,8 @@ function actualizarUnidadMedida(){
 }
 
 function calcularPrecioUnitario(){
-  const bulto = parseFloat(document.getElementById('ni-bulto')?.value||1);
-  const precio = parseFloat(document.getElementById('ni-precio')?.value||0);
+  const bulto = num(document.getElementById('ni-bulto')?.value||1);
+  const precio = num(document.getElementById('ni-precio')?.value||0);
   const medida = document.getElementById('ni-unidad-medida')?.value||'kg';
   const tipo = document.getElementById('ni-unidad-tipo')?.value||'kg';
   const container = document.getElementById('ni-precio-unitario');
@@ -5286,22 +5358,40 @@ function calcularPrecioUnitario(){
 
 function guardarNuevoIng(idExistente){
   const nombre = document.getElementById('ni-nombre').value.trim();
-  const precio = parseFloat(document.getElementById('ni-precio').value);
-  const bulto = parseFloat(document.getElementById('ni-bulto').value)||1;
+  const precio = num(document.getElementById('ni-precio').value);
+  const bulto = num(document.getElementById('ni-bulto').value)||1;
   const unidadTipo = document.getElementById('ni-unidad-tipo')?.value||'kg';
   const unidadMedida = document.getElementById('ni-unidad-medida')?.value||'kg';
   if(!nombre){ showToast('Escribí el nombre del ingrediente','error'); return; }
   if(!precio || precio <= 0){ showToast('⚠ El precio no puede ser cero — el cálculo de costos no va a funcionar','error'); return; }
 
-  // Poka-yoke: verificar si ya existe un ingrediente con el mismo nombre
+  // Poka-yoke: no puede haber dos ingredientes con el mismo nombre.
+  // La comparación simple por minúsculas dejaba pasar "brócoli" y "brocoli",
+  // "poroto" y "porotos", o dos espacios en el medio. Para el sistema eran
+  // productos distintos y quedaban duplicados sin aviso.
+  //
+  // Y una aclaración de cocina: la zanahoria rallada y la hervida NO son dos
+  // ingredientes. Son el MISMO ingrediente con dos mermas distintas. Por eso
+  // un nombre repetido siempre es un error.
   if(!idExistente){
-    const duplicado = demoData.ingredientes.find(i=>i.nombre.toLowerCase()===nombre.toLowerCase());
+    const duplicado = demoData.ingredientes.find(i=>_mismoNombreIng(i.nombre, nombre));
     if(duplicado){
       showToast(`Ya existe "${duplicado.nombre}" — editalo desde la lista si querés actualizarlo`,'error');
       return;
     }
+    // Parecidos: NO se bloquean. "repollo blanco" y "repollo colorado" son
+    // dos productos de verdad, igual que "tapa de nalga" y "nalga". Solo se
+    // avisa, y decide el chef.
+    const parecido = demoData.ingredientes.find(i=>_nombreParecidoIng(i.nombre, nombre));
+    if(parecido && !confirm(
+        'Ya tenés cargado "'+parecido.nombre+'", que se parece mucho a "'+nombre+'".\n\n'
+      + 'Si es el mismo producto procesado de otra forma (rallado, hervido, en cubos), '
+      + 'NO lo cargues de nuevo: agregale una merma al que ya existe.\n\n'
+      + '¿Es un producto distinto y querés cargarlo igual?')){
+      return;
+    }
   }
-  const pesoUnitario = parseFloat(document.getElementById('ni-peso-unitario')?.value||60);
+  const pesoUnitario = num(document.getElementById('ni-peso-unitario')?.value||60);
   // Al editar, PARTIMOS del ingrediente que ya existe y solo pisamos los campos
   // del formulario. Antes se armaba un objeto nuevo desde cero y se perdían en
   // silencio los datos que este modal no muestra (controlaStock, stockMinimo…).
@@ -5406,7 +5496,7 @@ function renderMermas(){
                     ${items.map(m=>`<tr>
                       <td style="padding:8px 32px;font-size:13px;color:var(--gris-1)">${m.tecnica}</td>
                       <td style="padding:8px;text-align:right">
-                        <input type="number" value="${m.pct}" style="width:70px;text-align:right;padding:4px 8px;border:1.5px solid var(--crema-2);border-radius:6px;font-size:13px;color:${m.pct<0?'var(--oliva)':m.pct===0?'var(--gris-2)':'var(--negro)'}" onchange="updateMerma('${m.id}','pct',+this.value)"> %
+                        <input type="text" inputmode="decimal" value="${m.pct}" style="width:70px;text-align:right;padding:4px 8px;border:1.5px solid var(--crema-2);border-radius:6px;font-size:13px;color:${m.pct<0?'var(--oliva)':m.pct===0?'var(--gris-2)':'var(--negro)'}" onchange="updateMerma('${m.id}','pct',num(this.value))"> %
                       </td>
                       <td style="padding:8px;font-size:12px;color:#5A5A52">${m.pct<0?'Absorbe agua':m.pct===0?'Sin pérdida':'Pérdida en cocción'}</td>
                       <td style="padding:8px;text-align:right;white-space:nowrap"><div style="display:flex;gap:6px;justify-content:flex-end">
@@ -5431,8 +5521,8 @@ function renderMermas(){
       <td style="font-size:12px">${m.proceso||'—'}</td>
       <td style="font-size:12px">${m.tecnica}</td>
       <td style="text-align:right">
-        <input type="number" value="${m.pct}" style="width:60px;text-align:right;padding:4px 8px;border:1.5px solid var(--crema-2);border-radius:6px;font-size:12px"
-          onchange="updateMerma('${m.id}','pct',+this.value)"> %
+        <input type="text" inputmode="decimal" value="${m.pct}" style="width:60px;text-align:right;padding:4px 8px;border:1.5px solid var(--crema-2);border-radius:6px;font-size:12px"
+          onchange="updateMerma('${m.id}','pct',num(this.value))"> %
         ${m.desperdicio_pct?`<span style="font-size:10px;color:var(--gris-2);margin-left:4px">+${m.desperdicio_pct}% desp.</span>`:''}
       </td>
       <td style="font-size:11px;color:var(--oliva)">${m.subproducto||'—'}</td>
@@ -5511,7 +5601,7 @@ function editarMerma(id){
       </div>
       <div class="form-group">
         <label>% Merma (negativo si gana peso)</label>
-        <input type="number" id="em-pct" value="${m.pct}" step="1">
+        <input type="text" inputmode="decimal" id="em-pct" value="${m.pct}" step="1">
       </div>
     </div>
     <div class="modal-footer">
@@ -5526,7 +5616,7 @@ function editarMerma(id){
       if(!merma) return;
       merma.ingrediente = document.getElementById('em-ing').value;
       merma.tecnica = document.getElementById('em-tec').value.trim();
-      merma.pct = +document.getElementById('em-pct').value;
+      merma.pct = num(document.getElementById('em-pct').value);
       closeModal();
       renderMermas();
       showToast('Merma actualizada','success');
@@ -5567,7 +5657,7 @@ function modalNuevaMerma(ingPre){
         <div style="font-size:11px;color:var(--gris-2);margin-top:4px">Podés elegir una existente o escribir una nueva. Cada técnica puede tener su propio % de merma.</div>
       </div>
       <div class="form-group"><label>% Merma (negativo si gana peso)</label>
-        <input type="number" id="nm-pct" value="0" step="1">
+        <input type="text" inputmode="decimal" id="nm-pct" value="0" step="1">
       </div>
     </div>
     <div class="modal-footer">
@@ -5604,7 +5694,7 @@ function filtrarMermas(q){
             <td style="font-weight:600">${m.ingrediente}</td>
             <td>${m.tecnica}</td>
             <td style="text-align:right">
-              <input type="number" value="${m.pct}" style="width:70px;text-align:right" onchange="updateMerma('${m.id}','pct',+this.value)"> %
+              <input type="text" inputmode="decimal" value="${m.pct}" style="width:70px;text-align:right" onchange="updateMerma('${m.id}','pct',num(this.value))"> %
             </td>
             <td style="font-size:12px;color:#5A5A52">${m.pct<0?'Absorbe agua':m.pct===0?'Sin pérdida':'Pérdida en cocción'}</td>
             <td style="white-space:nowrap"><div style="display:flex;gap:6px">
@@ -5653,7 +5743,7 @@ function guardarNuevaMerma(){
   // Evitar duplicados exactos ingrediente + técnica
   const yaExiste = demoData.mermas.some(m=>!m.tipo && m.ingrediente===ing && m.tecnica.toLowerCase()===tec.toLowerCase());
   if(yaExiste){ showToast('Ese ingrediente ya tiene esa técnica cargada — editala desde la lista','error'); return; }
-  demoData.mermas.push({id:uid(),ingrediente:ing,tecnica:tec,pct:+document.getElementById('nm-pct').value});
+  demoData.mermas.push({id:uid(),ingrediente:ing,tecnica:tec,pct:num(document.getElementById('nm-pct').value)});
   // Abrir la categoría y el ingrediente para que la técnica nueva quede visible
   if(!window._mermaAcordeon) window._mermaAcordeon = {};
   const ingObj = demoData.ingredientes.find(i=>i.nombre===ing);
@@ -5695,12 +5785,12 @@ function modalNuevaMermaMulti(){
       </div>
       <div class="form-group">
         <label>% Merma de cocción</label>
-        <input type="number" id="nmf-pct" value="25" min="0" max="80">
+        <input type="text" inputmode="decimal" id="nmf-pct" value="25" min="0" max="80">
         <small style="color:var(--gris-3)">Solo la pérdida por cocción y proceso</small>
       </div>
       <div class="form-group">
         <label>% Desperdicio real (lo que se tira)</label>
-        <input type="number" id="nmf-desp" value="5" min="0" max="30">
+        <input type="text" inputmode="decimal" id="nmf-desp" value="5" min="0" max="30">
         <small style="color:var(--gris-3)">Grasa excesiva, nervios, huesos sin uso</small>
       </div>
       <div class="form-group">
@@ -5725,8 +5815,8 @@ function guardarNuevaMermaMulti(){
     estado: document.getElementById('nmf-estado').value,
     proceso,
     tecnica,
-    pct: +document.getElementById('nmf-pct').value||0,
-    desperdicio_pct: +document.getElementById('nmf-desp').value||0,
+    pct: num(document.getElementById('nmf-pct').value)||0,
+    desperdicio_pct: num(document.getElementById('nmf-desp').value)||0,
     subproducto: document.getElementById('nmf-sub').value.trim(),
     tipo: 'multifactorial'
   });
@@ -5936,7 +6026,7 @@ function renderEditorReceta(){
         <td style="font-size:11px;color:var(--azul);white-space:nowrap">
           ${recBase ? (rendG>0 ? `$${fmt(costoXg)}/g` : `<span style="color:var(--bordo)">⚠ Cargá rendimiento</span>`) : '—'}
         </td>
-        <td><input type="number" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',+this.value)"></td>
+        <td><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
         <td style="text-align:right;color:var(--gris-2)">—</td>
         <td style="text-align:right;color:var(--gris-2)">—</td>
         <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:''}</td>
@@ -5970,7 +6060,7 @@ function renderEditorReceta(){
       return `<tr style="background:#FFF6EC">
         <td style="white-space:nowrap">🏭 ${prod?prod.nombre:'<span style="color:var(--bordo)">insumo CP no encontrado</span>'} <span style="font-size:10px;color:#B8540A;font-weight:700">${badgeCP}</span> <span style="font-size:11px;color:var(--gris-2)">${prod&&prod.costoXkg>0?'$'+fmt(prod.costoXkg)+'/kg':''}</span></td>
         <td>${tecCell}</td>
-        <td><input type="number" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',+this.value)"></td>
+        <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
         <td style="text-align:right">${modo==='granel'&&ing.tecnica?`<span class="calc">${fmtD(mermaPct)}%</span>`:'<span style="color:var(--gris-2)">—</span>'}</td>
         <td style="text-align:right">${modo==='granel'&&costoItem!==null?`<span class="calc">${fmtD(brutoG)}g</span>`:'—'}</td>
         <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:(prod&&!(prod.costoXkg>0)?'<span class="calc calc-err">sin precio CP</span>':'')}</td>
@@ -6002,7 +6092,7 @@ function renderEditorReceta(){
             : `<option>Elegí ingrediente primero</option>`}
         </select>
       </td>
-      <td><input type="number" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',+this.value)"></td>
+      <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.merma_pct)}%</span>`:c&&c.error?`<span class="calc calc-err" title="${c.error}">⚠ Sin merma</span>`:''}</td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.bruto_con_desperdicio||c.bruto)}g</span>`:''}</td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
@@ -6020,9 +6110,9 @@ function renderEditorReceta(){
       <input type="text" id="rec-nombre" value="${esc(r.nombre)}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
         <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCentroProduccion() ? "$ PRECIO TRANSFERENCIA" : "$ PRECIO VENTA"}</span>
-        <input type="number" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
+        <input type="text" inputmode="decimal" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
           style="width:110px;border:none;background:transparent;font-size:14px;font-weight:700;color:var(--negro);text-align:right"
-          onchange="recetaEditando.precioVenta=+this.value;renderEditorReceta()">
+          onchange="recetaEditando.precioVenta=num(this.value);renderEditorReceta()">
       </div>`}
       <select onchange="recetaEditando.tipoServicio=this.value" style="width:150px">
         ${(getOp().tiposServicio||['Almuerzo']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
@@ -6036,14 +6126,14 @@ function renderEditorReceta(){
     <div class="metric-grid">
       <div class="metric">
         <div class="metric-label">Porciones de referencia</div>
-        <input type="number" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
-          onchange="recetaEditando.porciones=+this.value;renderEditorReceta()">
+        <input type="text" inputmode="decimal" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+          onchange="recetaEditando.porciones=num(this.value);renderEditorReceta()">
       </div>
       <div class="metric">
         <div class="metric-label">Rendimiento total (g / ml)</div>
-        <input type="number" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+        <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
           title="Cuántos gramos o ml rinde esta preparación en total. Necesario para usarla como insumo en otras recetas."
-          onchange="recetaEditando.rendimientoG=+this.value;renderEditorReceta()">
+          onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta()">
       </div>
       <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
       <div class="metric"><div class="metric-label">${esCentroProduccion() ? "% sobre precio transferencia" : "% sobre precio venta"}</div>
@@ -6121,18 +6211,18 @@ function renderVarianteDelivery(r, mercSalon){
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
           <div>
             <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gris-2)">Precio venta delivery</label>
-            <input type="number" value="${d.precioVenta||''}" placeholder="Igual que salón: $${fmt(r.precioVenta||0)}" min="0"
-              style="width:100%;margin-top:4px" onchange="updDelivery('precioVenta',+this.value)">
+            <input type="text" inputmode="decimal" value="${d.precioVenta||''}" placeholder="Igual que salón: $${fmt(r.precioVenta||0)}" min="0"
+              style="width:100%;margin-top:4px" onchange="updDelivery('precioVenta',num(this.value))">
           </div>
           <div>
             <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gris-2)">Comisión app (%)</label>
-            <input type="number" value="${d.comision||''}" placeholder="0" min="0" max="100" step="0.5"
-              style="width:100%;margin-top:4px" onchange="updDelivery('comision',+this.value)">
+            <input type="text" inputmode="decimal" value="${d.comision||''}" placeholder="0" min="0" max="100" step="0.5"
+              style="width:100%;margin-top:4px" onchange="updDelivery('comision',num(this.value))">
           </div>
           <div>
             <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gris-2)">Packaging ($/plato)</label>
-            <input type="number" value="${d.packaging||''}" placeholder="0" min="0"
-              style="width:100%;margin-top:4px" onchange="updDelivery('packaging',+this.value)">
+            <input type="text" inputmode="decimal" value="${d.packaging||''}" placeholder="0" min="0"
+              style="width:100%;margin-top:4px" onchange="updDelivery('packaging',num(this.value))">
           </div>
         </div>
 
@@ -6157,7 +6247,7 @@ function renderVarianteDelivery(r, mercSalon){
                 return `<tr>
                   <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px"><option value="">— elegí —</option>${demoData.ingredientes.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${esc(i.nombre)}</option>`).join('')}</select></td>
                   <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${tecnicas.length?'<option value="">— técnica —</option>'+tecnicas.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join(''):'<option>Elegí ingrediente</option>'}</select></td>
-                  <td><input type="number" value="${ing.neto||''}" placeholder="g" style="width:75px;text-align:right" onchange="updIngDelivery(${idx},'neto',+this.value)"></td>
+                  <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:75px;text-align:right" onchange="updIngDelivery(${idx},'neto',num(this.value))"></td>
                   <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
                   <td><button class="btn btn-icon btn-sm" onclick="quitarIngDelivery(${idx})">✕</button></td>
                 </tr>`;
@@ -6529,9 +6619,9 @@ function renderEvento(){
           </select>
           <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
             <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Comensales</span>
-            <input type="number" value="${item.cantidad||''}" placeholder="${personas||'?'}" min="0"
+            <input type="text" inputmode="decimal" value="${item.cantidad||''}" placeholder="${personas||'?'}" min="0"
               style="width:100%;text-align:center;font-size:14px;font-weight:700;border:none;border-bottom:1.5px solid var(--dorado);background:transparent;padding:2px 0"
-              onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','cantidad',+this.value)">
+              onchange="updPlatoCurso('${seg.id}','${curso}','${item.id}','cantidad',num(this.value))">
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
             <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase;letter-spacing:.4px">Costo/p</span>
@@ -6579,15 +6669,15 @@ function renderEvento(){
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
           <div class="form-group" style="margin:0">
             <label style="font-size:12px">Cantidad de personas</label>
-            <input type="number" value="${seg.personas||''}" placeholder="0" min="0"
+            <input type="text" inputmode="decimal" value="${seg.personas||''}" placeholder="0" min="0"
               style="font-size:20px;font-weight:700;border:none;border-bottom:2px solid var(--dorado);background:transparent;width:100%;padding:4px 0"
-              onchange="updSegmento('${seg.id}','personas',+this.value)">
+              onchange="updSegmento('${seg.id}','personas',num(this.value))">
           </div>
           <div class="form-group" style="margin:0">
             <label style="font-size:12px">Precio por cabeza cotizado ($)</label>
-            <input type="number" value="${seg.precioCabeza||''}" placeholder="0" min="0"
+            <input type="text" inputmode="decimal" value="${seg.precioCabeza||''}" placeholder="0" min="0"
               style="font-size:20px;font-weight:700;border:none;border-bottom:2px solid var(--dorado);background:transparent;width:100%;padding:4px 0"
-              onchange="updSegmento('${seg.id}','precioCabeza',+this.value)">
+              onchange="updSegmento('${seg.id}','precioCabeza',num(this.value))">
           </div>
         </div>
         <div style="font-size:12px;font-weight:700;color:var(--gris-1);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Cursos</div>
@@ -6631,12 +6721,12 @@ function renderEvento(){
               <td style="text-align:right">
                 ${b.modalidad==='barraLibre'
                   ? '<span style="font-size:12px;color:var(--gris-2)">Precio único</span>'
-                  : `<input type="number" value="${b.cantidad||''}" placeholder="0"
-                      style="width:70px;text-align:right" onchange="updBebidaEvento('${b.id}','cantidad',+this.value)">`}
+                  : `<input type="text" inputmode="decimal" value="${b.cantidad||''}" placeholder="0"
+                      style="width:70px;text-align:right" onchange="updBebidaEvento('${b.id}','cantidad',num(this.value))">`}
               </td>
               <td style="text-align:right">
-                <input type="number" value="${b.precioVenta||''}" placeholder="0"
-                  style="width:110px;text-align:right" onchange="updBebidaEvento('${b.id}','precioVenta',+this.value)">
+                <input type="text" inputmode="decimal" value="${b.precioVenta||''}" placeholder="0"
+                  style="width:110px;text-align:right" onchange="updBebidaEvento('${b.id}','precioVenta',num(this.value))">
               </td>
               <td style="text-align:right;font-weight:600">$${fmt(ingreso)}</td>
               <td><button class="btn btn-danger btn-sm" onclick="delBebidaEvento('${escJs(b.id)}')">${ico('trash',13)}</button></td>
@@ -6656,7 +6746,7 @@ function renderEvento(){
             <td><input type="text" list="ge-sugerencias" value="${(g.concepto||'').replace(/"/g,'&quot;')}" placeholder="Ej: Personal extra"
               onchange="updGastoEvento('${g.id}','concepto',this.value)"
               style="border:none;background:transparent;font-weight:600;width:100%"></td>
-            <td style="text-align:right"><input type="number" value="${g.monto||0}" onchange="updGastoEvento('${g.id}','monto',+this.value)" style="width:150px;text-align:right"></td>
+            <td style="text-align:right"><input type="text" inputmode="decimal" value="${g.monto||0}" onchange="updGastoEvento('${g.id}','monto',num(this.value))" style="width:150px;text-align:right"></td>
             <td><button class="btn btn-danger btn-sm" onclick="delGastoEvento('${escJs(g.id)}')">${ico('trash',13)}</button></td>
           </tr>`).join('')}
           <tr style="background:var(--crema)">
@@ -7046,10 +7136,10 @@ function renderCP(){
                     : '<span style="background:#E8F4F8;color:#1A5276;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">Redistribuido</span>';
 
     const precioTransf = `
-      <input type="number" min="0" step="10"
+      <input type="text" inputmode="decimal" min="0" step="10"
         value="${p.precioTransfManual > 0 ? p.precioTransfManual : (p.tienePrecioTransferencia ? Math.round(p.costoXkg) : '')}"
         placeholder="${Math.round(p.costoProduccionXkg||0) || 'precio'}"
-        onchange="updDespachoCP('${escJs(p.id)}','precioTransf',+this.value)"
+        onchange="updDespachoCP('${escJs(p.id)}','precioTransf',num(this.value))"
         style="font-size:13px;width:100px;text-align:right;font-weight:700${p.tienePrecioTransferencia?'':';border-color:#B8540A'}">
       <div style="font-size:10px;color:var(--gris-2);margin-top:2px">$/kg al local</div>
       ${p.tienePrecioTransferencia ? '' : '<div style="font-size:10px;color:#B8540A;margin-top:2px">⚠ va al costo</div>'}`;
@@ -7072,13 +7162,13 @@ function renderCP(){
              <option value="">— elegí la pieza —</option>
              ${ingsCP.map(i=>`<option value="${i.id}"${i.id===p.ingId?' selected':''}>${esc(i.nombre)}</option>`).join('')}
            </select>
-           <input type="number" value="${p.mermaPorcionado||0}" placeholder="%" style="width:70px;font-size:12px"
-             onchange="updProductoCP('${p.id}','mermaPorcionado',+this.value)">
+           <input type="text" inputmode="decimal" value="${p.mermaPorcionado||0}" placeholder="%" style="width:70px;font-size:12px"
+             onchange="updProductoCP('${p.id}','mermaPorcionado',num(this.value))">
            <span style="font-size:11px;color:var(--gris-2)">% se pierde al fraccionar</span>
          </div>`
       : `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Lo que te cuesta comprarlo:</div>
-         <input type="number" value="${p.precioXkg||0}" placeholder="Precio por kg" style="font-size:12px;width:140px"
-           onchange="updProductoCP('${p.id}','precioXkg',+this.value)">
+         <input type="text" inputmode="decimal" value="${p.precioXkg||0}" placeholder="Precio por kg" style="font-size:12px;width:140px"
+           onchange="updProductoCP('${p.id}','precioXkg',num(this.value))">
          <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg</span>`;
 
     // Cómo sale del CP: a granel por kilo, o ya porcionado. Si va porcionado,
@@ -7090,8 +7180,8 @@ function renderCP(){
         <option value="porcion"${_dUn==='porcion'?' selected':''}>🍽️ Por porción</option>
       </select>
       ${_dUn==='porcion' ? `
-        <input type="number" min="1" step="10" value="${p.gramosPorcion||''}" placeholder="gramos"
-          onchange="updDespachoCP('${escJs(p.id)}','gramos',+this.value)"
+        <input type="text" inputmode="decimal" min="1" step="10" value="${p.gramosPorcion||''}" placeholder="gramos"
+          onchange="updDespachoCP('${escJs(p.id)}','gramos',num(this.value))"
           style="font-size:12px;width:78px">
         <span style="font-size:11px;color:var(--gris-2)">g c/u</span>
         ${p.precioPorcion
@@ -7441,9 +7531,9 @@ function renderBuffet(){
           </select>
           <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
             <span style="font-size:10px;color:var(--gris-2);text-transform:uppercase">${item.modalidad==='kg'?'Kg a producir':'g por persona'}</span>
-            <input type="number" value="${item.cantidad||''}" placeholder="0" min="0"
+            <input type="text" inputmode="decimal" value="${item.cantidad||''}" placeholder="0" min="0"
               style="width:100%;text-align:center;font-size:14px;font-weight:700;border:none;border-bottom:1.5px solid var(--dorado);background:transparent;padding:2px 0"
-              onchange="updItem('${franja.id}','${item.id}','cantidad',+this.value)">
+              onchange="updItem('${franja.id}','${item.id}','cantidad',num(this.value))">
           </div>
           <div style="text-align:right;font-size:12px;color:var(--gris-2)">
             ${c ? (c.costoPorPersona!==null?'$'+fmt(c.costoPorPersona)+'/p':'—') : '—'}
@@ -7512,9 +7602,9 @@ function renderBuffet(){
             </div>
             <div class="form-group" style="margin:0">
               <label>Comensales / servicio</label>
-              <input type="number" value="${srv.comensales||''}" placeholder="0" min="0"
+              <input type="text" inputmode="decimal" value="${srv.comensales||''}" placeholder="0" min="0"
                 style="font-size:18px;font-weight:700;border:none;border-bottom:2px solid var(--dorado);background:transparent;width:100%;padding:4px 0"
-                onchange="buffetActual.comensales=+this.value;renderBuffet()">
+                onchange="buffetActual.comensales=num(this.value);renderBuffet()">
             </div>
             <div class="form-group" style="margin:0">
               <label>Frecuencia</label>
@@ -7663,8 +7753,8 @@ function renderSemanal(){
                         `<option value="${r.id}"${sel&&sel.recetaId===r.id?' selected':''}>${esc(r.nombre)}</option>`
                       ).join('')}
                     </select>
-                    ${sel?`<input type="number" value="${sel.porciones||120}" style="width:70px;margin-top:4px;font-size:12px" placeholder="porciones"
-                      onchange="setPlanPorciones('${dia}','${servicio}',+this.value)">`:''}
+                    ${sel?`<input type="text" inputmode="decimal" value="${sel.porciones||120}" style="width:70px;margin-top:4px;font-size:12px" placeholder="porciones"
+                      onchange="setPlanPorciones('${dia}','${servicio}',num(this.value))">`:''}
                   </td>`
                   ;
                 }).join('')}
@@ -7838,7 +7928,7 @@ function renderPedidoSugerido(){
               ${(p.lineas||[]).map((l,ix)=>`<tr>
                 <td><strong>${esc(l.nombre||'')}</strong></td>
                 <td style="text-align:right;white-space:nowrap">
-                  <input type="number" min="0" step="${(l.unidad==='porciones')?'1':'0.1'}" value="${l.cantidad}"
+                  <input type="text" inputmode="decimal" min="0" step="${(l.unidad==='porciones')?'1':'0.1'}" value="${l.cantidad}"
                     onchange="updCantPendiente('${escJs(p.id)}',${ix},this.value)"
                     style="width:85px;text-align:right">
                   <span style="font-size:11px;color:var(--gris-2)">${esc(l.unidad||'')}</span>
@@ -7931,7 +8021,7 @@ function renderPedidoSugerido(){
           }).map(it=>`<tr data-cp-row="1" data-nombre="${escJs(it.nombre)}" data-unidad="${escJs(it.unidad)}" data-ing="${escJs(it.id)}">
             <td><strong>${esc(it.nombre)}</strong></td>
             <td style="text-align:right;white-space:nowrap">
-              <input type="number" min="0" step="${it.porPorcion?'1':'0.1'}" value="${it.sugerido!=null?it.sugerido:''}" placeholder="—"
+              <input type="text" inputmode="decimal" min="0" step="${it.porPorcion?'1':'0.1'}" value="${it.sugerido!=null?it.sugerido:''}" placeholder="—"
                 data-ped-cp="${escJs(it.id)}"
                 style="width:85px;text-align:right;${it.sugerido>0?'border-color:var(--dorado,#C9A961);font-weight:600':''}">
               <span style="font-size:11px;color:var(--gris-2)">${esc(it.unidad)}</span>
@@ -8004,7 +8094,7 @@ function renderPedidoSugerido(){
             ${lista.map(it=>`<tr data-cat-row="${escJs(cat)}" data-nombre="${escJs(it.nombre)}" data-unidad="${escJs(it.unidad)}">
               <td><strong>${esc(it.nombre)}</strong></td>
               <td style="text-align:right;white-space:nowrap">
-                <input type="number" min="0" step="0.1" value="${it.sugerido!=null?it.sugerido:''}" placeholder="—"
+                <input type="text" inputmode="decimal" min="0" step="0.1" value="${it.sugerido!=null?it.sugerido:''}" placeholder="—"
                   data-ped-cant="${escJs(it.id)}"
                   style="width:85px;text-align:right;${it.sugerido>0?'border-color:#B8540A;font-weight:600':''}">
                 <span style="font-size:11px;color:var(--gris-2)">${esc(it.unidad)}</span>
@@ -8215,7 +8305,7 @@ function abrirRecepcionPedido(pedidoId){
               ${fmt1(l.cantidad)} <span style="font-size:11px">${esc(l.unidad||'')}</span>
             </td>
             <td style="text-align:right;white-space:nowrap">
-              <input type="number" min="0" step="${(l.unidad==='porciones')?'1':'0.1'}"
+              <input type="text" inputmode="decimal" min="0" step="${(l.unidad==='porciones')?'1':'0.1'}"
                 value="${l.cantidad}" data-recep-cant="${ix}"
                 oninput="_recepMarcarFila(${ix})"
                 style="width:80px;text-align:right">
@@ -8887,7 +8977,7 @@ function renderDesperdicio(){
           </div>
           <div style="flex:1;min-width:110px">
             <label style="font-size:12px;color:var(--gris-2)">Cantidad</label>
-            <input type="number" id="desp-cant" min="0" step="0.1" placeholder="0" style="width:100%">
+            <input type="text" inputmode="decimal" id="desp-cant" min="0" step="0.1" placeholder="0" style="width:100%">
           </div>
           <div style="flex:1.5;min-width:160px">
             <label style="font-size:12px;color:var(--gris-2)">Motivo</label>
@@ -8931,7 +9021,7 @@ async function registrarDesperdicio(){
   if(!op){ showToast('No hay operación activa','error'); return; }
   const tipo = window._despTipo==='receta' ? 'receta' : 'ingrediente';
   const itemId = document.getElementById('desp-item').value;
-  const cant = +document.getElementById('desp-cant').value;
+  const cant = num(document.getElementById('desp-cant').value);
   const motivo = document.getElementById('desp-motivo').value;
   if(!itemId){ showToast('Elegí qué se tiró','error'); return; }
   if(!cant || cant<=0){ showToast('Poné una cantidad','error'); return; }
@@ -9057,7 +9147,7 @@ function renderStock(){
                 <td><strong>${esc(i.nombre)}</strong> <span style="font-size:11px;color:var(--gris-2)">(${esc(unidad)})</span></td>
                 <td style="text-align:right;color:var(--gris-2)">${anterior!=null ? anterior+' '+esc(unidad) : '—'}</td>
                 <td style="text-align:right">
-                  <input type="number" min="0" step="0.1" id="stk-${i.id}" placeholder="0"
+                  <input type="text" inputmode="decimal" min="0" step="0.1" id="stk-${i.id}" placeholder="0"
                     value="${window._stockDraft && window._stockDraft[i.id]!=null ? window._stockDraft[i.id] : ''}"
                     style="width:100px;text-align:right"
                     oninput="_stockDraftSet('${i.id}',this.value)">
@@ -9567,7 +9657,7 @@ function renderResultado(){
           <tbody>
             ${gastos.map(g=>`<tr>
               <td><input type="text" value="${(g.concepto||'').replace(/"/g,'&quot;')}" onchange="updGastoFijo('${g.id}','concepto',this.value)" style="border:none;background:transparent;padding:4px 0;font-weight:600"></td>
-              <td style="text-align:right"><input type="number" value="${g.monto||0}" onchange="updGastoFijo('${g.id}','monto',+this.value)" style="width:150px;text-align:right"></td>
+              <td style="text-align:right"><input type="text" inputmode="decimal" value="${g.monto||0}" onchange="updGastoFijo('${g.id}','monto',num(this.value))" style="width:150px;text-align:right"></td>
               <td><button class="btn btn-danger btn-sm" onclick="delGastoFijo('${escJs(g.id)}')">${ico('trash',13)}</button></td>
             </tr>`).join('')}
             <tr style="background:var(--crema)">
@@ -9580,7 +9670,7 @@ function renderResultado(){
       </div>
       <div class="card-body" style="display:flex;align-items:center;gap:10px;border-top:1px solid var(--crema-2)">
         <label style="font-size:13px;color:var(--gris-1)">Días operativos por mes:</label>
-        <input type="number" value="${dias}" min="1" max="31" style="width:80px;text-align:center" onchange="updDiasOperativos(+this.value)">
+        <input type="text" inputmode="decimal" value="${dias}" min="1" max="31" style="width:80px;text-align:center" onchange="updDiasOperativos(num(this.value))">
       </div>
     </div>
 
@@ -9640,7 +9730,7 @@ function renderResultado(){
         <div class="card-body">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
             <label style="font-size:13px;font-weight:600">Si este mes vendés</label>
-            <input type="number" value="${ventasEst}" style="width:180px;text-align:right;font-size:15px;font-weight:700" onchange="updVentasEstimadas(+this.value)" placeholder="0">
+            <input type="text" inputmode="decimal" value="${ventasEst}" style="width:180px;text-align:right;font-size:15px;font-weight:700" onchange="updVentasEstimadas(num(this.value))" placeholder="0">
             <span style="font-size:13px;color:var(--gris-1)">pesos en la operación regular…</span>
           </div>
           <div style="background:var(--crema);border-radius:10px;padding:12px 14px;margin-bottom:16px">
@@ -9722,8 +9812,8 @@ function renderResultado(){
                   <td><strong>${esc(i.nombre)}</strong></td>
                   <td style="text-align:right">$${fmt(i.pv)}</td>
                   <td style="text-align:right">$${fmt(i.mc)}</td>
-                  <td style="text-align:right"><input type="number" min="0" value="${i.unid||''}" placeholder="0" style="width:90px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)"></td>
-                  ${getOp().tieneDelivery ? `<td style="text-align:right">${tieneDelivery ? `<input type="number" min="0" value="${ventasMes[i.id+'_dlv']||''}" placeholder="0" style="width:90px;text-align:right;border-color:var(--dorado)" onchange="updVentaReceta('${mesSel}','${i.id}_dlv',this.value)">` : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>` : ''}
+                  <td style="text-align:right"><input type="text" inputmode="decimal" min="0" value="${i.unid||''}" placeholder="0" style="width:90px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)"></td>
+                  ${getOp().tieneDelivery ? `<td style="text-align:right">${tieneDelivery ? `<input type="text" inputmode="decimal" min="0" value="${ventasMes[i.id+'_dlv']||''}" placeholder="0" style="width:90px;text-align:right;border-color:var(--dorado)" onchange="updVentaReceta('${mesSel}','${i.id}_dlv',this.value)">` : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>` : ''}
                 </tr>`;
                 }).join('')}
               </tbody>
@@ -11893,7 +11983,7 @@ function modalNuevaOperacion(){
       </div>
       <div class="form-group">
         <label>Umbral de alerta de desvío (%)</label>
-        <input type="number" id="no-umbral" value="3" min="1" max="20">
+        <input type="text" inputmode="decimal" id="no-umbral" value="3" min="1" max="20">
       </div>
       <div class="form-group">
         <label>Tipos de servicio (separados por coma)</label>
@@ -11937,7 +12027,7 @@ async function guardarNuevaOperacion(){
     nombre,
     tipo: document.getElementById('no-tipo').value,
     grupoId: grupoEl ? grupoEl.value || null : null,
-    umbralAlerta: +document.getElementById('no-umbral').value||3,
+    umbralAlerta: num(document.getElementById('no-umbral').value)||3,
     tiposServicio: document.getElementById('no-servicios').value.split(',').map(s=>s.trim()).filter(Boolean),
     tiposPlato: document.getElementById('no-platos').value.split(',').map(s=>s.trim()).filter(Boolean),
     // Nace con el formato nuevo (todo en el documento) para que
@@ -13371,7 +13461,7 @@ function modalNuevoCorte(){
       <div id="nc-partes">
         <div class="nc-parte" style="display:grid;grid-template-columns:1fr 120px 140px auto;gap:8px;margin-bottom:8px;align-items:center">
           <input type="text" placeholder="Nombre de la parte" value="Corte limpio principal">
-          <input type="number" placeholder="%" value="50" min="1" max="99">
+          <input type="text" inputmode="decimal" placeholder="%" value="50" min="1" max="99">
           <select>
             <option value="principal">Principal</option>
             <option value="subproducto">Subproducto</option>
@@ -13381,7 +13471,7 @@ function modalNuevoCorte(){
         </div>
         <div class="nc-parte" style="display:grid;grid-template-columns:1fr 120px 140px auto;gap:8px;margin-bottom:8px;align-items:center">
           <input type="text" placeholder="Nombre de la parte" value="Recortes / subproducto">
-          <input type="number" placeholder="%" value="45" min="1" max="99">
+          <input type="text" inputmode="decimal" placeholder="%" value="45" min="1" max="99">
           <select>
             <option value="principal">Principal</option>
             <option value="subproducto" selected>Subproducto</option>
@@ -13391,7 +13481,7 @@ function modalNuevoCorte(){
         </div>
         <div class="nc-parte" style="display:grid;grid-template-columns:1fr 120px 140px auto;gap:8px;margin-bottom:8px;align-items:center">
           <input type="text" placeholder="Nombre de la parte" value="Desperdicio (grasa/nervios)">
-          <input type="number" placeholder="%" value="5" min="0" max="50">
+          <input type="text" inputmode="decimal" placeholder="%" value="5" min="0" max="50">
           <select>
             <option value="principal">Principal</option>
             <option value="subproducto">Subproducto</option>
@@ -13420,7 +13510,7 @@ function agregarParteCorte(){
   div.style.cssText = 'display:grid;grid-template-columns:1fr 120px 140px auto;gap:8px;margin-bottom:8px;align-items:center';
   div.innerHTML = `
     <input type="text" placeholder="Nombre de la parte">
-    <input type="number" placeholder="%" value="0" min="0" max="100" onchange="actualizarTotalPartes()">
+    <input type="text" inputmode="decimal" placeholder="%" value="0" min="0" max="100" onchange="actualizarTotalPartes()">
     <select>
       <option value="principal">Principal</option>
       <option value="subproducto">Subproducto</option>
@@ -13525,7 +13615,7 @@ function crearIngDesdeSubproducto(corteId, nombreParte, costoXkg){
       </div>
       <div class="form-group">
         <label>Precio/kg calculado ($)</label>
-        <input type="number" id="sub-precio" value="${costoXkg}" readonly style="background:var(--verde-c);color:var(--verde);font-weight:600">
+        <input type="text" inputmode="decimal" id="sub-precio" value="${costoXkg}" readonly style="background:var(--verde-c);color:var(--verde);font-weight:600">
       </div>
       <div class="form-group">
         <label>Unidad de compra</label>
@@ -13550,7 +13640,7 @@ function confirmarCrearIngSubproducto(){
     id: proximoId('i','i',demoData.ingredientes),
     nombre,
     cat: document.getElementById('sub-cat').value,
-    precio: +document.getElementById('sub-precio').value,
+    precio: num(document.getElementById('sub-precio').value),
     bulto: 1,
     unidad: document.getElementById('sub-unidad').value||'kg',
   });
@@ -13637,9 +13727,9 @@ function renderPersonal(){
     <div class="metric-grid">
       <div class="metric">
         <div class="metric-label">Empleados</div>
-        <input type="number" value="${p.cantEmpleados}" min="1"
+        <input type="text" inputmode="decimal" value="${p.cantEmpleados}" min="1"
           style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
-          onchange="demoData.personal.cantEmpleados=+this.value;renderPersonal()">
+          onchange="demoData.personal.cantEmpleados=num(this.value);renderPersonal()">
       </div>
       <div class="metric"><div class="metric-label">Costo diario</div><div class="metric-value">$${fmt(costoDiario)}</div></div>
       <div class="metric"><div class="metric-label">Costo semanal</div><div class="metric-value">$${fmt(costoSemanal)}</div></div>
@@ -14042,12 +14132,12 @@ function sdModalAgregarLinea(){
 
         <div class="form-group" id="sdal-wrap-cu" style="display:none">
           <label>Costo por unidad ($, opcional)</label>
-          <input type="number" step="1" min="0" id="sdal-cu" placeholder="dejalo vacío si no lo sabés">
+          <input type="text" inputmode="decimal" step="1" min="0" id="sdal-cu" placeholder="dejalo vacío si no lo sabés">
         </div>
 
         <div class="form-group" id="sdal-wrap-batea" style="display:none">
           <label>Kg que entran en una batea llena (opcional)</label>
-          <input type="number" step="0.1" min="0" id="sdal-kgbatea" placeholder="ej: 4">
+          <input type="text" inputmode="decimal" step="0.1" min="0" id="sdal-kgbatea" placeholder="ej: 4">
         </div>
 
         <div class="form-group">
@@ -14199,17 +14289,17 @@ function renderCierreServicio(){
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
             <div class="form-group" style="margin:0">
               <label>A mesada (kg)</label>
-              <input type="number" step="0.1" min="0" value="${l.aMesada??''}"
+              <input type="text" inputmode="decimal" value="${l.aMesada??''}"
                 onchange="sdUpdLinea(${idx},'aMesada',this.value)">
             </div>
             <div class="form-group" style="margin:0">
               <label>Volvió (kg)</label>
-              <input type="number" step="0.1" min="0" value="${l.sobrante??''}"
+              <input type="text" inputmode="decimal" value="${l.sobrante??''}"
                 onchange="sdUpdLinea(${idx},'sobrante',this.value)">
             </div>
             <div class="form-group" style="margin:0">
               <label>De eso, se reutiliza (kg)</label>
-              <input type="number" step="0.1" min="0" value="${l.reutilizado??''}"
+              <input type="text" inputmode="decimal" value="${l.reutilizado??''}"
                 onchange="sdUpdLinea(${idx},'reutilizado',this.value)" placeholder="0">
             </div>
           </div>
@@ -14238,17 +14328,17 @@ function renderCierreServicio(){
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
             <div class="form-group" style="margin:0">
               <label>A mesada (u)</label>
-              <input type="number" step="1" min="0" value="${l.aMesada??''}"
+              <input type="text" inputmode="decimal" step="1" min="0" value="${l.aMesada??''}"
                 onchange="sdUpdLinea(${idx},'aMesada',this.value)">
             </div>
             <div class="form-group" style="margin:0">
               <label>Volvió (u)</label>
-              <input type="number" step="1" min="0" value="${l.sobrante??''}"
+              <input type="text" inputmode="decimal" step="1" min="0" value="${l.sobrante??''}"
                 onchange="sdUpdLinea(${idx},'sobrante',this.value)">
             </div>
             <div class="form-group" style="margin:0">
               <label>De eso, se reutiliza (u)</label>
-              <input type="number" step="1" min="0" value="${l.reutilizado??''}"
+              <input type="text" inputmode="decimal" step="1" min="0" value="${l.reutilizado??''}"
                 onchange="sdUpdLinea(${idx},'reutilizado',this.value)" placeholder="0">
             </div>
           </div>
@@ -14275,11 +14365,11 @@ function renderCierreServicio(){
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
             <div class="form-group" style="margin:0">
               <label>Pedidas</label>
-              <input type="number" min="0" value="${l.pedidas??''}" onchange="sdUpdLinea(${idx},'pedidas',this.value)">
+              <input type="text" inputmode="decimal" min="0" value="${l.pedidas??''}" onchange="sdUpdLinea(${idx},'pedidas',this.value)">
             </div>
             <div class="form-group" style="margin:0">
               <label>Recibidas</label>
-              <input type="number" min="0" value="${l.recibidas??''}" onchange="sdUpdLinea(${idx},'recibidas',this.value)">
+              <input type="text" inputmode="decimal" min="0" value="${l.recibidas??''}" onchange="sdUpdLinea(${idx},'recibidas',this.value)">
             </div>
             <div class="form-group" style="margin:0">
               <label>Llenado</label>
@@ -14346,12 +14436,12 @@ function renderCierreServicio(){
           </div>
           <div class="form-group" style="margin:0">
             <label>Comensales reales</label>
-            <input type="number" min="0" id="sd-pax" value="${esc(comensales)}"
+            <input type="text" inputmode="decimal" min="0" id="sd-pax" value="${esc(comensales)}"
               onchange="sdSetPax(this.value)" placeholder="ej: 148">
           </div>
           <div class="form-group" style="margin:0">
             <label>Horas de jornada</label>
-            <input type="number" min="0" step="0.5" id="sd-horas" value="${esc(horas)}"
+            <input type="text" inputmode="decimal" min="0" step="0.5" id="sd-horas" value="${esc(horas)}"
               onchange="sdSetPax(document.getElementById('sd-pax').value)" placeholder="ej: 12">
           </div>
         </div>
@@ -14446,8 +14536,20 @@ function sdSetPax(v){
   window._sdHorasDraft = document.getElementById('sd-horas')?.value || '';
   renderCierreServicio();
 }
+// En la cocina se escribe con coma: "0,5" y no "0.5". Un campo numérico del
+// navegador puede tomar la coma como nada y guardar cero — el peso medido se
+// perdería sin que nadie lo note. Se acepta la coma y se traduce.
+function _sdNumero(v){
+  if(v==null || v==='') return '';
+  const t = String(v).trim().replace(',', '.');
+  const n = parseFloat(t);
+  if(isNaN(n)) return '';
+  return String(n);
+}
 function sdUpdLinea(idx, campo, val){
   if(!window._sdLineasDraft) return;
+  if(campo==='aMesada' || campo==='sobrante' || campo==='reutilizado'
+     || campo==='pedidas' || campo==='recibidas') val = _sdNumero(val);
   window._sdLineasDraft[idx][campo] = val;
   window._sdPaxDraft = document.getElementById('sd-pax')?.value || '';
   window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
@@ -14671,9 +14773,9 @@ function renderDesvios(){
         <div class="metric">
           <div class="metric-label">Umbral de alerta</div>
           <div class="metric-value">${op.umbralAlerta||3}%
-            <input type="number" value="${op.umbralAlerta||3}" min="1" max="20"
+            <input type="text" inputmode="decimal" value="${op.umbralAlerta||3}" min="1" max="20"
               style="width:60px;font-size:12px;margin-left:8px"
-              onchange="getOp().umbralAlerta=+this.value;renderDesvios()">
+              onchange="getOp().umbralAlerta=num(this.value);renderDesvios()">
           </div>
         </div>
       </div>
@@ -14743,11 +14845,11 @@ function renderDesvios(){
                 return `<tr>
                   <td><strong>${esc(teo.nombre)}</strong></td>
                   <td style="text-align:right;color:var(--gris-3)">${fmtD(teo.kgTeorico,2)} kg</td>
-                  <td><input type="number" step="0.1" value="${real.kgReal||''}" 
+                  <td><input type="text" inputmode="decimal" step="0.1" value="${real.kgReal||''}" 
                     placeholder="${fmtD(teo.kgTeorico,2)}"
                     style="width:100px;text-align:right"
                     id="real-kg-${ingId}"></td>
-                  <td><input type="number" value="${real.precioReal||Math.round(teo.precio)}" 
+                  <td><input type="text" inputmode="decimal" value="${real.precioReal||Math.round(teo.precio)}" 
                     style="width:120px;text-align:right"
                     id="real-precio-${ingId}"></td>
                 </tr>`;
