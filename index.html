@@ -1411,6 +1411,8 @@ async function guardarEnFirestore(){
                     .filter(([,m]) => m && m.opId === currentOpId)),
         plantillasSD: Object.fromEntries(Object.entries(demoData.plantillasSD||{})
                     .filter(([,m]) => m && m.opId === currentOpId)),
+        // Sin esto, al recargar el contador volvía a cero y los ids se repetían.
+        nextId: demoData.nextId || {},
       },
       _rev: (window._revLocal||0) + 1,
       _ultimoEditor: (currentUser && currentUser.email) || 'usuario',
@@ -1607,6 +1609,8 @@ async function cargarDesdeFirestore(uid){
       demoData.serviciosDiarios = (opActiva._datos.serviciosDiarios||[]).map(s=>({...s, opId:currentOpId}));
       demoData.menusDia = opActiva._datos.menusDia || {};
       demoData.plantillasSD = opActiva._datos.plantillasSD || {};
+      if(opActiva._datos.nextId) demoData.nextId = {...(demoData.nextId||{}), ...opActiva._datos.nextId};
+      repararIdsDuplicados();
       window._revLocal = opActiva._rev || 0;
       hideLoading();
       return true;
@@ -4884,6 +4888,56 @@ function toggleTodosIngCat(abrir){
 }
 
 
+// ═══════════════════════════════════════════════════════════════════════
+// IDENTIFICADORES INTERNOS
+//
+// EL BUG QUE ESTO ARREGLA: el contador de ids (nextId) no se guardaba en
+// Firestore. Al recargar la página volvía a arrancar de cero, y el próximo
+// ingrediente recibía un id que YA existía. Con dos ingredientes compartiendo
+// id, el sistema encontraba siempre el primero: tildar el control de stock de
+// la zanahoria le cambiaba el tilde a la lechuga, y la zanahoria parecía rota.
+// Lo mismo pasaba al editar precios y al borrar.
+//
+// Ahora el id se calcula mirando lo que YA existe, no solo el contador. Aunque
+// el contador se pierda o venga mal, no puede repetir.
+// ═══════════════════════════════════════════════════════════════════════
+function proximoId(prefijo, clave, ...colecciones){
+  if(!demoData.nextId) demoData.nextId = {};
+  const re = new RegExp('^'+prefijo+'(\\d+)$');
+  let max = 0;
+  colecciones.forEach(col => (col||[]).forEach(x => {
+    const m = re.exec(String((x&&x.id)||''));
+    if(m) max = Math.max(max, +m[1]);
+  }));
+  const n = Math.max(max + 1, Number(demoData.nextId[clave]) || 1);
+  demoData.nextId[clave] = n + 1;
+  return prefijo + n;
+}
+
+// Red de seguridad al abrir una operación: si quedaron ids repetidos de antes,
+// se les da uno nuevo a los duplicados y se arrastra el cambio a donde se los
+// referencia. Se avisa por consola para saber que pasó.
+function repararIdsDuplicados(){
+  const arreglos = [];
+  const revisar = (col, prefijo, clave) => {
+    const vistos = new Set();
+    (col||[]).forEach(x => {
+      if(!x) return;
+      const id = String(x.id||'');
+      if(!id || vistos.has(id)){
+        const nuevo = proximoId(prefijo, clave, col);
+        arreglos.push((x.nombre||'?')+': '+(id||'sin id')+' → '+nuevo);
+        x.id = nuevo;
+        vistos.add(nuevo);
+      } else vistos.add(id);
+    });
+  };
+  revisar(demoData.ingredientes, 'i', 'i');
+  revisar(demoData.recetas,      'r', 'r');
+  if(arreglos.length) console.warn('[Provatio] ids repetidos corregidos:\n' + arreglos.join('\n'));
+  return arreglos.length;
+}
+
 function updateIng(id,field,val){
   const i = demoData.ingredientes.find(i=>i.id===id);
   if(i){
@@ -5257,7 +5311,7 @@ function guardarNuevoIng(idExistente){
   const _selProv = document.getElementById('ni-proveedor');
   const nuevo = {
     ..._previo,
-    id: idExistente || 'i'+demoData.nextId.i++,
+    id: idExistente || proximoId('i','i',demoData.ingredientes),
     nombre,
     cat: document.getElementById('ni-cat').value,
     unidadTipo,
@@ -5666,7 +5720,7 @@ function guardarNuevaMermaMulti(){
   const tecnica = document.getElementById('nmf-tecnica').value.trim();
   if(!proceso||!tecnica){ showToast('Completá proceso y técnica','error'); return; }
   demoData.mermas.push({
-    id: 'mf'+demoData.nextId.m++,
+    id: proximoId('mf','m',demoData.mermas),
     ingrediente: document.getElementById('nmf-ing').value,
     estado: document.getElementById('nmf-estado').value,
     proceso,
@@ -8003,7 +8057,7 @@ function sumarProductoDelCP(prodId){
   if(!cats.includes(CAT_CP)) cats.push(CAT_CP);
 
   demoData.ingredientes.push({
-    id: 'i'+demoData.nextId.i++,
+    id: proximoId('i','i',demoData.ingredientes),
     nombre,
     cat: CAT_CP,
     unidadTipo: 'kg',
@@ -12743,7 +12797,7 @@ function aplicarCartaLeida(){
     const clave = _n(i.nombre);
     if(!clave || idPorNombre.has(clave)) return;    // vacío o ya lo tenía: no lo piso
     if(i.cat && !cats.includes(i.cat)) cats.push(i.cat);
-    const id = 'i'+demoData.nextId.i++;
+    const id = proximoId('i','i',demoData.ingredientes);
     demoData.ingredientes.push({
       id, nombre:i.nombre, cat:i.cat,
       unidadTipo: i.unidadMedida==='unidades'?'unidades':'kg',
@@ -12761,7 +12815,7 @@ function aplicarCartaLeida(){
     const clave = _n(m.ingrediente)+'|'+m.tecnica;
     if(!_n(m.ingrediente)) return;
     if(yaMerma.has(clave)) return;
-    demoData.mermas.push({ id:'mf'+demoData.nextId.m++, ingrediente:m.ingrediente, tecnica:m.tecnica, pct:m.pct, _estimado:true });
+    demoData.mermas.push({ id:proximoId('mf','m',demoData.mermas), ingrediente:m.ingrediente, tecnica:m.tecnica, pct:m.pct, _estimado:true });
     yaMerma.add(clave);
   });
 
@@ -12773,7 +12827,7 @@ function aplicarCartaLeida(){
       return ingId ? { ingId, tecnica:l.tecnica||'Sin merma', neto:+l.neto||0 } : null;
     }).filter(Boolean);
     demoData.recetas.push({
-      id: 'r'+demoData.nextId.r++, nombre:r.nombre, tipoServicio:r.tipoServicio||'Almuerzo',
+      id: proximoId('r','r',demoData.recetas), nombre:r.nombre, tipoServicio:r.tipoServicio||'Almuerzo',
       porciones:+r.porciones||1, precioVenta:+r.precioVenta||0, rendimientoG:0,
       ingredientes: items, opId: currentOpId, _estimado: true,
     });
@@ -13420,7 +13474,7 @@ function guardarNuevoCorte(){
   if(Math.abs(total-100)>1){ showToast(`Los % deben sumar 100 (actual: ${total}%)`, 'error'); return; }
   
   demoData.cortesEnteros.push({
-    id: 'c'+demoData.nextId.c++,
+    id: proximoId('c','c',demoData.cortesEnteros),
     ingredienteId: ing.id,
     nombre,
     partes
@@ -13493,7 +13547,7 @@ function confirmarCrearIngSubproducto(){
   if(existing){ showToast('Ya existe un ingrediente con ese nombre','error'); return; }
   
   demoData.ingredientes.push({
-    id: 'i'+demoData.nextId.i++,
+    id: proximoId('i','i',demoData.ingredientes),
     nombre,
     cat: document.getElementById('sub-cat').value,
     precio: +document.getElementById('sub-precio').value,
