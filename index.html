@@ -1413,6 +1413,7 @@ async function guardarEnFirestore(){
                     .filter(([,m]) => m && m.opId === currentOpId)),
         // Sin esto, al recargar el contador volvía a cero y los ids se repetían.
         nextId: demoData.nextId || {},
+        sdUltimo: (demoData.sdUltimo && demoData.sdUltimo.opId===currentOpId) ? demoData.sdUltimo : null,
       },
       _rev: (window._revLocal||0) + 1,
       _ultimoEditor: (currentUser && currentUser.email) || 'usuario',
@@ -1610,6 +1611,11 @@ async function cargarDesdeFirestore(uid){
       demoData.menusDia = opActiva._datos.menusDia || {};
       demoData.plantillasSD = opActiva._datos.plantillasSD || {};
       if(opActiva._datos.nextId) demoData.nextId = {...(demoData.nextId||{}), ...opActiva._datos.nextId};
+      demoData.sdUltimo = opActiva._datos.sdUltimo || null;
+      // Al cambiar de operación, el borrador en pantalla es de la anterior.
+      window._sdFecha = null; window._sdServicio = null;
+      window._sdLineasDraft = null; window._sdPaxDraft = null;
+      window._sdNotaDraft = null; window._sdHorasDraft = null;
       repararIdsDuplicados();
       window._revLocal = opActiva._rev || 0;
       hideLoading();
@@ -2111,7 +2117,8 @@ let demoData = {
   // Módulo Servicio diario / Rodaje
   serviciosDiarios: [],
   menusDia: {},
-  plantillasSD: {}
+  plantillasSD: {},
+  sdUltimo: null
 };
 
 // ── HELPERS ──
@@ -14087,6 +14094,32 @@ async function restablecerModalidades(){
 // tener repollo cargado no significa que hoy salió coleslaw. Se agregan a
 // mano una vez, se guardan como plantilla, y de ahí en más entran con un clic.
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// GUARDADO AUTOMÁTICO DEL SERVICIO EN CURSO
+//
+// EL BUG QUE ESTO ARREGLA: agregar un producto o escribir un peso solo tocaba
+// la memoria del navegador. Si no se apretaba "Guardar cierre", al recargar se
+// perdía todo. Y así no se trabaja: el pesado no es un momento, es un rato —
+// se va anotando entre otras tareas mientras se cocina la sopa del día
+// siguiente. La pantalla tiene que aguantar media tarde abierta.
+//
+// Ahora cada cambio se escribe en el menú del día y se sube a Firestore con un
+// respiro de dos segundos, para no mandar un pedido por cada tecla.
+// ═══════════════════════════════════════════════════════════════════════
+function _sdPersistirBorrador(){
+  const fecha = window._sdFecha || _sdFechaHoy();
+  const servicio = window._sdServicio || 'almuerzo';
+  setMenuDia(fecha, servicio, (window._sdLineasDraft||[]).map(l=>({...l})));
+  // Dónde estaba trabajando, para volver al mismo lugar después de recargar.
+  demoData.sdUltimo = { fecha, servicio,
+                        pax: window._sdPaxDraft, horas: window._sdHorasDraft,
+                        nota: window._sdNotaDraft, opId: currentOpId };
+  clearTimeout(window._sdGuardadoTimer);
+  window._sdGuardadoTimer = setTimeout(()=>{
+    if(typeof guardarEnFirestore==='function') guardarEnFirestore();
+  }, 2000);
+}
+
 function sdModalAgregarLinea(){
   const ings = (demoData.ingredientes||[]).slice()
     .sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||'')));
@@ -14203,9 +14236,7 @@ function sdAgregarLinea(){
 
   if(!window._sdLineasDraft) window._sdLineasDraft = [];
   window._sdLineasDraft.push(linea);
-  // Se guarda también en el menú del día para que no se pierda al recargar.
-  setMenuDia(window._sdFecha || _sdFechaHoy(), window._sdServicio || 'almuerzo',
-             window._sdLineasDraft.map(l=>({...l})));
+  _sdPersistirBorrador();
   closeModal();
   showToast('"'+linea.nombre+'" agregado','success');
   renderCierreServicio();
@@ -14217,15 +14248,14 @@ function sdQuitarLinea(idx){
   if(!l) return;
   if(!confirm('¿Sacar "'+l.nombre+'" del servicio de hoy?')) return;
   window._sdLineasDraft.splice(idx,1);
-  setMenuDia(window._sdFecha || _sdFechaHoy(), window._sdServicio || 'almuerzo',
-             window._sdLineasDraft.map(x=>({...x})));
+  _sdPersistirBorrador();
   renderCierreServicio();
 }
 
 function sdVaciarLineas(){
   if(!confirm('¿Vaciar todas las líneas del servicio de hoy? Los cierres ya guardados no se tocan.')) return;
   window._sdLineasDraft = [];
-  setMenuDia(window._sdFecha || _sdFechaHoy(), window._sdServicio || 'almuerzo', []);
+  _sdPersistirBorrador();
   renderCierreServicio();
 }
 
@@ -14234,6 +14264,12 @@ function renderCierreServicio(){
     setContent('Cierre de servicio', `<div class="alert alert-warn">Abrí una operación para cargar el cierre del día.</div>`);
     return;
   }
+  // Al recargar, volver al servicio y la fecha donde se estaba trabajando.
+  // Antes siempre caía en "Almuerzo" y las líneas cargadas en Salad bar
+  // parecían haberse perdido — estaban, pero guardadas en otro servicio.
+  const _ult = (demoData.sdUltimo && demoData.sdUltimo.opId===currentOpId) ? demoData.sdUltimo : null;
+  if(window._sdFecha == null && _ult && _ult.fecha) window._sdFecha = _ult.fecha;
+  if(window._sdServicio == null && _ult && _ult.servicio) window._sdServicio = _ult.servicio;
   const fecha = window._sdFecha || _sdFechaHoy();
   const servicio = window._sdServicio || 'almuerzo';
   let menu = getMenuDia(fecha, servicio);
@@ -14534,6 +14570,7 @@ function sdSetPax(v){
   window._sdPaxDraft = v;
   window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
   window._sdHorasDraft = document.getElementById('sd-horas')?.value || '';
+  _sdPersistirBorrador();
   renderCierreServicio();
 }
 // En la cocina se escribe con coma: "0,5" y no "0.5". Un campo numérico del
@@ -14554,6 +14591,7 @@ function sdUpdLinea(idx, campo, val){
   window._sdPaxDraft = document.getElementById('sd-pax')?.value || '';
   window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
   window._sdHorasDraft = document.getElementById('sd-horas')?.value || '';
+  _sdPersistirBorrador();
   renderCierreServicio();
 }
 function sdCargarEjemplo(){
