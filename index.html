@@ -4509,23 +4509,22 @@ async function renderDashboardAdmin(){
     const snap = await db.collection('usuarios').get();
     snap.forEach(d => cuentas.push({ uid:d.id, ...d.data() }));
     const emp = await db.collection('empresas').get();
+    // Se lee el RESUMEN, no las operaciones. Las operaciones son la cocina del
+    // cliente y están cerradas salvo que él habilite el soporte — así lo
+    // definen las reglas v6. El resumen tiene solo nombres y contadores, que es
+    // lo que este panel necesita.
     for(const e of emp.docs){
-      const ops = await db.collection('empresas').doc(e.id).collection('operaciones').get();
-      const lista = [];
-      ops.forEach(o => {
-        const dd = o.data() || {};
-        lista.push({
-          id: o.id,
-          nombre: dd.nombre || o.id,
-          tipo: dd.tipo || '',
-          // El resumen que se guarda con cada operación evita abrir el documento
-          // entero (que puede pesar 100 KB) solo para contar recetas.
-          recetas: (dd._meta && dd._meta.totalRecetas) || 0,
-          ingredientes: (dd._meta && dd._meta.totalIngredientes) || 0,
-          tocadaEn: (dd._ultimaEdicion) || null,
-        });
-      });
-      empresas.push({ id:e.id, ...(e.data()||{}), operaciones: lista });
+      let lista = [], sinResumen = false;
+      try{
+        const r = await db.collection('empresas').doc(e.id).collection('resumen').doc('publico').get();
+        if(r.exists){
+          lista = (r.data().operaciones || []).map(o => ({
+            id: o.id, nombre: o.nombre || o.id, tipo: o.tipo || '',
+            recetas: o.recetas || 0, ingredientes: o.ingredientes || 0,
+          }));
+        } else sinResumen = true;
+      }catch(_){ sinResumen = true; }
+      empresas.push({ id:e.id, ...(e.data()||{}), operaciones: lista, sinResumen });
     }
   }catch(err){
     setContent('Panel general',
@@ -4686,7 +4685,10 @@ async function renderDashboardAdmin(){
               const busca = ((e.nombre||'')+' '+(dueno.email||'')+' '+(dueno.displayName||'')+' '+(dueno.ciudad||'')).toLowerCase();
               return `<tr data-busca="${esc(busca)}">
                 <td><strong>${esc(e.nombre||e.id)}</strong>
-                  <div style="font-size:11px;color:var(--gris-2)">${e.operaciones.map(o=>esc(o.nombre)).join(' · ')||'sin operaciones'}</div></td>
+                  <div style="font-size:11px;color:var(--gris-2)">${
+                    e.operaciones.map(o=>esc(o.nombre)).join(' · ')
+                    || (e.sinResumen ? '<em>todavía sin datos — se completa cuando el cliente guarde</em>' : 'sin operaciones')
+                  }</div></td>
                 <td style="font-size:13px">${esc(dueno.displayName||dueno.email||'—')}
                   <div style="font-size:11px;color:var(--gris-2)">${esc(dueno.email||'')}</div></td>
                 <td style="text-align:right">${e.operaciones.length}</td>
@@ -11123,10 +11125,14 @@ async function renderAdminProvatio(){
     docs.forEach((d,i)=>{
       empInfo[empIds[i]] = (d && d.exists) ? d.data() : { nombre: '(empresa sin datos)' };
     });
-    // Traer las operaciones de cada empresa (para el onboarding: entrar a trabajarlas)
+    // Traer las operaciones de cada empresa (para el onboarding: entrar a trabajarlas).
+    // Desde las reglas v6 esto SOLO funciona si el cliente habilitó el soporte.
+    // Si no, no es un error: es el cliente ejerciendo su derecho a cerrar la
+    // puerta. Hay que mostrarlo como tal y no como una pantalla vacía.
     const opsSnaps = await Promise.all(empIds.map(id =>
-      db.collection('empresas').doc(id).collection('operaciones').get().catch(()=>null)));
+      db.collection('empresas').doc(id).collection('operaciones').get().catch(()=>'sin-acceso')));
     opsSnaps.forEach((snap,i)=>{
+      if(snap === 'sin-acceso'){ empOps[empIds[i]] = 'sin-acceso'; return; }
       const arr = [];
       if(snap) snap.forEach(o => arr.push({ id:o.id, nombre:(o.data().nombre)||o.id }));
       empOps[empIds[i]] = arr;
@@ -11193,7 +11199,14 @@ async function renderAdminProvatio(){
           <thead><tr><th>Persona</th><th>Operación</th><th>Registro</th><th>Estado</th><th></th></tr></thead>
           <tbody>${gente.map(c => filaPersona(c, c.uid===info.duenoUid ? 'dueno' : 'equipo')).join('')}</tbody>
         </table></div>
-        ${(empOps[eid]||[]).length ? `
+        ${empOps[eid] === 'sin-acceso' ? `
+        <div style="padding:12px 14px;border-top:1px solid var(--crema-2);background:#FAFAF7">
+          <div style="font-size:12px;color:var(--gris-2);line-height:1.5">
+            🔒 <strong>Este cliente no habilitó el acceso de soporte.</strong>
+            No podemos ver sus recetas ni sus costos. Si necesita ayuda, tiene que abrirlo
+            desde su Panel general — el interruptor es suyo y solo él lo maneja.
+          </div>
+        </div>` : ((empOps[eid]||[]).length ? `
         <div style="padding:12px 14px;border-top:1px solid var(--crema-2);background:#FAFAF7">
           <div style="font-size:11px;font-weight:700;color:var(--gris-2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Operaciones (entrar para onboarding)</div>
           ${(empOps[eid]||[]).map(o=>`
@@ -11201,7 +11214,7 @@ async function renderAdminProvatio(){
               <span style="font-size:13px">🍽 ${esc(o.nombre)}</span>
               <button class="btn btn-secondary btn-sm" onclick="abrirOperacionAdmin('${escJs(eid)}','${escJs(o.id)}')">Entrar →</button>
             </div>`).join('')}
-        </div>` : ''}
+        </div>` : '')}
       </div>`;
     }).join('');
 
