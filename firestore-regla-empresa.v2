@@ -1,11 +1,46 @@
 rules_version = '2';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PROVATIO — Reglas del modelo de empresa (versión 2)
+// PROVATIO — Reglas del modelo de empresa (versión 6)
 //
-// Cambio respecto de la versión anterior: se agrega la colección
-// "indiceEmails", que permite invitar a alguien buscándolo por su correo
-// sin necesidad de listar todos los usuarios del sistema.
+// DOS CAMBIOS GRANDES RESPECTO DE LA v5.
+//
+// ── 1. EL ACCESO DE PROVATIO A UN CLIENTE AHORA SE CONCEDE Y SE REVOCA ──
+//
+// En la v5, el admin de Provatio leía y escribía TODO de TODOS, siempre. Un
+// interruptor en la pantalla no alcanzaba: la regla lo dejaba entrar igual, y
+// cualquiera con la consola del navegador lo comprobaba en un minuto.
+//
+// Ahora el contenido de un cliente (recetas, costos, facturas, cierres) solo
+// se abre si el DUEÑO lo habilitó: el campo `soporteProvatio` del documento de
+// la empresa. Lo enciende y lo apaga él, nadie más.
+//
+// Esto no es solo prolijidad: es lo que permite decirle a un cliente "cuando
+// no me necesites más, me cerrás la puerta" y que sea verdad.
+//
+// ── 2. EL RESUMEN SE SEPARA DEL CONTENIDO ──
+//
+// Provatio necesita ver de cada cliente el nombre, cuántas operaciones tiene y
+// si está cargando datos. Eso es su propio negocio y no debería exigir permiso.
+// Pero como TODO el contenido vive en el campo _datos, en la v5 no se podía
+// leer un contador sin leer también las recetas y los costos.
+//
+// Se separa: `empresas/{id}/resumen/publico` guarda solo números y nombres, y
+// el equipo de Provatio lo lee siempre. El contenido queda del otro lado de la
+// puerta. Lo escribe la propia app del cliente cada vez que guarda.
+//
+// ── EL EQUIPO DE PROVATIO YA NO ESTÁ FIJO EN EL CÓDIGO ──
+//
+// Vive en `provatio/equipo`, campo `emails`. Así se suma o se saca gente sin
+// volver a publicar reglas. El mail fundador queda fijo igual, como piso: si
+// alguien edita mal ese documento, no se queda todo el mundo afuera.
+//
+// ── LO QUE ESTAS REGLAS NO HACEN ──
+//
+// No hay puerta trasera de emergencia. Si un cliente revoca el acceso y su base
+// se rompe, se entra por la consola de Firebase — donde queda registrado del
+// lado de Google y no depende de una excepción escondida acá. Es más honesto y
+// más difícil de abusar.
 // ═══════════════════════════════════════════════════════════════════════════
 
 service cloud.firestore {
@@ -14,50 +49,127 @@ service cloud.firestore {
     function autenticado() {
       return request.auth != null;
     }
+    function miEmail() {
+      return autenticado() && request.auth.token.email != null
+        ? request.auth.token.email.lower() : '';
+    }
+
+    // ── Equipo de la PLATAFORMA Provatio ──────────────────────────────────
+    // El fundador queda fijo como piso. El resto sale de provatio/equipo, que
+    // se edita desde la app sin tocar estas reglas.
+    function esEquipoProvatio() {
+      return autenticado() && (
+        miEmail() == 'elementosfood@gmail.com'
+        || (exists(/databases/$(database)/documents/provatio/equipo)
+            && miEmail() in get(/databases/$(database)/documents/provatio/equipo).data.get('emails', []))
+      );
+    }
+
+    // ── Consentimiento del cliente ────────────────────────────────────────
+    // El dueño enciende y apaga esto. Sin esto en true, el equipo de Provatio
+    // NO entra al contenido de la empresa.
+    function soporteHabilitado(empresaId) {
+      return exists(/databases/$(database)/documents/empresas/$(empresaId))
+        && get(/databases/$(database)/documents/empresas/$(empresaId))
+             .data.get('soporteProvatio', false) == true;
+    }
+    // Atajo: equipo de Provatio CON permiso vigente de este cliente.
+    function soporteAutorizado(empresaId) {
+      return esEquipoProvatio() && soporteHabilitado(empresaId);
+    }
 
     function fichaMiembro(empresaId) {
       return get(/databases/$(database)/documents/empresas/$(empresaId)/miembros/$(request.auth.uid)).data;
     }
-
     function esMiembroActivo(empresaId) {
       return autenticado()
         && exists(/databases/$(database)/documents/empresas/$(empresaId)/miembros/$(request.auth.uid))
         && fichaMiembro(empresaId).activo == true;
     }
-
     function esDueno(empresaId) {
       return esMiembroActivo(empresaId) && fichaMiembro(empresaId).rol == 'dueno';
     }
-
     function tieneAccesoAOperacion(empresaId, opId) {
       return esDueno(empresaId)
         || (esMiembroActivo(empresaId)
             && fichaMiembro(empresaId).operacionesAsignadas.hasAny([opId]));
     }
 
+    // ¿Este documento es la operación cabecera (el CP / la casa madre)?
+    function esCabeceraDoc() {
+      return resource.data.get('proveeAlGrupo', false) == true
+          || resource.data.get('tipo', '') == 'Centro de Producción'
+          || resource.data.get('tipo', '') == 'centroProduccion';
+    }
+
+    // ── Quiénes administran Provatio ──────────────────────────────────────
+    match /provatio/{doc} {
+      allow read:  if esEquipoProvatio();
+      // Solo el fundador suma o saca gente del equipo. Que un admin agregado
+      // pueda agregar a otros sería una puerta que se abre sola.
+      allow write: if miEmail() == 'elementosfood@gmail.com';
+    }
+
     match /empresas/{empresaId} {
-      allow read:   if esMiembroActivo(empresaId);
+      // El documento de la empresa lleva el nombre y a quién pertenece: eso el
+      // equipo de Provatio lo ve siempre, es su propia cartera de clientes.
+      allow read:   if esMiembroActivo(empresaId) || esEquipoProvatio();
       allow create: if autenticado();
-      allow update: if esDueno(empresaId);
-      allow delete: if false;
+
+      // Escribir la empresa: el dueño. El equipo de Provatio, solo con permiso
+      // vigente — Y NUNCA puede tocar el permiso mismo. Si pudiera, el
+      // interruptor del cliente no valdría nada.
+      allow update: if esDueno(empresaId)
+                    || (soporteAutorizado(empresaId)
+                        && !request.resource.data.diff(resource.data)
+                              .affectedKeys().hasAny(['soporteProvatio','duenoUid']));
+      allow delete: if esDueno(empresaId);
+
+      // ── RESUMEN PÚBLICO ──
+      // Solo números y nombres, nada de recetas ni costos. Lo escribe la app
+      // del cliente al guardar. Provatio lo lee siempre: es lo que alimenta el
+      // panel general sin tener que abrir la cocina de nadie.
+      match /resumen/{doc} {
+        allow read:  if esMiembroActivo(empresaId) || esEquipoProvatio();
+        allow write: if esMiembroActivo(empresaId);
+      }
 
       match /miembros/{uid} {
-        allow read:   if autenticado() && (request.auth.uid == uid || esDueno(empresaId));
+        allow read:   if autenticado() && (request.auth.uid == uid || esDueno(empresaId) || esEquipoProvatio());
         allow create: if autenticado() && (request.auth.uid == uid || esDueno(empresaId));
         allow update, delete: if esDueno(empresaId);
       }
 
       match /operaciones/{opId} {
-        allow read, write: if tieneAccesoAOperacion(empresaId, opId);
+
+        // Acá está el contenido de verdad. Provatio entra SOLO con permiso.
+        allow get: if tieneAccesoAOperacion(empresaId, opId)
+                   || (esMiembroActivo(empresaId) && esCabeceraDoc())
+                   || soporteAutorizado(empresaId);
+
+        allow list: if tieneAccesoAOperacion(empresaId, opId)
+                    || soporteAutorizado(empresaId);
+
+        allow create, delete: if tieneAccesoAOperacion(empresaId, opId)
+                              || soporteAutorizado(empresaId);
+
+        // Un miembro NO asignado al CP puede tocar EXCLUSIVAMENTE el buzón de
+        // pedidos. hasOnly() es la pieza clave: si la app intentara mandar el
+        // documento entero del CP, la escritura se rechaza.
+        allow update: if tieneAccesoAOperacion(empresaId, opId)
+                      || soporteAutorizado(empresaId)
+                      || (esMiembroActivo(empresaId)
+                          && esCabeceraDoc()
+                          && request.resource.data.diff(resource.data)
+                               .affectedKeys().hasOnly(['_pedidosSucursales']));
+
         match /{sub=**} {
-          allow read, write: if tieneAccesoAOperacion(empresaId, opId);
+          allow read, write: if tieneAccesoAOperacion(empresaId, opId)
+                             || soporteAutorizado(empresaId);
         }
       }
     }
 
-    // Índice de correos: sirve para encontrar a quién invitar.
-    // Guarda solamente el correo y el identificador de la cuenta; nunca
-    // datos de la operación. Cada persona da de alta el suyo.
     match /indiceEmails/{email} {
       allow read:   if autenticado();
       allow create, update: if autenticado()
@@ -66,15 +178,27 @@ service cloud.firestore {
     }
 
     match /usuarios/{uid} {
-      allow read:   if autenticado() && request.auth.uid == uid;
+      // Cada uno lee lo suyo; el equipo de Provatio lee todos: hace falta para
+      // activar cuentas y para saber quién dejó de entrar. Son datos de la
+      // relación comercial, no de la cocina del cliente.
+      allow read:   if autenticado() && (request.auth.uid == uid || esEquipoProvatio());
+
       allow create: if autenticado() && request.auth.uid == uid;
-      allow update: if autenticado()
-                    && (request.auth.uid == uid
-                        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['empresaId']));
+
+      // El propio usuario actualiza su perfil (sin auto-cambiarse el estado);
+      // el equipo de Provatio puede activar y suspender.
+      allow update: if autenticado() && (
+        (request.auth.uid == uid
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['estadoCuenta'])
+              || request.resource.data.estadoCuenta == resource.data.estadoCuenta))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['empresaId']))
+        || esEquipoProvatio()
+      );
+
       allow delete: if false;
 
       match /{documento=**} {
-        allow read, write: if autenticado() && request.auth.uid == uid;
+        allow read, write: if autenticado() && (request.auth.uid == uid || esEquipoProvatio());
       }
     }
 
@@ -83,3 +207,37 @@ service cloud.firestore {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOTAS
+//
+// 1. QUÉ VE PROVATIO SIN PERMISO: el nombre de la empresa, quién es el dueño,
+//    las cuentas registradas y el resumen (cuántas operaciones, cuántas
+//    recetas, cuándo se tocó por última vez). Nada de la cocina.
+//    QUÉ VE CON PERMISO: todo, con las mismas facultades que el dueño, para
+//    poder hacer un onboarding completo.
+//
+// 2. EL INTERRUPTOR NO SE LO PUEDE TOCAR PROVATIO. La regla de update de la
+//    empresa excluye explícitamente `soporteProvatio` y `duenoUid`. Aunque el
+//    permiso esté abierto, el equipo no puede prorrogárselo solo ni cambiar de
+//    dueño. Eso es del cliente.
+//
+// 3. SIN PUERTA TRASERA. Si el cliente revoca y algo se rompe, se entra por la
+//    consola de Firebase, donde queda registro del lado de Google. Una
+//    excepción escondida en las reglas sería más cómoda y mucho peor.
+//
+// 4. ANTES DE PUBLICAR: crear el documento `provatio/equipo` con un campo
+//    `emails` (arreglo de textos). Puede ir vacío: el mail fundador funciona
+//    igual porque está fijo en la regla.
+//
+// 5. LAS EMPRESAS EXISTENTES no tienen el campo `soporteProvatio`. Al no
+//    existir, cuenta como false: el acceso queda CERRADO hasta que cada dueño
+//    lo habilite. Es el comportamiento correcto, pero significa que para
+//    acompañar a un cliente hay que pedirle que encienda el interruptor.
+//
+// 6. LIMITACIÓN QUE SIGUE ABIERTA (viene de la v2): dentro de una empresa, las
+//    reglas controlan a qué operación entra cada uno, no qué campos ve, porque
+//    todo el contenido está en un único campo _datos. Un encargado puede leer
+//    el _datos completo del CP desde el navegador. Importa el día que haya un
+//    franquiciado.
+// ═══════════════════════════════════════════════════════════════════════════
