@@ -1469,6 +1469,7 @@ async function guardarEnFirestore(){
                     .filter(([,m]) => m && m.opId === currentOpId)),
         // Sin esto, al recargar el contador volvía a cero y los ids se repetían.
         nextId: demoData.nextId || {},
+        calendarioOp: demoData.calendarioOp || null,
         sdUltimo: (demoData.sdUltimo && demoData.sdUltimo.opId===currentOpId) ? demoData.sdUltimo : null,
       },
       _rev: (window._revLocal||0) + 1,
@@ -1669,6 +1670,7 @@ async function cargarDesdeFirestore(uid){
       demoData.menusDia = opActiva._datos.menusDia || {};
       demoData.plantillasSD = opActiva._datos.plantillasSD || {};
       if(opActiva._datos.nextId) demoData.nextId = {...(demoData.nextId||{}), ...opActiva._datos.nextId};
+      demoData.calendarioOp = opActiva._datos.calendarioOp || { diasNoLaborables:[], fechasNoLaborables:[] };
       demoData.sdUltimo = opActiva._datos.sdUltimo || null;
       // Al cambiar de operación, el borrador en pantalla es de la anterior.
       window._sdFecha = null; window._sdServicio = null;
@@ -2173,6 +2175,7 @@ let demoData = {
     // }
   ],
   // Módulo Servicio diario / Rodaje
+  calendarioOp: { diasNoLaborables:[], fechasNoLaborables:[] },
   serviciosDiarios: [],
   menusDia: {},
   plantillasSD: {},
@@ -3784,6 +3787,7 @@ function buildSidebar(rol){
       ...(tieneModalidad('cubiertoContinuo') ? [
         {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
         {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
+        {icon:'calendar', label:'Calendario de servicio', vista:'calendarioOp'},
       ] : []),
     ] : []),
     // ANÁLISIS — lo que se mira para decidir. Lista de compras y Pedido
@@ -3859,6 +3863,7 @@ function buildSidebar(rol){
     ...(tieneModalidad('cubiertoContinuo') ? [
       {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
       {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
+      {icon:'calendar', label:'Calendario de servicio', vista:'calendarioOp'},
     ] : []),
     // ANÁLISIS — lo que se mira para decidir. Lista de compras y Pedido
     // sugerido van juntos: son un solo circuito.
@@ -4125,6 +4130,7 @@ function navigate(vista, params={}){
     cierreServicio: renderCierreServicio,
     historialServicio: renderHistorialServicio,
     modalidades: renderModalidades,
+    calendarioOp: renderCalendarioOp,
   };
   
   if(vistas[vista]) vistas[vista](params);
@@ -4711,8 +4717,12 @@ async function renderDashboardAdmin(){
                   }</div></td>
                 <td style="font-size:13px">${esc(dueno.displayName||dueno.email||'—')}
                   <div style="font-size:11px;color:var(--gris-2)">${esc(dueno.email||'')}</div></td>
-                <td style="text-align:right">${e.operaciones.length}</td>
-                <td style="text-align:right">${recetas || '<span style="color:#B8540A">0</span>'}</td>
+                <td style="text-align:right">${e.sinResumen
+                  ? '<span style="color:var(--gris-3)" title="Todavía no entró con la versión nueva">—</span>'
+                  : e.operaciones.length}</td>
+                <td style="text-align:right">${e.sinResumen
+                  ? '<span style="color:var(--gris-3)">sin medir</span>'
+                  : (recetas || '<span style="color:#B8540A">0</span>')}</td>
                 <td style="font-size:12px;color:${color}">${_admHace(dueno.ultimoAcceso)}</td>
                 <td style="text-align:right;white-space:nowrap">
                   <button class="btn btn-secondary btn-sm" onclick="navigate('adminProvatio')">Gestionar</button>
@@ -14216,6 +14226,48 @@ const TIPOS_LINEA_SD = {
 };
 const LLENADO_BATEA = { llena:1, '3/4':0.75, media:0.5, poco:0.25 };
 
+// ═══════════════════════════════════════════════════════════════════════
+// CALENDARIO DE LA OPERACIÓN
+//
+// Por qué existe: en un rodaje que no trabaja sábado ni domingo, el sobrante
+// del viernes se tira ENTERO, y el de lunes a jueves se reutiliza casi todo.
+// No hay una merma diaria: hay una merma semanal concentrada en el último día.
+//
+// Si el sistema no sabe qué días no se trabaja, el descarte da casi cero cuatro
+// días seguidos y un pico el quinto, y el promedio de esos cinco no describe
+// nada. Sabiéndolo, se puede decir algo útil: "el viernes se tiran 4 kg — el
+// problema no es el viernes, es cuánto se produjo el jueves".
+// ═══════════════════════════════════════════════════════════════════════
+const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+function getCalendarioOp(){
+  if(!demoData.calendarioOp) demoData.calendarioOp = { diasNoLaborables:[], fechasNoLaborables:[] };
+  const c = demoData.calendarioOp;
+  if(!Array.isArray(c.diasNoLaborables)) c.diasNoLaborables = [];
+  if(!Array.isArray(c.fechasNoLaborables)) c.fechasNoLaborables = [];
+  return c;
+}
+function _sdEsNoLaborable(fechaISO){
+  const c = getCalendarioOp();
+  if(c.fechasNoLaborables.includes(fechaISO)) return true;
+  const d = new Date(fechaISO + 'T12:00:00');
+  return !isNaN(d) && c.diasNoLaborables.includes(d.getDay());
+}
+// ¿Es el último día antes de un parate? Ahí el sobrante ya no se recupera.
+// Devuelve cuántos días seguidos viene el parate, o 0 si mañana se trabaja.
+function _sdDiasHastaVolver(fechaISO){
+  const base = new Date(fechaISO + 'T12:00:00');
+  if(isNaN(base)) return 0;
+  let n = 0;
+  for(let i=1; i<=10; i++){
+    const d = new Date(base.getTime() + i*86400000);
+    const iso = d.toISOString().slice(0,10);
+    if(_sdEsNoLaborable(iso)) n++;
+    else break;
+  }
+  return n;
+}
+
 function _sdFechaHoy(){
   const d = new Date();
   const m = String(d.getMonth()+1).padStart(2,'0');
@@ -14262,7 +14314,7 @@ function sdGuardarPlantilla(){
       id: uid(), tipo: l.tipo, nombre: l.nombre, estacion: l.estacion,
       ingId: l.ingId, recetaId: l.recetaId, costoKg: l.costoKg,
       costoUnitario: l.costoUnitario, kgPorBateaLlena: l.kgPorBateaLlena,
-      aMesada:'', sobrante:'', reutilizado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'',
+      aMesada:'', sobrante:'', reutilizado:'', redestinado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'',
     })),
     creadaEn: Date.now(),
   };
@@ -14331,32 +14383,38 @@ function getCostoKgLineaSD(linea){
 function calcLineaServicio(linea, comensales){
   const pax = Number(comensales)||0;
   const out = { consumido:null, porPersona:null, costo:null, costoPersona:null, equivBateas:null,
-                reutilizado:null, descartado:null, costoDescartado:null, pctDescarte:null };
-  if(linea.tipo==='B' || linea.tipo==='C'){
+                reutilizado:null, redestinado:null, descartado:null,
+                costoDescartado:null, costoRedestinado:null, pctDescarte:null };
+  // Lo que vuelve tiene TRES destinos posibles y no valen lo mismo:
+  //   · vuelve al mismo servicio  → mantiene su valor, no se perdió nada
+  //   · va a otra preparación     → sigue siendo comida, pero ya no es lo que
+  //                                 compraste para eso (el clásico "a la sopa")
+  //   · se descarta               → pérdida real
+  // Con 200 cubiertos la diferencia entre los dos primeros es anecdótica. Con
+  // 3000 no: tapar sobreproducción con sopa todos los días es un problema que
+  // no se ve si los dos van al mismo casillero.
+  const _reparto = (usado, sobra, l) => {
+    const vuelve  = Math.max(0, Number(l.reutilizado)||0);
+    const otroUso = Math.max(0, Number(l.redestinado)||0);
+    const tope    = Math.min(vuelve + otroUso, sobra);
+    const escala  = (vuelve + otroUso) > 0 ? tope / (vuelve + otroUso) : 0;
+    return { vuelve: vuelve*escala, otroUso: otroUso*escala,
+             descartado: Math.max(0, sobra - tope) };
+  };
+  if(linea.tipo==='B' || linea.tipo==='C' || linea.tipo==='E'){
     const usado = Number(linea.aMesada)||0;
     const sobra = Number(linea.sobrante)||0;
-    const reuso = Math.min(Number(linea.reutilizado)||0, sobra);
-    out.consumido = Math.max(0, usado - sobra);
-    out.reutilizado = reuso;
-    out.descartado = Math.max(0, sobra - reuso);
-    if(pax>0) out.porPersona = (out.consumido * 1000) / pax;
-    const costoKg = getCostoKgLineaSD(linea);
-    out.costo = out.consumido * costoKg;
-    out.costoDescartado = out.descartado * costoKg;
-    if(usado>0) out.pctDescarte = (out.descartado / usado) * 100;
-    if(pax>0) out.costoPersona = out.costo / pax;
-  }
-  if(linea.tipo==='E'){
-    const usado = Number(linea.aMesada)||0;
-    const sobra = Number(linea.sobrante)||0;
-    const reuso = Math.min(Number(linea.reutilizado)||0, sobra);
-    out.consumido = Math.max(0, usado - sobra);
-    out.reutilizado = reuso;
-    out.descartado = Math.max(0, sobra - reuso);
-    if(pax>0) out.porPersona = out.consumido / pax;
-    const cu = Number(linea.costoUnitario)||0;
-    out.costo = out.consumido * cu;
-    out.costoDescartado = out.descartado * cu;
+    const r = _reparto(usado, sobra, linea);
+    out.consumido   = Math.max(0, usado - sobra);
+    out.reutilizado = r.vuelve;
+    out.redestinado = r.otroUso;
+    out.descartado  = r.descartado;
+    const esUnidad = linea.tipo === 'E';
+    if(pax>0) out.porPersona = esUnidad ? out.consumido/pax : (out.consumido*1000)/pax;
+    const precio = esUnidad ? (Number(linea.costoUnitario)||0) : getCostoKgLineaSD(linea);
+    out.costo            = out.consumido * precio;
+    out.costoDescartado  = out.descartado * precio;
+    out.costoRedestinado = out.redestinado * precio;
     if(usado>0) out.pctDescarte = (out.descartado / usado) * 100;
     if(pax>0) out.costoPersona = out.costo / pax;
   }
@@ -14610,7 +14668,7 @@ function sdAgregarLinea(){
   const t = document.getElementById('sdal-tipo').value;
   const est = (document.getElementById('sdal-est').value||'').trim() || 'Otros';
   const linea = { id: uid(), tipo:t, estacion:est,
-                  aMesada:'', sobrante:'', reutilizado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'' };
+                  aMesada:'', sobrante:'', reutilizado:'', redestinado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'' };
 
   if(t==='B'){
     const id = document.getElementById('sdal-ing').value;
@@ -14679,6 +14737,81 @@ function sdVaciarLineas(){
   renderCierreServicio();
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// PANTALLA · CALENDARIO DE LA OPERACIÓN
+// ═══════════════════════════════════════════════════════════════════════
+function renderCalendarioOp(){
+  const c = getCalendarioOp();
+  setContent('Calendario de la operación', `
+    <div class="alert alert-info">
+      Marcá los días que <strong>no hay servicio</strong>. Sirve para una cosa concreta:
+      el sobrante del último día antes de un parate <strong>no se recupera</strong>, se tira entero.
+      Sabiéndolo, el sistema lo avisa antes y no mezcla ese descarte con el de un día común.
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title">Días de la semana sin servicio</span></div>
+      <div class="card-body">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${DIAS_SEMANA.map((d,i)=>{
+            const on = c.diasNoLaborables.includes(i);
+            return `<button class="btn ${on?'btn-primary':'btn-secondary'} btn-sm"
+              onclick="calToggleDia(${i})">${d}</button>`;
+          }).join('')}
+        </div>
+        <div style="font-size:12px;color:var(--gris-2);margin-top:10px">
+          ${c.diasNoLaborables.length
+            ? 'Sin servicio: '+c.diasNoLaborables.map(i=>DIAS_SEMANA[i]).join(', ')+'.'
+            : 'Por ahora se trabaja todos los días.'}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Feriados y días sueltos</span></div>
+      <div class="card-body">
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+          <div class="form-group" style="margin:0">
+            <label>Fecha sin servicio</label>
+            <input type="date" id="cal-fecha">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="calAgregarFecha()">Agregar</button>
+        </div>
+        ${c.fechasNoLaborables.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${c.fechasNoLaborables.slice().sort().map(f=>`
+            <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--crema-2);border-radius:999px;font-size:13px">
+              ${new Date(f+'T12:00:00').toLocaleDateString('es-AR')}
+              <button class="btn btn-icon btn-sm" style="padding:0 4px" onclick="calQuitarFecha('${escJs(f)}')">✕</button>
+            </span>`).join('')}
+        </div>` : '<div style="font-size:13px;color:var(--gris-2)">Ninguno cargado.</div>'}
+      </div>
+    </div>
+  `);
+}
+function calToggleDia(i){
+  const c = getCalendarioOp();
+  const k = c.diasNoLaborables.indexOf(i);
+  if(k>=0) c.diasNoLaborables.splice(k,1); else c.diasNoLaborables.push(i);
+  c.diasNoLaborables.sort();
+  if(typeof guardarEnFirestore==='function') guardarEnFirestore();
+  renderCalendarioOp();
+}
+function calAgregarFecha(){
+  const f = document.getElementById('cal-fecha').value;
+  if(!f){ showToast('Elegí una fecha','error'); return; }
+  const c = getCalendarioOp();
+  if(c.fechasNoLaborables.includes(f)){ showToast('Esa fecha ya estaba','info'); return; }
+  c.fechasNoLaborables.push(f);
+  if(typeof guardarEnFirestore==='function') guardarEnFirestore();
+  renderCalendarioOp();
+}
+function calQuitarFecha(f){
+  const c = getCalendarioOp();
+  c.fechasNoLaborables = c.fechasNoLaborables.filter(x=>x!==f);
+  if(typeof guardarEnFirestore==='function') guardarEnFirestore();
+  renderCalendarioOp();
+}
+
 function renderCierreServicio(){
   if(!currentOpId){
     setContent('Cierre de servicio', `<div class="alert alert-warn">Abrí una operación para cargar el cierre del día.</div>`);
@@ -14742,7 +14875,7 @@ function renderCierreServicio(){
           <span style="display:flex;gap:8px;align-items:center"><span class="badge badge-gray">${esc(tipoNom)}</span>${quitar}</span>
         </div>
         <div class="card-body" style="padding:12px 14px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
             <div class="form-group" style="margin:0">
               <label>A mesada (kg)</label>
               <input type="text" inputmode="decimal" value="${l.aMesada??''}"
@@ -14754,9 +14887,14 @@ function renderCierreServicio(){
                 onchange="sdUpdLinea(${idx},'sobrante',this.value)">
             </div>
             <div class="form-group" style="margin:0">
-              <label>De eso, se reutiliza (kg)</label>
+              <label>Vuelve al servicio (kg)</label>
               <input type="text" inputmode="decimal" value="${l.reutilizado??''}"
                 onchange="sdUpdLinea(${idx},'reutilizado',this.value)" placeholder="0">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Va a otra preparación (kg)</label>
+              <input type="text" inputmode="decimal" value="${l.redestinado??''}"
+                onchange="sdUpdLinea(${idx},'redestinado',this.value)" placeholder="0">
             </div>
           </div>
           <div style="margin-top:10px;font-size:12px;color:var(--gris-2)">
@@ -14764,12 +14902,15 @@ function renderCierreServicio(){
             &nbsp;·&nbsp; ${calc.porPersona!=null?fmtD(calc.porPersona,0)+' g/persona':'g/persona: —'}
             &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
           </div>
+          ${calc.redestinado>0 ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
+            A otra preparación: <strong>${fmtD(calc.redestinado,2)} kg</strong>${calc.costoRedestinado?' · $'+fmt(calc.costoRedestinado):''}
+          </div>` : ''}
           ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#8B1A1A)">
             Se tira: <strong>${fmtD(calc.descartado,2)} kg</strong>
             ${calc.costoDescartado?' · $'+fmt(calc.costoDescartado):''}
             ${calc.pctDescarte!=null?' · '+fmtD(calc.pctDescarte,1)+'% de lo que sacaste':''}
-          </div>` : (calc.reutilizado>0 ? `<div style="margin-top:6px;font-size:12px;color:#2D6A4F">
-            Se recupera todo lo que volvió: ${fmtD(calc.reutilizado,2)} kg vuelven al stock
+          </div>` : ((calc.reutilizado>0||calc.redestinado>0) ? `<div style="margin-top:6px;font-size:12px;color:#2D6A4F">
+            No se tira nada: todo lo que volvió se aprovecha
           </div>` : '')}
         </div>
       </div>`;
@@ -14781,7 +14922,7 @@ function renderCierreServicio(){
           <span style="display:flex;gap:8px;align-items:center"><span class="badge badge-gray">Unidad</span>${quitar}</span>
         </div>
         <div class="card-body" style="padding:12px 14px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
             <div class="form-group" style="margin:0">
               <label>A mesada (u)</label>
               <input type="text" inputmode="decimal" step="1" min="0" value="${l.aMesada??''}"
@@ -14793,9 +14934,14 @@ function renderCierreServicio(){
                 onchange="sdUpdLinea(${idx},'sobrante',this.value)">
             </div>
             <div class="form-group" style="margin:0">
-              <label>De eso, se reutiliza (u)</label>
-              <input type="text" inputmode="decimal" step="1" min="0" value="${l.reutilizado??''}"
+              <label>Vuelve al servicio (u)</label>
+              <input type="text" inputmode="decimal" value="${l.reutilizado??''}"
                 onchange="sdUpdLinea(${idx},'reutilizado',this.value)" placeholder="0">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Va a otra preparación (u)</label>
+              <input type="text" inputmode="decimal" value="${l.redestinado??''}"
+                onchange="sdUpdLinea(${idx},'redestinado',this.value)" placeholder="0">
             </div>
           </div>
           <div style="margin-top:10px;font-size:12px;color:var(--gris-2)">
@@ -14803,6 +14949,9 @@ function renderCierreServicio(){
             &nbsp;·&nbsp; ${calc.porPersona!=null?fmtD(calc.porPersona,2)+' u/persona':'—'}
             &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
           </div>
+          ${calc.redestinado>0 ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
+            A otra preparación: <strong>${fmt(calc.redestinado)} u</strong>
+          </div>` : ''}
           ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#8B1A1A)">
             Se tira: <strong>${fmt(calc.descartado)} u</strong>
             ${calc.costoDescartado?' · $'+fmt(calc.costoDescartado):''}
@@ -14818,7 +14967,7 @@ function renderCierreServicio(){
           <span style="display:flex;gap:8px;align-items:center"><span class="badge badge-gray">Batea</span>${quitar}</span>
         </div>
         <div class="card-body" style="padding:12px 14px">
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
             <div class="form-group" style="margin:0">
               <label>Pedidas</label>
               <input type="text" inputmode="decimal" min="0" value="${l.pedidas??''}" onchange="sdUpdLinea(${idx},'pedidas',this.value)">
@@ -14872,9 +15021,20 @@ function renderCierreServicio(){
 
   setContent('Cierre de servicio', `
     <div class="alert alert-info">
-      Cargá <strong>lo que sacaste</strong>, <strong>lo que volvió</strong> y <strong>cuánto de eso se reutiliza</strong>.
+      Cargá <strong>lo que sacaste</strong>, <strong>lo que volvió</strong> y qué se hace con eso.
       El consumo por persona y la pérdida real se calculan solos.
     </div>
+    ${(()=>{
+      // Último día antes de un parate: lo que sobre hoy ya no se recupera.
+      // Sin este aviso, el cocinero produce el viernes como cualquier día.
+      const parate = _sdDiasHastaVolver(fecha);
+      if(!parate) return '';
+      return `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;line-height:1.55">
+        <strong>Último día antes de ${parate===1?'un día':parate+' días'} sin servicio.</strong>
+        Lo que sobre hoy no vuelve al circuito: se pierde entero.
+        Cargalo en <em>Se tira</em>, no en <em>Vuelve al servicio</em>.
+      </div>`;
+    })()}
     <div class="card" style="margin-bottom:16px">
       <div class="card-body">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
@@ -15006,7 +15166,7 @@ function _sdNumero(v){
 function sdUpdLinea(idx, campo, val){
   if(!window._sdLineasDraft) return;
   if(campo==='aMesada' || campo==='sobrante' || campo==='reutilizado'
-     || campo==='pedidas' || campo==='recibidas') val = _sdNumero(val);
+     || campo==='redestinado' || campo==='pedidas' || campo==='recibidas') val = _sdNumero(val);
   window._sdLineasDraft[idx][campo] = val;
   window._sdPaxDraft = document.getElementById('sd-pax')?.value || '';
   window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
@@ -15045,8 +15205,9 @@ function sdGuardarCierre(){
         showToast('En "'+l.nombre+'" lo que volvió no puede ser mayor que lo que sacaste','error');
         return;
       }
-      if(l.reutilizado!=='' && l.reutilizado!=null && Number(l.reutilizado) > Number(l.sobrante)){
-        showToast('En "'+l.nombre+'" no podés reutilizar más de lo que volvió','error');
+      const _aprov = (Number(l.reutilizado)||0) + (Number(l.redestinado)||0);
+      if(_aprov > Number(l.sobrante) + 0.0001){
+        showToast('En "'+l.nombre+'" lo que se aprovecha no puede superar lo que volvió','error');
         return;
       }
     }
@@ -15062,6 +15223,9 @@ function sdGuardarCierre(){
     fecha, servicio,
     comensales: Number(comensales)||0,
     horasJornada: Number(horasJornada)||0,
+    // Cuántos días de parate arrancan al día siguiente. El descarte de un día
+    // así no se puede promediar con el de un martes cualquiera.
+    diasDeParateDespues: _sdDiasHastaVolver(fecha),
     nota,
     lineas: lineas.map(l => {
       const c = calcLineaServicio(l, Number(comensales)||0);
