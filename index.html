@@ -13850,6 +13850,16 @@ function getPlantillasSD(){
 function sdGuardarPlantilla(){
   const lineas = window._sdLineasDraft || [];
   if(!lineas.length){ showToast('No hay líneas para guardar como plantilla','error'); return; }
+  // Si quedaron repetidos de antes, NO se llevan a la plantilla: se arrastrarían
+  // todos los días y el consumo saldría duplicado siempre.
+  const _vistos = new Set(), _rep = [];
+  const _limpias = lineas.filter(l => {
+    const k = l.ingId || l.recetaId || _sinPlural(l.nombre||'');
+    if(_vistos.has(k)){ _rep.push(l.nombre); return false; }
+    _vistos.add(k); return true;
+  });
+  if(_rep.length && !confirm('Hay productos repetidos: '+[...new Set(_rep)].join(', ')
+      +'.\n\nSe guarda uno solo de cada uno. ¿Seguimos?')) return;
   const nom = prompt('Nombre de la plantilla (ej: Salad bar fijo, Barra):',
                      window._sdServicio ? ('Plantilla '+window._sdServicio) : 'Plantilla');
   if(!nom || !nom.trim()) return;
@@ -13859,7 +13869,7 @@ function sdGuardarPlantilla(){
     id: clave, opId: currentOpId, nombre: nom.trim(),
     servicio: window._sdServicio || '',
     // Se guarda la estructura, no los números del día.
-    lineas: lineas.map(l => ({
+    lineas: _limpias.map(l => ({
       id: uid(), tipo: l.tipo, nombre: l.nombre, estacion: l.estacion,
       ingId: l.ingId, recetaId: l.recetaId, costoKg: l.costoKg,
       costoUnitario: l.costoUnitario, kgPorBateaLlena: l.kgPorBateaLlena,
@@ -13875,8 +13885,15 @@ function sdAplicarPlantilla(id){
   if(!id) return;
   const pl = (demoData.plantillasSD||{})[id];
   if(!pl){ showToast('No encontré esa plantilla','error'); return; }
+  const _actual = window._sdLineasDraft || [];
+  if(_actual.length && !confirm(
+      'Ya hay '+_actual.length+' producto(s) en este servicio.\n\n'
+    + 'Cargar "'+pl.nombre+'" los reemplaza por sus '+pl.lineas.length+' líneas '
+    + 'y se pierden los pesos escritos.\n\n¿Seguimos?')){
+    return;
+  }
   window._sdLineasDraft = pl.lineas.map(l => ({...l, id: uid()}));
-  setMenuDia(window._sdFecha || _sdFechaHoy(), window._sdServicio || 'almuerzo', window._sdLineasDraft.map(l=>({...l})));
+  _sdPersistirBorrador();
   showToast(pl.lineas.length+' líneas cargadas desde "'+pl.nombre+'"','success');
   renderCierreServicio();
 }
@@ -14235,6 +14252,20 @@ function sdAgregarLinea(){
   }
 
   if(!window._sdLineasDraft) window._sdLineasDraft = [];
+
+  // Poka-yoke: el mismo producto NO puede estar dos veces en el mismo servicio.
+  // No es solo desprolijo: si se pesa la berenjena en dos renglones, el sistema
+  // suma los dos y cuenta el doble de consumo. El gramaje por persona sale mal
+  // y no hay manera de darse cuenta después.
+  const _yaEsta = window._sdLineasDraft.find(l =>
+    (linea.ingId    && l.ingId    === linea.ingId) ||
+    (linea.recetaId && l.recetaId === linea.recetaId) ||
+    (!linea.ingId && !linea.recetaId && _mismoNombreIng(l.nombre, linea.nombre)));
+  if(_yaEsta){
+    showToast('"'+_yaEsta.nombre+'" ya está en este servicio — cargá el peso en el renglón que ya tenés','error');
+    return;
+  }
+
   window._sdLineasDraft.push(linea);
   _sdPersistirBorrador();
   closeModal();
