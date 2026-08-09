@@ -2871,6 +2871,10 @@ async function cargarUsuarioFirebase(firebaseUser){
     
     // Luego cargar datos reales desde Firestore (asíncrono)
     const tieneDatos = await cargarDesdeFirestore(firebaseUser.uid);
+    // El resumen se refresca también al entrar, no solo al guardar. Si no,
+    // un cliente que abre la app y no toca nada figuraba en cero en el panel
+    // de Provatio — y desde las reglas v6 no hay forma de ir a mirar.
+    if(tieneDatos) actualizarResumenEmpresa();
     navigate('dashboard');
     if(tieneDatos){
       showToast('Datos cargados desde la nube', 'success');
@@ -4545,7 +4549,10 @@ async function renderDashboardAdmin(){
   const trabadas = clientes.filter(c => {
     if(c.estadoCuenta !== 'activa') return false;
     const emp = empresas.find(e => e.id === c.empresaId);
-    const sinNada = !emp || !emp.operaciones.length
+    // Si la empresa todavía no escribió su resumen, NO sabemos si cargó o no.
+    // Marcarla como trabada sería acusar sin datos.
+    if(!emp || emp.sinResumen) return false;
+    const sinNada = !emp.operaciones.length
                   || emp.operaciones.every(o => !o.recetas && !o.ingredientes);
     const d = _admDias(c.fechaRegistro);
     return sinNada && d !== null && d >= ADM_DIAS_TRABADA;
@@ -4563,9 +4570,14 @@ async function renderDashboardAdmin(){
   // cuánta gente se registra, es cuánta llega a cargar su primera receta.
   const registrados = clientes.length;
   const activados   = clientes.filter(c => c.estadoCuenta === 'activa').length;
-  const conDatos    = empresas.filter(e =>
+  // Un cero dicho con confianza es peor que un "no sé" honesto. Las empresas
+  // sin resumen todavía no se pueden contar: no es que tengan cero recetas, es
+  // que su app nunca escribió el resumen. Se cuentan aparte.
+  const conResumen  = empresas.filter(e => !e.sinResumen);
+  const sinMedir    = empresas.length - conResumen.length;
+  const conDatos    = conResumen.filter(e =>
                         e.operaciones.some(o => o.recetas > 0 || o.ingredientes > 0)).length;
-  const totalOps    = empresas.reduce((a,e) => a + e.operaciones.length, 0);
+  const totalOps    = conResumen.reduce((a,e) => a + e.operaciones.length, 0);
   const pct = (n,d) => d>0 ? Math.round(n*100/d) : 0;
 
   const bloqueAccion = (titulo, items, color, cuerpo) => !items.length ? '' : `
@@ -4624,7 +4636,9 @@ async function renderDashboardAdmin(){
         <div style="display:flex;gap:0;align-items:stretch;flex-wrap:wrap">
           ${[['Se registraron', registrados, ''],
              ['Las activaste', activados, pct(activados,registrados)+'% de los registrados'],
-             ['Cargaron datos', conDatos, pct(conDatos,activados)+'% de los activados']]
+             ['Cargaron datos', conResumen.length ? conDatos : '—',
+               conResumen.length ? pct(conDatos,conResumen.length)+' % de las '+conResumen.length+' medidas'
+                                 : 'todavía sin medir']]
             .map(([lbl,val,sub],i)=>`
             <div style="flex:1;min-width:130px;padding:12px 16px;${i?'border-left:1px solid var(--crema-2)':''}">
               <div class="metric-label">${lbl}</div>
@@ -4632,8 +4646,12 @@ async function renderDashboardAdmin(){
               <div class="metric-sub">${sub}</div>
             </div>`).join('')}
         </div>
-        ${activados>0 && conDatos < activados ? `<div style="font-size:12px;color:#6B4A08;margin-top:12px;padding-top:12px;border-top:1px solid var(--crema-2)">
-          <strong>${activados-conDatos}</strong> cuenta(s) activada(s) que todavía no cargaron nada.
+        ${sinMedir > 0 ? `<div style="font-size:12px;color:var(--gris-2);margin-top:12px;padding-top:12px;border-top:1px solid var(--crema-2)">
+          <strong>${sinMedir}</strong> empresa(s) todavía sin medir: su resumen se escribe la próxima vez que entren.
+          Hasta entonces no sabemos qué cargaron — y no vamos a mirar adentro para averiguarlo.
+        </div>` : ''}
+        ${conResumen.length && conDatos < conResumen.length ? `<div style="font-size:12px;color:#6B4A08;margin-top:12px;padding-top:12px;border-top:1px solid var(--crema-2)">
+          <strong>${conResumen.length-conDatos}</strong> empresa(s) medida(s) que todavía no cargaron nada.
           Ahí está la fuga — el lector de carta existe justamente para eso.
         </div>` : ''}
       </div>
@@ -4647,8 +4665,10 @@ async function renderDashboardAdmin(){
       </div>
       <div class="metric">
         <div class="metric-label">Operaciones</div>
-        <div class="metric-value">${totalOps}</div>
-        <div class="metric-sub">${empresas.length ? fmtD(totalOps/empresas.length,1)+' por empresa' : '—'}</div>
+        <div class="metric-value">${conResumen.length ? totalOps : '—'}</div>
+        <div class="metric-sub">${conResumen.length
+          ? fmtD(totalOps/conResumen.length,1)+' por empresa'+(sinMedir?' · '+sinMedir+' sin medir':'')
+          : 'todavía sin medir'}</div>
       </div>
       <div class="metric">
         <div class="metric-label">Personas con acceso</div>
