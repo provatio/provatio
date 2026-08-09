@@ -3089,6 +3089,20 @@ function initApp(user){
     return;
   }
   
+  // ── HUELLA DE USO ──────────────────────────────────────────────────
+  // Se anota cuándo entró por última vez y cuántas veces entró. Sin este dato
+  // no hay forma de saber quién dejó de usar Provatio: un cliente que no entra
+  // hace veinte días ya se fue, solo que todavía no lo dijo.
+  // Es lo mínimo indispensable — no se registra qué hizo ni qué miró.
+  try{
+    if(user && user.uid && typeof db!=='undefined'){
+      db.collection('usuarios').doc(user.uid).set({
+        ultimoAcceso: new Date().toISOString(),
+        vecesQueEntro: (Number(user.vecesQueEntro)||0) + 1,
+      }, {merge:true}).catch(()=>{});
+    }
+  }catch(_){}
+
   const appEl = document.getElementById('app');
   if(appEl) appEl.style.display = 'flex';
   
@@ -3632,7 +3646,9 @@ function buildSidebar(rol){
   // veía: la pantalla de Equipo existía sin puerta de entrada, y no tenía cómo
   // dar de alta a su encargado. Ahora acompaña a la operación.
   const _itemsCuenta = [
-    ...(puedeGestionarUsuarios() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
+    // "Equipo y accesos" es el equipo de UNA empresa. En la barra del admin de
+    // la plataforma no corresponde: ahí se gestiona desde Admin Provatio.
+    ...(puedeGestionarUsuarios() && !esAdminProvatio() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
     ...(esAdminProvatio() ? [{icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'}] : []),
   ];
   const seccionCuenta = _itemsCuenta.length ? [{section:'Cuenta'}, ..._itemsCuenta] : [];
@@ -4061,7 +4077,10 @@ function renderDashboard(){
      && !Object.keys(demoData.operaciones||{}).length){
     renderArranque(); return;
   }
-  if(currentUser && currentUser.rol === 'admin') renderDashboardAdmin();
+  // Se pregunta si es del equipo Provatio, NO por el campo 'rol'. Ese campo
+  // quedó mal escrito en cuentas viejas y las nuevas nacen con 'dueno': si un
+  // cliente tuviera 'admin' de arrastre, veía el panel de la plataforma.
+  if(esAdminProvatio()) renderDashboardAdmin();
   else renderDashboardOperacion();
 }
 
@@ -4265,129 +4284,264 @@ function opStats(opId){
 }
 
 // ── DASHBOARD ADMIN — panel general de clientes/operaciones ──
-function renderDashboardAdmin(){
-  const ops = Object.values(demoData.operaciones);
-  const statsPorOp = ops.map(op=>({op, s: opStats(op.id)}));
-  const totalRecetas = statsPorOp.reduce((a,x)=>a+x.s.total,0);
-  const ingsSinPrecio = demoData.ingredientes.filter(i=>!i.precio||i.precio<=0);
+// ═══════════════════════════════════════════════════════════════════════════
+// PANEL GENERAL DEL ADMIN DE PROVATIO
+//
+// Este panel contesta una pregunta distinta a la del panel de un cocinero.
+// El cocinero pregunta "¿cómo va mi cocina?". Acá la pregunta es:
+//     ¿QUÉ NECESITA MI ATENCIÓN HOY Y QUIÉN SE ME ESTÁ YENDO?
+//
+// Por eso NO van acá recetas totales, ingredientes ni food cost: esos números
+// son de una operación, y el admin de la plataforma no tiene operación. Antes
+// estaban y siempre daban cero.
+//
+// Con 200 clientes una lista completa no sirve: nadie mira 200 filas. Sirve el
+// triage — arriba lo que requiere acción hoy, después la salud del negocio, y
+// recién al final la lista buscable.
+//
+// CRITERIO: cada renglón termina en una acción concreta, no en un número.
+// ═══════════════════════════════════════════════════════════════════════════
 
-  // Alertas agregadas de todas las operaciones
-  const alerts = [];
-  if(ingsSinPrecio.length > 0) alerts.push(`⚠ ${ingsSinPrecio.length} ingrediente${ingsSinPrecio.length>1?'s':''} sin precio — los cálculos no serán correctos`);
-  statsPorOp.forEach(({op, s})=>{
-    if(s.sinPrecio > 0) alerts.push(`⚠ <strong>${esc(op.nombre)}</strong>: ${s.sinPrecio} receta${s.sinPrecio>1?'s':''} sin precio de venta`);
-    if(s.sinIngredientes > 0) alerts.push(`⚠ <strong>${esc(op.nombre)}</strong>: ${s.sinIngredientes} receta${s.sinIngredientes>1?'s':''} sin ingredientes`);
+const ADM_DIAS_TRABADA   = 7;    // registrada hace tanto y todavía sin armar nada
+const ADM_DIAS_AUSENTE   = 20;   // sin entrar hace tanto = probablemente se fue
+
+function _admDias(iso){
+  if(!iso) return null;
+  const d = new Date(iso);
+  if(isNaN(d)) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+function _admFecha(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d) ? '—' : d.toLocaleDateString('es-AR');
+}
+function _admHace(iso){
+  const d = _admDias(iso);
+  if(d===null) return 'nunca entró';
+  if(d===0) return 'hoy';
+  if(d===1) return 'ayer';
+  return 'hace ' + d + ' días';
+}
+
+async function renderDashboardAdmin(){
+  setContent('Panel general', '<div style="padding:24px;color:var(--gris-2)">Leyendo el universo Provatio…</div>');
+
+  let cuentas = [], empresas = [];
+  try{
+    const snap = await db.collection('usuarios').get();
+    snap.forEach(d => cuentas.push({ uid:d.id, ...d.data() }));
+    const emp = await db.collection('empresas').get();
+    for(const e of emp.docs){
+      const ops = await db.collection('empresas').doc(e.id).collection('operaciones').get();
+      const lista = [];
+      ops.forEach(o => {
+        const dd = o.data() || {};
+        lista.push({
+          id: o.id,
+          nombre: dd.nombre || o.id,
+          tipo: dd.tipo || '',
+          // El resumen que se guarda con cada operación evita abrir el documento
+          // entero (que puede pesar 100 KB) solo para contar recetas.
+          recetas: (dd._meta && dd._meta.totalRecetas) || 0,
+          ingredientes: (dd._meta && dd._meta.totalIngredientes) || 0,
+          tocadaEn: (dd._ultimaEdicion) || null,
+        });
+      });
+      empresas.push({ id:e.id, ...(e.data()||{}), operaciones: lista });
+    }
+  }catch(err){
+    setContent('Panel general',
+      `<div class="alert alert-error">No pude leer los registros: ${esc(err.message)}</div>`);
+    return;
+  }
+
+  const esAdminMail = c => ADMINS_PROVATIO.includes((c.email||'').toLowerCase());
+  const clientes = cuentas.filter(c => !esAdminMail(c));
+  const porUid = {}; clientes.forEach(c => porUid[c.uid] = c);
+
+  // ── TRIAGE: lo que requiere acción hoy ────────────────────────────────
+  const pendientes = clientes.filter(c =>
+    !c.empresaId && c.estadoCuenta !== 'activa' && c.estadoCuenta !== 'suspendida');
+
+  // Activadas pero que todavía no armaron nada: se registraron, entraron y ahí
+  // quedaron. Es donde se muere la mayoría de las implementaciones.
+  const trabadas = clientes.filter(c => {
+    if(c.estadoCuenta !== 'activa') return false;
+    const emp = empresas.find(e => e.id === c.empresaId);
+    const sinNada = !emp || !emp.operaciones.length
+                  || emp.operaciones.every(o => !o.recetas && !o.ingredientes);
+    const d = _admDias(c.fechaRegistro);
+    return sinNada && d !== null && d >= ADM_DIAS_TRABADA;
   });
 
-  setContent('Panel general', `
-    <div id="alerta-registros"></div>
-    ${alerts.length ? `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:16px;margin-bottom:20px">
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px">Acción requerida</div>
-      ${alerts.map(a=>`<div style="font-size:13px;margin-bottom:4px">${a}</div>`).join('')}
-    </div>` : ''}
+  // Los que dejaron de entrar. Con 200 clientes, esta es la lista más valiosa.
+  const ausentes = clientes.filter(c => {
+    if(c.estadoCuenta === 'suspendida') return false;
+    const d = _admDias(c.ultimoAcceso);
+    return d !== null && d >= ADM_DIAS_AUSENTE;
+  }).sort((a,b) => _admDias(b.ultimoAcceso) - _admDias(a.ultimoAcceso));
 
-    <div class="metric-grid">
+  // ── ADOPCIÓN: el termómetro real del producto ─────────────────────────
+  // El cuello de botella del mercado es la carga inicial. Lo que importa no es
+  // cuánta gente se registra, es cuánta llega a cargar su primera receta.
+  const registrados = clientes.length;
+  const activados   = clientes.filter(c => c.estadoCuenta === 'activa').length;
+  const conDatos    = empresas.filter(e =>
+                        e.operaciones.some(o => o.recetas > 0 || o.ingredientes > 0)).length;
+  const totalOps    = empresas.reduce((a,e) => a + e.operaciones.length, 0);
+  const pct = (n,d) => d>0 ? Math.round(n*100/d) : 0;
+
+  const bloqueAccion = (titulo, items, color, cuerpo) => !items.length ? '' : `
+    <div style="background:${color.fondo};color:${color.texto};border:1px solid ${color.borde};
+                border-radius:10px;padding:16px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:10px">${titulo} (${items.length})</div>
+      ${cuerpo}
+    </div>`;
+
+  const AMBAR = {fondo:'#FDF0D0', texto:'#6B4A08', borde:'#D4B870'};
+  const ROJO  = {fondo:'#FBEAE7', texto:'#7B2D1E', borde:'#E0A99B'};
+  const GRIS  = {fondo:'var(--crema)', texto:'var(--gris-1)', borde:'var(--crema-2)'};
+
+  setContent('Panel general', `
+    ${(!pendientes.length && !trabadas.length && !ausentes.length) ? `
+      <div style="background:#E8EFE0;color:#2D5016;border:1px solid #A9D8B2;border-radius:10px;padding:16px;margin-bottom:20px">
+        <strong>No hay nada pendiente.</strong> Ninguna cuenta esperando activación, ninguna trabada y ninguna ausente.
+      </div>` : ''}
+
+    ${bloqueAccion('Esperando que las actives', pendientes, AMBAR,
+      pendientes.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+        <div style="font-size:13px">
+          <strong>${esc(c.displayName || c.email || c.uid)}</strong>
+          <span style="opacity:.75"> · ${esc(c.email||'')}</span>
+          <div style="font-size:11px;opacity:.75">${esc(c.tipoOperacion||'sin tipo')}${c.ciudad?' · '+esc(c.ciudad):''} · se registró ${_admHace(c.fechaRegistro)}</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="cambiarEstadoCuenta('${escJs(c.uid)}','activa')">✓ Activar</button>
+      </div>`).join(''))}
+
+    ${bloqueAccion('Activadas pero sin arrancar', trabadas, AMBAR,
+      `<div style="font-size:12px;margin-bottom:10px">Entraron y no cargaron nada. Acá es donde se pierde un cliente: si la carga inicial no arranca, no vuelve.</div>` +
+      trabadas.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+        <div style="font-size:13px">
+          <strong>${esc(c.displayName || c.email || c.uid)}</strong>
+          <div style="font-size:11px;opacity:.75">${esc(c.email||'')} · registrada ${_admHace(c.fechaRegistro)} · última vez ${_admHace(c.ultimoAcceso)}</div>
+        </div>
+        <a class="btn btn-secondary btn-sm" href="mailto:${esc(c.email||'')}?subject=${encodeURIComponent('¿Te damos una mano para arrancar con Provatio?')}">Escribirle</a>
+      </div>`).join(''))}
+
+    ${bloqueAccion(`Sin entrar hace más de ${ADM_DIAS_AUSENTE} días`, ausentes, ROJO,
+      ausentes.slice(0,12).map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+        <div style="font-size:13px">
+          <strong>${esc(c.displayName || c.email || c.uid)}</strong>
+          <div style="font-size:11px;opacity:.75">${esc(c.email||'')} · ${_admHace(c.ultimoAcceso)}</div>
+        </div>
+        <a class="btn btn-secondary btn-sm" href="mailto:${esc(c.email||'')}">Escribirle</a>
+      </div>`).join('') + (ausentes.length>12 ? `<div style="font-size:12px;margin-top:8px;opacity:.75">y ${ausentes.length-12} más</div>` : ''))}
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header"><span class="card-title">Adopción</span></div>
+      <div class="card-body">
+        <div style="font-size:12px;color:var(--gris-2);margin-bottom:14px">
+          El cuello de botella del mercado no es el software, es la carga inicial.
+          Lo que importa no es cuánta gente se registra: es cuánta llega a cargar su primera receta.
+        </div>
+        <div style="display:flex;gap:0;align-items:stretch;flex-wrap:wrap">
+          ${[['Se registraron', registrados, ''],
+             ['Las activaste', activados, pct(activados,registrados)+'% de los registrados'],
+             ['Cargaron datos', conDatos, pct(conDatos,activados)+'% de los activados']]
+            .map(([lbl,val,sub],i)=>`
+            <div style="flex:1;min-width:130px;padding:12px 16px;${i?'border-left:1px solid var(--crema-2)':''}">
+              <div class="metric-label">${lbl}</div>
+              <div style="font-size:26px;font-weight:700;line-height:1.2">${val}</div>
+              <div class="metric-sub">${sub}</div>
+            </div>`).join('')}
+        </div>
+        ${activados>0 && conDatos < activados ? `<div style="font-size:12px;color:#6B4A08;margin-top:12px;padding-top:12px;border-top:1px solid var(--crema-2)">
+          <strong>${activados-conDatos}</strong> cuenta(s) activada(s) que todavía no cargaron nada.
+          Ahí está la fuga — el lector de carta existe justamente para eso.
+        </div>` : ''}
+      </div>
+    </div>
+
+    <div class="metric-grid" style="margin-bottom:20px">
       <div class="metric">
-        <div class="metric-label">Operaciones activas</div>
-        <div class="metric-value">${ops.length}</div>
-        <div class="metric-sub">clientes en gestión</div>
+        <div class="metric-label">Empresas</div>
+        <div class="metric-value">${empresas.length}</div>
+        <div class="metric-sub">clientes en el universo Provatio</div>
       </div>
       <div class="metric">
-        <div class="metric-label">Recetas totales</div>
-        <div class="metric-value">${totalRecetas}</div>
-        <div class="metric-sub">en todas las operaciones</div>
+        <div class="metric-label">Operaciones</div>
+        <div class="metric-value">${totalOps}</div>
+        <div class="metric-sub">${empresas.length ? fmtD(totalOps/empresas.length,1)+' por empresa' : '—'}</div>
       </div>
       <div class="metric">
-        <div class="metric-label">Ingredientes</div>
-        <div class="metric-value">${demoData.ingredientes.length}</div>
-        <div class="metric-sub">${ingsSinPrecio.length ? ingsSinPrecio.length+' sin precio' : 'con precio actualizado'}</div>
+        <div class="metric-label">Personas con acceso</div>
+        <div class="metric-value">${clientes.length}</div>
+        <div class="metric-sub">dueños y equipos</div>
       </div>
       <div class="metric">
-        <div class="metric-label">Alertas pendientes</div>
-        <div class="metric-value" style="color:${alerts.length?'var(--rojo, #A33)':'inherit'}">${alerts.length}</div>
-        <div class="metric-sub">${alerts.length ? 'requieren atención' : 'todo en orden'}</div>
+        <div class="metric-label">Entraron esta semana</div>
+        <div class="metric-value">${clientes.filter(c => { const d=_admDias(c.ultimoAcceso); return d!==null && d<=7; }).length}</div>
+        <div class="metric-sub">de ${clientes.length} personas</div>
       </div>
     </div>
 
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Operaciones / Clientes</span>
-        <button class="btn btn-primary btn-sm" onclick="modalNuevaOperacion()">+ Nueva operación</button>
+        <span class="card-title">Clientes</span>
+        <input type="text" id="adm-buscar" placeholder="Buscar por nombre, mail o ciudad…"
+               oninput="admFiltrarClientes(this.value)" style="max-width:280px">
       </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Operación</th><th>Tipo</th>
+            <th>Empresa</th><th>Dueño</th>
+            <th style="text-align:right">Ops.</th>
             <th style="text-align:right">Recetas</th>
-            <th style="text-align:right">% costo prom.</th>
-            <th>Salud</th><th></th>
+            <th>Última vez</th><th></th>
           </tr></thead>
-          <tbody>
-            ${statsPorOp.length ? statsPorOp.map(({op, s})=>`<tr style="cursor:pointer" onclick="abrirOperacion('${escJs(op.id)}')">
-              <td>
-                <strong>${esc(op.nombre)}</strong>
-                <div style="font-size:11px;color:var(--gris-2);margin-top:2px">${op.responsable || '<span style="color:#B8860B">Sin contacto — cargalo en Clientes</span>'}${op.telefono ? ' · '+op.telefono : ''}</div>
-              </td>
-              <td>${tipoBadgeHtml(op.tipo)}</td>
-              <td style="text-align:right">${s.total}${s.sinPrecio?` <span style="color:#B8860B;font-size:11px">(${s.sinPrecio} sin precio)</span>`:''}</td>
-              <td style="text-align:right">${s.pctProm!==null ? fmtD(s.pctProm)+'%' : s.desdeMeta ? '<span style="color:var(--gris-3);font-size:11px" title="Abrí la operación para calcular">Abrir para ver</span>' : '<span style="color:var(--gris-3)">—</span>'}</td>
-              <td>${s.pctProm!==null ? semaforo(s.pctProm) : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>
-              <td style="white-space:nowrap">
-                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirOperacion('${op.id}')">Abrir →</button>
-                <button class="btn btn-icon btn-sm" onclick="event.stopPropagation();delOperacion('${escJs(op.id)}')" title="Eliminar operación" style="color:#B03A2E;margin-left:4px">🗑</button>
-              </td>
-            </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gris-3);padding:32px">Sin operaciones. Creá la primera.</td></tr>'}
+          <tbody id="adm-tbody">
+            ${empresas.length ? empresas.map(e => {
+              const dueno = porUid[e.duenoUid] || {};
+              const recetas = e.operaciones.reduce((a,o)=>a+(o.recetas||0),0);
+              const dias = _admDias(dueno.ultimoAcceso);
+              const color = dias===null ? 'var(--gris-3)' : dias>=ADM_DIAS_AUSENTE ? '#B03A2E' : dias>7 ? '#B8540A' : 'var(--verde)';
+              const busca = ((e.nombre||'')+' '+(dueno.email||'')+' '+(dueno.displayName||'')+' '+(dueno.ciudad||'')).toLowerCase();
+              return `<tr data-busca="${esc(busca)}">
+                <td><strong>${esc(e.nombre||e.id)}</strong>
+                  <div style="font-size:11px;color:var(--gris-2)">${e.operaciones.map(o=>esc(o.nombre)).join(' · ')||'sin operaciones'}</div></td>
+                <td style="font-size:13px">${esc(dueno.displayName||dueno.email||'—')}
+                  <div style="font-size:11px;color:var(--gris-2)">${esc(dueno.email||'')}</div></td>
+                <td style="text-align:right">${e.operaciones.length}</td>
+                <td style="text-align:right">${recetas || '<span style="color:#B8540A">0</span>'}</td>
+                <td style="font-size:12px;color:${color}">${_admHace(dueno.ultimoAcceso)}</td>
+                <td style="text-align:right;white-space:nowrap">
+                  <button class="btn btn-secondary btn-sm" onclick="navigate('adminProvatio')">Gestionar</button>
+                </td>
+              </tr>`;
+            }).join('') : `<tr><td colspan="6" style="text-align:center;color:var(--gris-2);padding:26px">
+              Todavía no hay clientes en el universo Provatio.</td></tr>`}
           </tbody>
         </table>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><span class="card-title">Accesos rápidos</span></div>
-      <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
-        <button class="btn btn-secondary" onclick="modalNuevaOperacion()" style="padding:16px;flex-direction:column;gap:6px;height:auto">
-          <span style="opacity:.75">${ico('plus', 26)}</span>
-          <strong>Nueva operación</strong>
-          <span style="font-size:12px;color:#5A5A52">Sumá un cliente</span>
-        </button>
-        <button class="btn btn-secondary" onclick="navigate('equipo')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
-          <span style="opacity:.75">${ico('users', 26)}</span>
-          <strong>Equipo y accesos</strong>
-          <span style="font-size:12px;color:#5A5A52">Usuarios y permisos</span>
-        </button>
-        <button class="btn btn-secondary" onclick="navigate('ingredientes')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
-          <span style="opacity:.75">${ico('clipboard', 26)}</span>
-          <strong>Ingredientes</strong>
-          <span style="font-size:12px;color:#5A5A52">Actualizá precios</span>
-        </button>
-        <button class="btn btn-secondary" onclick="navigate('importExport')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
-          <span style="opacity:.75">${ico('updown', 26)}</span>
-          <strong>Importar / Exportar</strong>
-          <span style="font-size:12px;color:#5A5A52">Migrar datos</span>
-        </button>
+      <div id="adm-sin-resultados" style="display:none;text-align:center;color:var(--gris-2);padding:20px">
+        No hay clientes que coincidan con la búsqueda.
       </div>
     </div>
   `);
+}
 
-  // Aviso de registros nuevos: usuarios sin operación asignada (async, no bloquea el render)
-  if(typeof cargarUsuariosFirebase === 'function'){
-    cargarUsuariosFirebase().then(usuarios => {
-      // "Sin asignar" = ni operación del modelo viejo NI empresa del modelo
-      // vigente. Quien tiene empresaId ya es personal de un cliente: no está
-      // esperando nada del admin.
-      const sinAsignar = (usuarios||[]).filter(u =>
-        u.rol !== 'admin' && !u.operacionId && !u.empresaId
-        && !ADMINS_PROVATIO.includes((u.email||'').toLowerCase()));
-      const cont = document.getElementById('alerta-registros');
-      if(cont && sinAsignar.length){
-        cont.innerHTML = `<div style="background:#E8EFE0;color:#2D5016;border:1px solid #A9D8B2;border-radius:10px;padding:16px;margin-bottom:20px">
-          <div style="font-weight:700;font-size:13px;margin-bottom:6px">${sinAsignar.length===1?'Registro nuevo':'Registros nuevos'} (${sinAsignar.length})</div>
-          <div style="font-size:13px;margin-bottom:10px">${sinAsignar.map(u=>`<strong>${u.email||u.uid}</strong>`).join(' · ')} — esperando que le${sinAsignar.length>1?'s':''} asignes una operación y nivel de acceso.</div>
-          <button class="btn btn-primary btn-sm" onclick="navigate('equipo')">Ir a Equipo y accesos</button>
-        </div>`;
-      }
-    }).catch(()=>{});
-  }
+function admFiltrarClientes(txt){
+  const q = String(txt||'').toLowerCase().trim();
+  const filas = document.querySelectorAll('#adm-tbody tr[data-busca]');
+  let visibles = 0;
+  filas.forEach(f => {
+    const ok = !q || f.dataset.busca.indexOf(q) >= 0;
+    f.style.display = ok ? '' : 'none';
+    if(ok) visibles++;
+  });
+  const vacio = document.getElementById('adm-sin-resultados');
+  if(vacio) vacio.style.display = (filas.length && !visibles) ? 'block' : 'none';
 }
 
 // ── DASHBOARD DE OPERACIÓN — rentabilidad por receta ──
