@@ -1292,6 +1292,62 @@ async function _registrarEnIndiceEmails(uid, email){
   }catch(e){ console.warn('[Provatio] no se pudo registrar el correo en el índice:', e); }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// RESUMEN PÚBLICO DE LA EMPRESA
+//
+// Provatio necesita saber de cada cliente el nombre, cuántas operaciones tiene
+// y si está cargando datos. Eso es su propio negocio. Pero como TODO el
+// contenido vive en el campo _datos, leer un contador obligaba a leer también
+// las recetas y los costos del cliente.
+//
+// Por eso el resumen va aparte, en empresas/{id}/resumen/publico: solo números
+// y nombres. Provatio lo lee siempre; la cocina queda del otro lado de la
+// puerta y solo se abre si el dueño lo habilita.
+// ═══════════════════════════════════════════════════════════════════════
+async function actualizarResumenEmpresa(){
+  const eid = getEmpresaId();
+  if(!eid || typeof db==='undefined') return;
+  try{
+    const ops = Object.values(demoData.operaciones||{});
+    const recetasDeOp = op => (demoData.recetas||[]).filter(r=>r.opId===op.id).length;
+    await db.collection('empresas').doc(eid).collection('resumen').doc('publico').set({
+      nombre: (demoData.empresa && demoData.empresa.nombre) || '',
+      operaciones: ops.map(o => ({
+        id: o.id, nombre: o.nombre||'', tipo: o.tipo||'',
+        modalidades: (typeof getModalidades==='function' ? getModalidades(o) : []),
+        recetas: recetasDeOp(o),
+      })),
+      totalOperaciones: ops.length,
+      totalRecetas: (demoData.recetas||[]).length,
+      totalIngredientes: (demoData.ingredientes||[]).length,
+      actualizadoEn: Date.now(),
+    }, {merge:true});
+  }catch(err){ console.warn('[Provatio] no pude actualizar el resumen:', err.message); }
+}
+
+// ── ACCESO DE SOPORTE ──
+// Lo enciende y lo apaga SOLO el dueño. Las reglas de Firestore le impiden a
+// Provatio tocar este campo, así que el interruptor es una cerradura de verdad
+// y no un cartel.
+async function toggleSoporteProvatio(activar){
+  const eid = getEmpresaId();
+  if(!eid){ showToast('No hay empresa activa','error'); return; }
+  if(!esDueno()){ showToast('Solo el dueño puede cambiar esto','error'); return; }
+  if(!activar && !confirm('¿Cerrarle el acceso a Provatio?\n\n'
+      + 'Dejan de ver tus recetas, costos y facturas al instante.\n'
+      + 'Podés volver a abrirlo cuando quieras.')) return;
+  try{
+    await db.collection('empresas').doc(eid).set({
+      soporteProvatio: !!activar,
+      soporteCambiadoPor: (currentUser && currentUser.email) || '',
+      soporteCambiadoEn: Date.now(),
+    }, {merge:true});
+    window._soporteProvatio = !!activar;
+    showToast(activar ? 'Provatio puede entrar a tu operación' : 'Acceso cerrado','success');
+    renderDashboard();
+  }catch(err){ showToast('No se pudo cambiar: '+err.message,'error'); }
+}
+
 async function guardarEnFirestore(){
   if(!currentUser){ showToast('No hay sesión activa — no se pudo guardar','error'); return false; }
   // Sin operación abierta no hay nada que guardar (ej.: estando en el Panel general)
@@ -1447,6 +1503,8 @@ async function guardarEnFirestore(){
     }
 
     window._revLocal = opData._rev;   // nuestra revisión ya es la vigente
+    // El resumen va aparte: es lo único que Provatio ve sin abrir la cocina.
+    actualizarResumenEmpresa();
 
     ocultarProgreso();
     const recs = getRecetas();
@@ -2738,12 +2796,20 @@ async function cargarUsuarioFirebase(firebaseUser){
     try{
       const _ud = userDoc.exists ? userDoc.data() : null;
       window._empresaDuenoUid = null;
+      window._soporteProvatio = false;
+      window._soporteCambiadoEn = null;
       if(_ud && _ud.empresaId){
         // Leer el duenoUid de la empresa: si esta persona es la dueña, la
         // reconocemos como tal aunque su ficha de miembro esté desincronizada.
         try{
           const empDoc = await db.collection('empresas').doc(_ud.empresaId).get();
-          if(empDoc.exists) window._empresaDuenoUid = empDoc.data().duenoUid || null;
+          if(empDoc.exists){
+            const _emp = empDoc.data();
+            window._empresaDuenoUid = _emp.duenoUid || null;
+            // Estado del acceso de soporte: lo muestra la tarjeta del panel.
+            window._soporteProvatio   = !!_emp.soporteProvatio;
+            window._soporteCambiadoEn = _emp.soporteCambiadoEn || null;
+          }
         }catch(_){}
         const miem = await db.collection('empresas').doc(_ud.empresaId)
           .collection('miembros').doc(firebaseUser.uid).get();
@@ -3649,7 +3715,10 @@ function buildSidebar(rol){
     // "Equipo y accesos" es el equipo de UNA empresa. En la barra del admin de
     // la plataforma no corresponde: ahí se gestiona desde Admin Provatio.
     ...(puedeGestionarUsuarios() && !esAdminProvatio() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
-    ...(esAdminProvatio() ? [{icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'}] : []),
+    ...(esAdminProvatio() ? [
+      {icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'},
+      {icon:'user', label:'Equipo Provatio', vista:'equipoProvatio'},
+    ] : []),
   ];
   const seccionCuenta = _itemsCuenta.length ? [{section:'Cuenta'}, ..._itemsCuenta] : [];
 
@@ -3658,7 +3727,10 @@ function buildSidebar(rol){
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     ...(puedeGestionarUsuarios() || !getEmpresaId() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
-    ...(esAdminProvatio() ? [{icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'}] : []),
+    ...(esAdminProvatio() ? [
+      {icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'},
+      {icon:'user', label:'Equipo Provatio', vista:'equipoProvatio'},
+    ] : []),
   ] : isDK ? [
     // Dark Kitchen activa
     {section:'Principal'},
@@ -4010,6 +4082,7 @@ function navigate(vista, params={}){
     facturas: ()=>{ window._facVer=null; renderFacturas(); },
     equipo: renderEquipo,
     adminProvatio: renderAdminProvatio,
+    equipoProvatio: renderEquipoProvatio,
     recetas: renderRecetas,
     semanal: renderSemanal,
     evento: renderEvento,
@@ -4322,6 +4395,110 @@ function _admHace(iso){
   if(d===0) return 'hoy';
   if(d===1) return 'ayer';
   return 'hace ' + d + ' días';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// EQUIPO PROVATIO — quiénes administran la plataforma
+//
+// Antes la lista vivía escrita a mano en el código Y otra vez en las reglas de
+// Firestore. Sumar a alguien obligaba a tocar las dos cosas y era fácil que
+// quedaran desincronizadas.
+//
+// Ahora vive en provatio/equipo. El mail fundador sigue fijo en la regla como
+// piso de seguridad: si ese documento se edita mal, no queda todo el mundo
+// afuera. Y solo el fundador suma o saca gente — que un admin agregado pudiera
+// agregar a otros sería una puerta que se abre sola.
+// ═══════════════════════════════════════════════════════════════════════
+const PROVATIO_FUNDADOR = 'elementosfood@gmail.com';
+
+async function renderEquipoProvatio(){
+  if(!esAdminProvatio()){
+    setContent('Equipo Provatio', '<div class="alert alert-error">Esta sección es solo para el equipo de Provatio.</div>');
+    return;
+  }
+  setContent('Equipo Provatio', '<div style="padding:24px;color:var(--gris-2)">Leyendo…</div>');
+  let emails = [];
+  try{
+    const d = await db.collection('provatio').doc('equipo').get();
+    emails = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+  }catch(err){
+    setContent('Equipo Provatio', '<div class="alert alert-error">No pude leer el equipo: '+esc(err.message)+'</div>');
+    return;
+  }
+  const soyFundador = ((currentUser && currentUser.email) || '').toLowerCase() === PROVATIO_FUNDADOR;
+  const lista = [PROVATIO_FUNDADOR, ...emails.filter(e => String(e).toLowerCase() !== PROVATIO_FUNDADOR)];
+
+  setContent('Equipo Provatio', `
+    <div class="alert alert-info">
+      Quienes están acá pueden <strong>activar cuentas, ver el panel general y dar soporte</strong>.
+      Para entrar a la operación de un cliente hace falta, además, que el cliente lo habilite desde su panel.
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Personas con acceso de administración</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Mail</th><th></th></tr></thead>
+          <tbody>
+            ${lista.map(e => {
+              const esFund = String(e).toLowerCase() === PROVATIO_FUNDADOR;
+              return `<tr>
+                <td>${esc(e)}${esFund?' <span style="font-size:11px;color:var(--dorado);font-weight:700">FUNDADOR</span>':''}</td>
+                <td style="text-align:right">${(soyFundador && !esFund)
+                  ? `<button class="btn btn-secondary btn-sm" onclick="quitarDelEquipoProvatio('${escJs(e)}')">Sacar</button>`
+                  : ''}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${soyFundador ? `<div class="card-body" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:240px">
+          <label>Sumar a alguien</label>
+          <input type="text" id="ep-mail" placeholder="mail@ejemplo.com">
+        </div>
+        <button class="btn btn-primary" onclick="sumarAlEquipoProvatio()">Sumar</button>
+      </div>` : `<div class="card-body" style="font-size:12px;color:var(--gris-2)">
+        Solo el fundador puede sumar o sacar gente del equipo.
+      </div>`}
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);line-height:1.6">
+        <strong>Importante:</strong> el mail del fundador está fijo también en las reglas de Firestore.
+        Si alguna vez cambia, hay que actualizarlo en los dos lados — si no, no entra nadie.
+      </div>
+    </div>
+  `);
+}
+
+async function sumarAlEquipoProvatio(){
+  const mail = (document.getElementById('ep-mail').value||'').trim().toLowerCase();
+  if(!mail || mail.indexOf('@')<0){ showToast('Escribí un mail válido','error'); return; }
+  if(mail === PROVATIO_FUNDADOR){ showToast('El fundador ya está siempre','info'); return; }
+  if(!confirm('Sumar a '+mail+' al equipo Provatio.\n\nVa a poder ver todas las cuentas, activarlas y suspenderlas.\n¿Seguimos?')) return;
+  try{
+    const ref = db.collection('provatio').doc('equipo');
+    const d = await ref.get();
+    const emails = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+    if(emails.map(e=>String(e).toLowerCase()).includes(mail)){ showToast('Ya estaba en el equipo','info'); return; }
+    await ref.set({ emails: [...emails, mail], actualizadoEn: Date.now() }, {merge:true});
+    showToast(mail+' sumado al equipo','success');
+    renderEquipoProvatio();
+  }catch(err){ showToast('No se pudo: '+err.message,'error'); }
+}
+
+async function quitarDelEquipoProvatio(mail){
+  if(!confirm('Sacar a '+mail+' del equipo Provatio.\n\nPierde el acceso de administración al instante. ¿Seguimos?')) return;
+  try{
+    const ref = db.collection('provatio').doc('equipo');
+    const d = await ref.get();
+    const emails = (d.exists && Array.isArray(d.data().emails)) ? d.data().emails : [];
+    await ref.set({ emails: emails.filter(e => String(e).toLowerCase() !== String(mail).toLowerCase()),
+                    actualizadoEn: Date.now() }, {merge:true});
+    showToast(mail+' ya no es del equipo','success');
+    renderEquipoProvatio();
+  }catch(err){ showToast('No se pudo: '+err.message,'error'); }
 }
 
 async function renderDashboardAdmin(){
@@ -4677,6 +4854,31 @@ function renderDashboardOperacion(){
               Por defecto según el tipo <strong>${esc(op.tipo||'')}</strong> — todavía sin elegir a mano.</div>`}
           </div>
           ${puedeGestionarUsuarios() ? `<button class="btn btn-secondary btn-sm" onclick="navigate('modalidades')">Cambiar</button>` : ''}
+        </div>
+      </div>`;
+    })()}
+
+    ${(()=>{
+      // ACCESO DE SOPORTE. Solo lo ve y lo maneja el dueño. Las reglas de
+      // Firestore le impiden a Provatio tocar este campo: el interruptor es
+      // una cerradura de verdad, no un cartel.
+      if(!esDueno() || !getEmpresaId()) return '';
+      const on = !!window._soporteProvatio;
+      return `<div class="card" style="margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="flex:1;min-width:260px">
+            <div class="metric-label" style="margin-bottom:6px">Acceso de soporte de Provatio</div>
+            <div style="font-size:13px;color:var(--gris-1);line-height:1.5">
+              ${on
+                ? 'El equipo de Provatio <strong>puede entrar</strong> a tus operaciones para ayudarte a cargarlas y resolver problemas, con las mismas facultades que vos.'
+                : 'El equipo de Provatio <strong>no puede ver</strong> tus recetas, costos ni facturas. Solo ve el nombre de tu empresa y cuántas cosas cargaste.'}
+            </div>
+            ${window._soporteCambiadoEn ? `<div style="font-size:11px;color:var(--gris-2);margin-top:6px">
+              Última vez que cambiaste esto: ${new Date(window._soporteCambiadoEn).toLocaleDateString('es-AR')}</div>` : ''}
+          </div>
+          <button class="btn ${on?'btn-secondary':'btn-primary'} btn-sm" onclick="toggleSoporteProvatio(${on?'false':'true'})">
+            ${on ? 'Cerrar el acceso' : 'Abrir el acceso'}
+          </button>
         </div>
       </div>`;
     })()}
