@@ -11670,6 +11670,13 @@ async function ejecutarCrearEmpresaParaCliente(uid, email, nombreCta){
     paso('1/4 · Creando la empresa…');
     await db.collection('empresas').doc(empresaId).set({
       nombre: nomEmp, duenoUid: uid, creadaEn: Date.now(), creadaPor: currentUser.email || 'admin',
+      // La empresa nace con el acceso de soporte ABIERTO: la está armando
+      // Provatio, y sin eso las reglas no dejan crear la operación adentro.
+      // El dueño lo cierra cuando quiera desde Equipo y accesos — de hecho el
+      // objetivo es que llegue ese día.
+      soporteProvatio: true,
+      soporteCambiadoPor: currentUser.email || 'admin',
+      soporteCambiadoEn: Date.now(),
     });
 
     // El alta como dueño va ANTES de la operación: las reglas exigen ser
