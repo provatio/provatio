@@ -1343,8 +1343,10 @@ async function toggleSoporteProvatio(activar){
       soporteCambiadoEn: Date.now(),
     }, {merge:true});
     window._soporteProvatio = !!activar;
-    showToast(activar ? 'Provatio puede entrar a tu operación' : 'Acceso cerrado','success');
-    renderDashboard();
+    showToast(activar ? 'El equipo de Provatio puede entrar' : 'Acceso cerrado','success');
+    // Se vuelve a Equipo y no al panel: el dueño de un CP tiene otro panel y
+    // ahí la tarjeta no existe.
+    if(typeof renderEquipo==='function') renderEquipo(); else renderDashboard();
   }catch(err){ showToast('No se pudo cambiar: '+err.message,'error'); }
 }
 
@@ -4886,31 +4888,6 @@ function renderDashboardOperacion(){
               Por defecto según el tipo <strong>${esc(op.tipo||'')}</strong> — todavía sin elegir a mano.</div>`}
           </div>
           ${puedeGestionarUsuarios() ? `<button class="btn btn-secondary btn-sm" onclick="navigate('modalidades')">Cambiar</button>` : ''}
-        </div>
-      </div>`;
-    })()}
-
-    ${(()=>{
-      // ACCESO DE SOPORTE. Solo lo ve y lo maneja el dueño. Las reglas de
-      // Firestore le impiden a Provatio tocar este campo: el interruptor es
-      // una cerradura de verdad, no un cartel.
-      if(!esDueno() || !getEmpresaId()) return '';
-      const on = !!window._soporteProvatio;
-      return `<div class="card" style="margin-bottom:20px">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
-          <div style="flex:1;min-width:260px">
-            <div class="metric-label" style="margin-bottom:6px">Acceso de soporte de Provatio</div>
-            <div style="font-size:13px;color:var(--gris-1);line-height:1.5">
-              ${on
-                ? 'El equipo de Provatio <strong>puede entrar</strong> a tus operaciones para ayudarte a cargarlas y resolver problemas, con las mismas facultades que vos.'
-                : 'El equipo de Provatio <strong>no puede ver</strong> tus recetas, costos ni facturas. Solo ve el nombre de tu empresa y cuántas cosas cargaste.'}
-            </div>
-            ${window._soporteCambiadoEn ? `<div style="font-size:11px;color:var(--gris-2);margin-top:6px">
-              Última vez que cambiaste esto: ${new Date(window._soporteCambiadoEn).toLocaleDateString('es-AR')}</div>` : ''}
-          </div>
-          <button class="btn ${on?'btn-secondary':'btn-primary'} btn-sm" onclick="toggleSoporteProvatio(${on?'false':'true'})">
-            ${on ? 'Cerrar el acceso' : 'Abrir el acceso'}
-          </button>
         </div>
       </div>`;
     })()}
@@ -11405,10 +11382,15 @@ async function modalLimpiezaTotal(){
   try{
     const snap = await db.collection('empresas').get();
     for(const e of snap.docs){
-      const ops = await db.collection('empresas').doc(e.id).collection('operaciones').get();
-      const nombresOps = [];
-      ops.forEach(o => nombresOps.push((o.data().nombre)||o.id));
-      empresas.push({ id:e.id, nombre:(e.data().nombre||e.id), ops:nombresOps });
+      // Cada empresa se lee por separado: desde las reglas v6, las que tienen
+      // el acceso cerrado NO se pueden abrir. Antes una sola bloqueada tiraba
+      // abajo la lista entera y no se podía limpiar ninguna.
+      let nombresOps = [], cerrada = false;
+      try{
+        const ops = await db.collection('empresas').doc(e.id).collection('operaciones').get();
+        ops.forEach(o => nombresOps.push((o.data().nombre)||o.id));
+      }catch(_){ cerrada = true; }
+      empresas.push({ id:e.id, nombre:(e.data().nombre||e.id), ops:nombresOps, cerrada });
     }
   }catch(err){ showToast('No pude leer las empresas: '+err.message,'error'); return; }
 
@@ -11425,11 +11407,13 @@ async function modalLimpiezaTotal(){
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto">
         ${empresas.map(e=>`
-          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--crema-2);border-radius:8px;cursor:pointer">
-            <input type="checkbox" class="lt-check" value="${esc(e.id)}" data-nombre="${esc(e.nombre)}" style="margin-top:3px">
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--crema-2);border-radius:8px;cursor:${e.cerrada?'not-allowed':'pointer'};opacity:${e.cerrada?'.55':'1'}">
+            <input type="checkbox" class="lt-check" value="${esc(e.id)}" data-nombre="${esc(e.nombre)}" style="margin-top:3px" ${e.cerrada?'disabled':''}>
             <div>
               <div style="font-weight:600">${esc(e.nombre)}</div>
-              <div style="font-size:12px;color:var(--gris-2)">${e.ops.length ? e.ops.length+' operación(es): '+e.ops.map(esc).join(', ') : 'sin operaciones (vacía)'}</div>
+              <div style="font-size:12px;color:var(--gris-2)">${e.cerrada
+                ? '🔒 Tiene el acceso cerrado. Para borrarla, el dueño tiene que abrirlo desde Equipo y accesos.'
+                : (e.ops.length ? e.ops.length+' operación(es): '+e.ops.map(esc).join(', ') : 'sin operaciones (vacía)')}</div>
             </div>
           </label>`).join('')}
       </div>
@@ -11813,6 +11797,33 @@ async function renderEquipo(){
     <div style="margin-bottom:16px">
       <button class="btn btn-primary" onclick="modalInvitarMiembro()">+ Agregar persona</button>
     </div>
+
+    ${(()=>{
+      // ACCESO DE SOPORTE. Vive acá y no en el panel de una operación porque es
+      // un permiso de la EMPRESA: vale para todos sus locales. Colgado del panel
+      // de operación, el dueño de un centro de producción no lo veía nunca,
+      // porque su barra es distinta.
+      if(!esDueno()) return '';
+      const on = !!window._soporteProvatio;
+      return `<div class="card" style="margin-bottom:16px;border-left:3px solid ${on?'var(--dorado,#C9A961)':'var(--crema-2,#E8E0D4)'}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="flex:1;min-width:280px">
+            <div class="metric-label" style="margin-bottom:6px">Acceso del equipo Provatio</div>
+            <div style="font-size:13px;color:var(--gris-1);line-height:1.5">
+              ${on
+                ? 'El equipo de Provatio <strong>puede entrar</strong> a todas tus operaciones para ayudarte a cargarlas y resolver problemas, con las mismas facultades que vos.'
+                : 'El equipo de Provatio <strong>no puede ver</strong> tus recetas, costos ni facturas. Solo ve el nombre de tu empresa y cuántas cosas cargaste.'}
+            </div>
+            ${window._soporteCambiadoEn ? `<div style="font-size:11px;color:var(--gris-2);margin-top:6px">
+              Última vez que lo cambiaste: ${new Date(window._soporteCambiadoEn).toLocaleDateString('es-AR')}</div>` : ''}
+          </div>
+          <button class="btn ${on?'btn-secondary':'btn-primary'} btn-sm" onclick="toggleSoporteProvatio(${on?'false':'true'})">
+            ${on ? 'Cerrar el acceso' : 'Abrir el acceso'}
+          </button>
+        </div>
+      </div>`;
+    })()}
+
     <div class="card">
       <div class="card-header"><span class="card-title">Equipo (${miembros.length})</span></div>
       <div class="table-wrap"><table>
