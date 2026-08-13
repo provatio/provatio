@@ -1378,9 +1378,32 @@ async function guardarEnFirestore(){
   // Lock con vencimiento: si un guardado quedó colgado, a los 20s se libera solo
   const AHORA = Date.now();
   if(window._guardando && (AHORA - (window._guardandoDesde||0) < 20000)){
-    console.info('Guardado en curso, se ignora la llamada duplicada');
-    showToast('Guardando… esperá un momento', 'info');
-    return false;
+    // ANTES SE DESCARTABA LA LLAMADA Y SE PERDÍA EL DATO.
+    //
+    // Era el bug de las plantillas: el borrador del cierre se sube solo cada
+    // par de segundos al tipear. Si el chef apretaba "Guardar plantilla" en ese
+    // momento, la llamada caía acá, devolvía false, y la plantilla nunca subía
+    // — pero en pantalla decía "guardada". Al cerrar sesión, no estaba.
+    //
+    // Ahora se ENCOLA: se espera a que termine el guardado en curso y se manda
+    // de nuevo. Todo lo que está en demoData va a subir sí o sí.
+    console.info('[Provatio] guardado en curso: se encola y se reintenta');
+    return new Promise(function(resolve){
+      let intentos = 0;
+      (function esperar(){
+        intentos++;
+        if(!window._guardando || (Date.now() - (window._guardandoDesde||0) >= 20000)){
+          resolve(guardarEnFirestore());
+          return;
+        }
+        if(intentos > 60){          // 30 segundos y sigue trabado
+          showToast('El guardado anterior quedó colgado. Probá el botón Guardar de arriba.','error');
+          resolve(false);
+          return;
+        }
+        setTimeout(esperar, 500);
+      })();
+    });
   }
   if(window._guardando){
     console.warn('[Provatio] el guardado anterior quedó colgado, se libera el bloqueo');
@@ -15431,9 +15454,16 @@ function sdGuardarCierre(){
   if(!currentOpId){ showToast('No hay operación activa','error'); return; }
   const fecha = window._sdFecha || _sdFechaHoy();
   const servicio = window._sdServicio || 'almuerzo';
-  const comensales = document.getElementById('sd-pax')?.value || '';
-  const nota = document.getElementById('sd-nota')?.value || '';
-  const horasJornada = document.getElementById('sd-horas')?.value || '';
+  // OJO: con la cabecera plegada estos campos NO existen en la pantalla, y
+  // getElementById devolvía vacío — el cierre se guardaba con CERO comensales
+  // y sin horas. Por eso se cae al borrador, que sí conserva lo cargado.
+  const _leer = (id, guardado) => {
+    const el = document.getElementById(id);
+    return (el && el.value !== '') ? el.value : (guardado != null ? guardado : '');
+  };
+  const comensales   = _leer('sd-pax',   window._sdPaxDraft);
+  const nota         = _leer('sd-nota',  window._sdNotaDraft);
+  const horasJornada = _leer('sd-horas', window._sdHorasDraft);
   const lineas = (window._sdLineasDraft||[]).map(l=>({...l}));
   // Se juntan TODOS los problemas y se nombran juntos. Antes se cortaba en el
   // primero, y con quince productos cargados el chef corregía uno, guardaba,
@@ -15450,6 +15480,14 @@ function sdGuardarCierre(){
   }
   if(_problemas.length){
     showToast('Revisá: ' + _problemas.join(' · '), 'error');
+    return;
+  }
+  // Sin comensales no hay consumo por persona, que es el número por el que
+  // existe todo esto. Un cierre sin ese dato entra al historial y lo ensucia.
+  if(!(Number(comensales) > 0)){
+    showToast('Falta cuántos comensales fueron — sin eso no se puede calcular el consumo por persona','error');
+    sdToggleCabecera(true);
+    setTimeout(()=>{ const e=document.getElementById('sd-pax'); if(e){ e.focus(); e.scrollIntoView({block:'center'}); } }, 80);
     return;
   }
   if(!demoData.serviciosDiarios) demoData.serviciosDiarios = [];
@@ -15479,9 +15517,31 @@ function sdGuardarCierre(){
   window._sdPaxDraft = null;
   window._sdNotaDraft = null;
   window._sdHorasDraft = null;
-  showToast('Cierre guardado','success');
-  if(typeof guardarEnFirestore==='function') guardarEnFirestore();
-  renderCierreServicio();
+  window._sdCabAbierta = null;
+  // Se sube a la nube ANTES de decir que se guardó, y se MIRA EL RESULTADO.
+  //
+  // Dos cosas que hacían perder cierres:
+  //  · guardarEnFirestore no tira error: devuelve true/false. Un .catch() no
+  //    se enteraba nunca de que había fallado.
+  //  · Si hay otro guardado en curso (el borrador se sube solo al tipear),
+  //    devuelve false sin guardar. Por eso se espera y se reintenta.
+  _sdSubirCierre(0);
+
+  function _sdSubirCierre(intento){
+    if(typeof guardarEnFirestore !== 'function'){ renderCierreServicio(); return; }
+    Promise.resolve(guardarEnFirestore()).then(function(ok){
+      if(ok){ showToast('Cierre guardado ✓','success'); renderCierreServicio(); return; }
+      // false suele ser "hay un guardado en curso". Se espera y se reintenta.
+      if(intento < 3){
+        showToast('Guardando el cierre…','info');
+        setTimeout(function(){ _sdSubirCierre(intento+1); }, 1500);
+        return;
+      }
+      showToast('El cierre quedó en este dispositivo pero NO subió a la nube. '
+              + 'No cierres sesión: probá el botón Guardar de arriba.','error');
+      renderCierreServicio();
+    });
+  }
 }
 
 function renderHistorialServicio(){
