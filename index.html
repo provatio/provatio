@@ -2745,6 +2745,49 @@ function showToast(msg, type=''){
 }
 
 // ── MODAL ──
+// ═══════════════════════════════════════════════════════════════════════
+// PEDIR UN TEXTO
+//
+// Reemplaza a prompt(), que en la app instalada de Android está BLOQUEADO:
+// no muestra nada, devuelve vacío, y la función que lo llamaba se corta sin
+// guardar y sin avisar. Así se perdió una plantilla del salad bar sin que
+// quedara rastro de por qué.
+//
+// Se usa con .then(): pedirTexto('Nombre').then(txt => { ... })
+// Si el usuario cancela, txt viene null.
+// ═══════════════════════════════════════════════════════════════════════
+function pedirTexto(titulo, valorInicial, ayuda){
+  return new Promise(function(resolve){
+    var prev = document.getElementById('prov-pedir');
+    if(prev) prev.remove();
+    var d = document.createElement('div');
+    d.id = 'prov-pedir';
+    d.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(26,26,24,.55);'
+      + 'display:flex;align-items:center;justify-content:center;padding:20px';
+    d.innerHTML = '<div style="background:var(--blanco,#fff);border-radius:14px;padding:20px;'
+      + 'width:100%;max-width:420px;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
+      + '<div style="font-weight:700;font-size:16px;margin-bottom:' + (ayuda?'6':'14') + 'px">' + esc(titulo) + '</div>'
+      + (ayuda ? '<div style="font-size:13px;color:var(--gris-2,#888);margin-bottom:14px;line-height:1.45">' + esc(ayuda) + '</div>' : '')
+      + '<input type="text" id="prov-pedir-input" value="' + esc(valorInicial||'') + '" '
+      + 'style="width:100%;padding:12px;border:1.5px solid var(--crema-2,#E8E0D4);border-radius:9px;font-size:16px;box-sizing:border-box">'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">'
+      + '<button id="prov-pedir-no" class="btn btn-secondary">Cancelar</button>'
+      + '<button id="prov-pedir-si" class="btn btn-primary">Guardar</button>'
+      + '</div></div>';
+    document.body.appendChild(d);
+    var inp = d.querySelector('#prov-pedir-input');
+    function cerrar(v){ d.remove(); resolve(v); }
+    d.querySelector('#prov-pedir-no').onclick = function(){ cerrar(null); };
+    d.querySelector('#prov-pedir-si').onclick = function(){ cerrar(inp.value); };
+    d.onclick = function(e){ if(e.target === d) cerrar(null); };
+    inp.onkeydown = function(e){
+      if(e.key === 'Enter') cerrar(inp.value);
+      if(e.key === 'Escape') cerrar(null);
+    };
+    setTimeout(function(){ inp.focus(); inp.select(); }, 60);
+  });
+}
+
 function openModal(html){
   document.getElementById('modal-container').innerHTML = html;
   document.getElementById('modal-overlay').classList.add('open');
@@ -8628,18 +8671,22 @@ function rechazarPedidoLocal(pedId){
   const op = getOp();
   const p = ((op&&op._pedidosPendientes)||[]).find(x=>x.id===pedId);
   if(!p) return;
-  const motivo = prompt('¿Por qué lo rechazás? (la cocina lo va a ver)');
-  if(motivo === null) return;
-  op._pedidosPendientes = (op._pedidosPendientes||[]).filter(x=>x.id!==pedId);
-  if(!op._pedidosRechazados) op._pedidosRechazados = [];
-  op._pedidosRechazados = [...op._pedidosRechazados.slice(-9), {
-    ...p, motivo: (motivo||'').trim() || 'Sin motivo indicado',
-    rechazadoPor: (currentUser && currentUser.email) || null,
-    rechazadoEn: Date.now(),
-  }];
-  guardarEnFirestore();
-  renderPedidoSugerido();
-  showToast('Pedido rechazado — la cocina va a ver el motivo','info');
+  // Sin prompt(): en la app instalada de Android está bloqueado y el rechazo
+  // se perdía en silencio.
+  pedirTexto('¿Por qué lo rechazás?', '', 'La cocina va a ver este motivo.')
+  .then(function(motivo){
+    if(motivo === null) return;
+    op._pedidosPendientes = (op._pedidosPendientes||[]).filter(x=>x.id!==pedId);
+    if(!op._pedidosRechazados) op._pedidosRechazados = [];
+    op._pedidosRechazados = [...op._pedidosRechazados.slice(-9), {
+      ...p, motivo: (motivo||'').trim() || 'Sin motivo indicado',
+      rechazadoPor: (currentUser && currentUser.email) || null,
+      rechazadoEn: Date.now(),
+    }];
+    guardarEnFirestore();
+    renderPedidoSugerido();
+    showToast('Pedido rechazado — la cocina va a ver el motivo','info');
+  });
 }
 
 // ── RECEPCIÓN CON CONTROL LÍNEA POR LÍNEA ────────────────────────────────
@@ -10821,7 +10868,37 @@ function descargarInforme(){
     .foot{margin-top:38px;padding-top:14px;border-top:1px solid #EDE8E0;display:flex;justify-content:space-between;font-family:Arial;font-size:10px;color:#8A8A80}
     .fil{font-family:Georgia;font-style:italic;color:#B08D57}
     @media print{ body{padding:20px 24px} }
-  </style></head><body>
+  
+/* ── PANTALLA CHICA ───────────────────────────────────────────────────────
+   Provatio se usa de pie, con las manos ocupadas y el teléfono en una mano.
+   Estos ajustes son para el cierre de servicio y el control de stock, que son
+   las dos pantallas que se usan así. */
+@media (max-width: 760px){
+  /* El botón flotante de la esquina tapaba los últimos campos del cierre. */
+  .content, .main-content, main { padding-bottom: 96px !important; }
+
+  /* Los campos de peso, más altos y con letra grande: se tocan con el dedo
+     mojado y se leen de un vistazo. 16px además evita que el teléfono haga
+     zoom solo al enfocarlos. */
+  .form-group input[type="text"],
+  .form-group input[type="number"],
+  .form-group select {
+    font-size: 16px !important;
+    padding: 12px 10px !important;
+  }
+  .form-group label { font-size: 11px !important; }
+
+  /* Cada producto, una tarjeta clara y separada de la siguiente. */
+  #sd-lineas .card, .sd-linea { margin-bottom: 14px !important; }
+
+  /* Los botones de acción, del ancho del dedo. */
+  .btn { min-height: 42px; }
+  .btn-sm { min-height: 34px; }
+
+  /* Respetar la barra de gestos de Android y el notch. */
+  body { padding-bottom: env(safe-area-inset-bottom); }
+}
+</style></head><body>
     <div class="hd">
       <div class="logo" style="display:flex;align-items:center;gap:12px"><svg width="44" height="44" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#1A1A18" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#1A1A18" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#1A1A18" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#C8A96E"/></svg><span>Provatio<small>GESTIÓN GASTRONÓMICA</small></span></div>
       <div class="fecha">${fecha}</div>
@@ -14335,26 +14412,30 @@ function sdGuardarPlantilla(){
   });
   if(_rep.length && !confirm('Hay productos repetidos: '+[...new Set(_rep)].join(', ')
       +'.\n\nSe guarda uno solo de cada uno. ¿Seguimos?')) return;
-  const nom = prompt('Nombre de la plantilla (ej: Salad bar fijo, Barra):',
-                     window._sdServicio ? ('Plantilla '+window._sdServicio) : 'Plantilla');
-  if(!nom || !nom.trim()) return;
-  if(!demoData.plantillasSD) demoData.plantillasSD = {};
-  const clave = currentOpId + '|' + nom.trim().toLowerCase();
-  demoData.plantillasSD[clave] = {
-    id: clave, opId: currentOpId, nombre: nom.trim(),
-    servicio: window._sdServicio || '',
-    // Se guarda la estructura, no los números del día.
-    lineas: _limpias.map(l => ({
-      id: uid(), tipo: l.tipo, nombre: l.nombre, estacion: l.estacion,
-      ingId: l.ingId, recetaId: l.recetaId, costoKg: l.costoKg,
-      costoUnitario: l.costoUnitario, kgPorBateaLlena: l.kgPorBateaLlena,
-      aMesada:'', sobrante:'', reutilizado:'', redestinado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'',
-    })),
-    creadaEn: Date.now(),
-  };
-  if(typeof guardarEnFirestore==='function') guardarEnFirestore();
-  showToast('Plantilla "'+nom.trim()+'" guardada','success');
-  renderCierreServicio();
+  const _sugerido = ({barra:'Barra', almuerzo:'Almuerzo', salad:'Salad bar',
+                      merienda:'Merienda', cena:'Cena'})[window._sdServicio] || 'Plantilla';
+  pedirTexto('¿Cómo se llama esta plantilla?', _sugerido,
+             'Con ' + _limpias.length + ' producto(s). Los días que viene se cargan con un clic.')
+  .then(function(nom){
+    if(!nom || !nom.trim()) return;
+    if(!demoData.plantillasSD) demoData.plantillasSD = {};
+    const clave = currentOpId + '|' + nom.trim().toLowerCase();
+    demoData.plantillasSD[clave] = {
+      id: clave, opId: currentOpId, nombre: nom.trim(),
+      servicio: window._sdServicio || '',
+      // Se guarda la estructura, no los números del día.
+      lineas: _limpias.map(l => ({
+        id: uid(), tipo: l.tipo, nombre: l.nombre, estacion: l.estacion,
+        ingId: l.ingId, recetaId: l.recetaId, costoKg: l.costoKg,
+        costoUnitario: l.costoUnitario, kgPorBateaLlena: l.kgPorBateaLlena,
+        aMesada:'', sobrante:'', reutilizado:'', redestinado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'',
+      })),
+      creadaEn: Date.now(),
+    };
+    if(typeof guardarEnFirestore==='function') guardarEnFirestore();
+    showToast('Plantilla "'+nom.trim()+'" guardada con '+_limpias.length+' producto(s)','success');
+    renderCierreServicio();
+  });
 }
 function sdAplicarPlantilla(id){
   if(!id) return;
@@ -14846,6 +14927,26 @@ function calQuitarFecha(f){
   renderCalendarioOp();
 }
 
+// En el teléfono la cabecera arranca PLEGADA si ya hay comensales cargados:
+// significa que el servicio ya empezó y lo que se viene a hacer es cargar
+// pesos, no cambiar la fecha.
+function sdToggleCabecera(abrir){
+  const r = document.getElementById('sd-cab-resumen');
+  const c = document.getElementById('sd-cab-completa');
+  if(!r || !c) return;
+  window._sdCabAbierta = !!abrir;
+  r.style.display = abrir ? 'none' : 'flex';
+  c.style.display = abrir ? '' : 'none';
+}
+function _sdAplicarCabecera(hayPax){
+  const angosta = window.innerWidth < 760;
+  // En pantalla chica y con el servicio ya arrancado, plegada.
+  const abrir = (window._sdCabAbierta != null)
+    ? window._sdCabAbierta
+    : !(angosta && hayPax);
+  sdToggleCabecera(abrir);
+}
+
 function renderCierreServicio(){
   if(!currentOpId){
     setContent('Cierre de servicio', `<div class="alert alert-warn">Abrí una operación para cargar el cierre del día.</div>`);
@@ -15070,7 +15171,21 @@ function renderCierreServicio(){
       </div>`;
     })()}
     <div class="card" style="margin-bottom:16px">
-      <div class="card-body">
+      <!-- La cabecera se carga UNA vez al empezar y después estorba: en un
+           teléfono ocupaba toda la pantalla y los productos quedaban abajo de
+           todo. Plegada, se ve en una línea y se abre tocándola. -->
+      <div id="sd-cab-resumen" style="display:none;padding:12px 14px;cursor:pointer;
+           align-items:center;justify-content:space-between;gap:10px"
+           onclick="sdToggleCabecera(true)">
+        <div style="font-size:14px;font-weight:600">
+          ${(()=>{ const d=new Date(fecha+'T12:00:00');
+            const f=isNaN(d)?fecha:d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+            const sv=({barra:'Barra',almuerzo:'Almuerzo',salad:'Salad bar',merienda:'Merienda',cena:'Cena',otro:'Otro'})[servicio]||servicio;
+            return f+' · '+sv+(paxNum>0?' · '+paxNum+' pax':' · sin comensales'); })()}
+        </div>
+        <span style="font-size:12px;color:var(--gris-2)">Cambiar ▾</span>
+      </div>
+      <div class="card-body" id="sd-cab-completa">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
           <div class="form-group" style="margin:0">
             <label>Fecha</label>
@@ -15115,6 +15230,9 @@ function renderCierreServicio(){
             </div>
           </div>`;
         })()}
+        <div style="margin-top:12px;text-align:right">
+          <button class="btn btn-secondary btn-sm" onclick="sdToggleCabecera(false)">Listo, ocultar ▴</button>
+        </div>
       </div>
     </div>
 
@@ -15140,7 +15258,9 @@ function renderCierreServicio(){
         <div class="metric-label">${lbl}</div>
         <div class="metric-value" style="${color?'color:'+color:''}">${val}</div>
         <div class="metric-sub">${sub}</div></div>`;
-      return `<div class="metric-grid" style="margin-bottom:16px">
+      // En pantalla chica el resumen va al final: arriba empuja los productos
+      // fuera de la vista, y lo que se viene a hacer es cargar pesos.
+      return `<div class="metric-grid" id="sd-resumen" style="margin-bottom:16px;${window.innerWidth<760?'order:99':''}">
         ${box('Sacado al despacho', fmtD(sacado,1)+' kg', 'lo que salió de cocina','')}
         ${box('Se lo comieron', fmtD(comido,1)+' kg', paxNum>0?fmtD(comido*1000/paxNum,0)+' g por persona':'cargá los comensales','')}
         ${box('Vuelve al stock', fmtD(reuso,1)+' kg', 'recuperado, no se perdió','#2D6A4F')}
@@ -15162,6 +15282,7 @@ function renderCierreServicio(){
       ${lineas.length ? `<button class="btn btn-secondary" onclick="sdVaciarLineas()">Vaciar</button>` : ''}
     </div>
   `, `<button class="btn btn-secondary btn-sm" onclick="navigate('historialServicio')">Historial</button>`);
+  _sdAplicarCabecera(paxNum > 0);
 }
 
 function sdSetFecha(v){
