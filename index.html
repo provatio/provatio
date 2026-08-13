@@ -14508,22 +14508,27 @@ function calcLineaServicio(linea, comensales){
   // Con 200 cubiertos la diferencia entre los dos primeros es anecdótica. Con
   // 3000 no: tapar sobreproducción con sopa todos los días es un problema que
   // no se ve si los dos van al mismo casillero.
+  // Si lo aprovechado supera lo que volvió, los números NO se acomodan solos:
+  // se devuelven tal cual y la línea queda marcada como inconsistente. Antes
+  // se reescalaban en silencio — se escribía 1 y el sistema mostraba 0,67, que
+  // es peor que un error visible: parece que anda y el dato queda mal.
   const _reparto = (usado, sobra, l) => {
     const vuelve  = Math.max(0, Number(l.reutilizado)||0);
     const otroUso = Math.max(0, Number(l.redestinado)||0);
-    const tope    = Math.min(vuelve + otroUso, sobra);
-    const escala  = (vuelve + otroUso) > 0 ? tope / (vuelve + otroUso) : 0;
-    return { vuelve: vuelve*escala, otroUso: otroUso*escala,
-             descartado: Math.max(0, sobra - tope) };
+    if(vuelve + otroUso > sobra + 0.0001){
+      return { vuelve, otroUso, descartado: 0, inconsistente: true };
+    }
+    return { vuelve, otroUso, descartado: Math.max(0, sobra - vuelve - otroUso) };
   };
   if(linea.tipo==='B' || linea.tipo==='C' || linea.tipo==='E'){
     const usado = Number(linea.aMesada)||0;
     const sobra = Number(linea.sobrante)||0;
     const r = _reparto(usado, sobra, linea);
-    out.consumido   = Math.max(0, usado - sobra);
-    out.reutilizado = r.vuelve;
-    out.redestinado = r.otroUso;
-    out.descartado  = r.descartado;
+    out.consumido    = Math.max(0, usado - sobra);
+    out.reutilizado  = r.vuelve;
+    out.redestinado  = r.otroUso;
+    out.descartado   = r.descartado;
+    out.inconsistente = !!r.inconsistente;
     const esUnidad = linea.tipo === 'E';
     if(pax>0) out.porPersona = esUnidad ? out.consumido/pax : (out.consumido*1000)/pax;
     const precio = esUnidad ? (Number(linea.costoUnitario)||0) : getCostoKgLineaSD(linea);
@@ -15001,6 +15006,16 @@ function renderCierreServicio(){
   function filaHTML(l, idx){
     const calc = calcLineaServicio(l, paxNum);
     const tipoNom = (TIPOS_LINEA_SD[l.tipo]||{}).nombre || l.tipo;
+    // Marca visible en la línea que tiene los números mal: sin esto hay que
+    // buscarla a ojo entre quince tarjetas.
+    const _sac = num(l.aMesada), _vol = num(l.sobrante);
+    const _apr = num(l.reutilizado) + num(l.redestinado);
+    const _mal = (l.tipo==='B'||l.tipo==='C'||l.tipo==='E')
+      ? (_vol > _sac + 0.0001 ? 'Volvió más de lo que sacaste'
+        : (_apr > _vol + 0.0001 ? 'Lo aprovechado ('+fmtD(_apr,2)+') supera lo que volvió ('+fmtD(_vol,2)+')' : ''))
+      : '';
+    const _avisoMal = _mal ? `<div style="margin-top:8px;padding:8px 10px;background:#FBEAE7;color:#7B2D1E;
+        border:1px solid #E0A99B;border-radius:8px;font-size:12px;line-height:1.4">⚠ ${esc(_mal)}</div>` : '';
     const quitar = `<button class="btn btn-secondary btn-sm" title="Sacar del servicio de hoy"
         style="padding:2px 8px;line-height:1.4" onclick="sdQuitarLinea(${idx})">✕</button>`;
     if(l.tipo==='B' || l.tipo==='C'){
@@ -15037,7 +15052,8 @@ function renderCierreServicio(){
             &nbsp;·&nbsp; ${calc.porPersona!=null?fmtD(calc.porPersona,0)+' g/persona':'g/persona: —'}
             &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
           </div>
-          ${calc.redestinado>0 ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
+          ${_avisoMal}
+          ${(!_mal && calc.redestinado>0) ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
             A otra preparación: <strong>${fmtD(calc.redestinado,2)} kg</strong>${calc.costoRedestinado?' · $'+fmt(calc.costoRedestinado):''}
           </div>` : ''}
           ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#8B1A1A)">
@@ -15084,7 +15100,8 @@ function renderCierreServicio(){
             &nbsp;·&nbsp; ${calc.porPersona!=null?fmtD(calc.porPersona,2)+' u/persona':'—'}
             &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
           </div>
-          ${calc.redestinado>0 ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
+          ${_avisoMal}
+          ${(!_mal && calc.redestinado>0) ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
             A otra preparación: <strong>${fmt(calc.redestinado)} u</strong>
           </div>` : ''}
           ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#8B1A1A)">
@@ -15323,6 +15340,20 @@ function sdUpdLinea(idx, campo, val){
   if(campo==='aMesada' || campo==='sobrante' || campo==='reutilizado'
      || campo==='redestinado' || campo==='pedidas' || campo==='recibidas') val = _sdNumero(val);
   window._sdLineasDraft[idx][campo] = val;
+
+  // El error se avisa EN EL MOMENTO y sobre el producto que se tocó. Antes
+  // aparecía recién al guardar y nombraba el primero de la lista que estaba
+  // mal — con quince productos cargados, imposible saber cuál corregir.
+  const _l = window._sdLineasDraft[idx];
+  if(_l && (_l.tipo==='B' || _l.tipo==='C' || _l.tipo==='E')){
+    const _sac = num(_l.aMesada), _vol = num(_l.sobrante);
+    const _apr = num(_l.reutilizado) + num(_l.redestinado);
+    if(_vol > _sac + 0.0001){
+      showToast('En "'+_l.nombre+'": volvió más de lo que sacaste','error');
+    } else if(_apr > _vol + 0.0001){
+      showToast('En "'+_l.nombre+'": lo aprovechado ('+fmtD(_apr,2)+') supera lo que volvió ('+fmtD(_vol,2)+')','error');
+    }
+  }
   window._sdPaxDraft = document.getElementById('sd-pax')?.value || '';
   window._sdNotaDraft = document.getElementById('sd-nota')?.value || '';
   window._sdHorasDraft = document.getElementById('sd-horas')?.value || '';
@@ -15354,18 +15385,22 @@ function sdGuardarCierre(){
   const nota = document.getElementById('sd-nota')?.value || '';
   const horasJornada = document.getElementById('sd-horas')?.value || '';
   const lineas = (window._sdLineasDraft||[]).map(l=>({...l}));
+  // Se juntan TODOS los problemas y se nombran juntos. Antes se cortaba en el
+  // primero, y con quince productos cargados el chef corregía uno, guardaba,
+  // y aparecía el siguiente.
+  const _problemas = [];
   for(const l of lineas){
-    if((l.tipo==='B'||l.tipo==='C'||l.tipo==='E') && l.aMesada!=='' && l.sobrante!==''){
-      if(Number(l.sobrante) > Number(l.aMesada)){
-        showToast('En "'+l.nombre+'" lo que volvió no puede ser mayor que lo que sacaste','error');
-        return;
-      }
-      const _aprov = (Number(l.reutilizado)||0) + (Number(l.redestinado)||0);
-      if(_aprov > Number(l.sobrante) + 0.0001){
-        showToast('En "'+l.nombre+'" lo que se aprovecha no puede superar lo que volvió','error');
-        return;
-      }
+    if(l.tipo!=='B' && l.tipo!=='C' && l.tipo!=='E') continue;
+    if(l.aMesada==='' || l.sobrante==='') continue;
+    if(num(l.sobrante) > num(l.aMesada) + 0.0001){
+      _problemas.push(l.nombre + ' (volvió más de lo que salió)');
+    } else if(num(l.reutilizado) + num(l.redestinado) > num(l.sobrante) + 0.0001){
+      _problemas.push(l.nombre + ' (se aprovecha más de lo que volvió)');
     }
+  }
+  if(_problemas.length){
+    showToast('Revisá: ' + _problemas.join(' · '), 'error');
+    return;
   }
   if(!demoData.serviciosDiarios) demoData.serviciosDiarios = [];
   // quitar temps
