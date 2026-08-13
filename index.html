@@ -14428,7 +14428,7 @@ function sdGuardarPlantilla(){
         id: uid(), tipo: l.tipo, nombre: l.nombre, estacion: l.estacion,
         ingId: l.ingId, recetaId: l.recetaId, costoKg: l.costoKg,
         costoUnitario: l.costoUnitario, kgPorBateaLlena: l.kgPorBateaLlena,
-        aMesada:'', sobrante:'', reutilizado:'', redestinado:'', pedidas:'', recibidas:'', llenado:'llena', alcanzo:'',
+        aMesada:'', sobrante:'', reutilizado:'', redestinado:'', _repartoTocado:false, pedidas:'', recibidas:'', llenado:'llena', alcanzo:'',
       })),
       creadaEn: Date.now(),
     };
@@ -14840,6 +14840,32 @@ function sdAgregarLinea(){
   renderCierreServicio();
 }
 
+// Un producto que no se recupera: todo lo que volvió pasa a descarte.
+// Es el caso del viernes, o el día que algo se puso feo.
+function sdNoSeRecupera(idx){
+  const l = window._sdLineasDraft && window._sdLineasDraft[idx];
+  if(!l) return;
+  l.reutilizado = '0';
+  l.redestinado = '0';
+  l._repartoTocado = true;
+  _sdPersistirBorrador();
+  renderCierreServicio();
+}
+
+// El último día antes de un parate NO se recupera nada: se marca todo junto en
+// vez de producto por producto.
+function sdNadaSeRecupera(){
+  const ls = window._sdLineasDraft || [];
+  const conSobrante = ls.filter(l => num(l.sobrante) > 0);
+  if(!conSobrante.length){ showToast('Todavía no cargaste lo que volvió','info'); return; }
+  if(!confirm('Marcar que NO se recupera nada de los '+conSobrante.length+' producto(s) con sobrante.\n\n'
+            + 'Todo lo que volvió pasa a descarte. ¿Seguimos?')) return;
+  conSobrante.forEach(l => { l.reutilizado='0'; l.redestinado='0'; l._repartoTocado = true; });
+  _sdPersistirBorrador();
+  renderCierreServicio();
+  showToast(conSobrante.length+' producto(s) marcados como descarte','success');
+}
+
 function sdQuitarLinea(idx){
   if(!window._sdLineasDraft) return;
   const l = window._sdLineasDraft[idx];
@@ -15053,6 +15079,10 @@ function renderCierreServicio(){
             &nbsp;·&nbsp; ${calc.costo!=null?'$'+fmt(calc.costo):'$ —'}
           </div>
           ${_avisoMal}
+          ${(!_mal && _vol > 0) ? `<div style="margin-top:8px">
+            <button class="btn btn-secondary btn-sm" style="font-size:12px;padding:5px 10px"
+              onclick="sdNoSeRecupera(${idx})">Esto no se recupera → va todo a descarte</button>
+          </div>` : ''}
           ${(!_mal && calc.redestinado>0) ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
             A otra preparación: <strong>${fmtD(calc.redestinado,2)} kg</strong>${calc.costoRedestinado?' · $'+fmt(calc.costoRedestinado):''}
           </div>` : ''}
@@ -15184,7 +15214,11 @@ function renderCierreServicio(){
       return `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;line-height:1.55">
         <strong>Último día antes de ${parate===1?'un día':parate+' días'} sin servicio.</strong>
         Lo que sobre hoy no vuelve al circuito: se pierde entero.
-        Cargalo en <em>Se tira</em>, no en <em>Vuelve al servicio</em>.
+        <div style="margin-top:10px">
+          <button class="btn btn-secondary btn-sm" onclick="sdNadaSeRecupera()">
+            Marcar que hoy no se recupera nada
+          </button>
+        </div>
       </div>`;
     })()}
     <div class="card" style="margin-bottom:16px">
@@ -15340,6 +15374,22 @@ function sdUpdLinea(idx, campo, val){
   if(campo==='aMesada' || campo==='sobrante' || campo==='reutilizado'
      || campo==='redestinado' || campo==='pedidas' || campo==='recibidas') val = _sdNumero(val);
   window._sdLineasDraft[idx][campo] = val;
+
+  // En una cocina que reutiliza casi todo, escribir dos veces el mismo número
+  // (volvió 1 · vuelve al servicio 1) es trabajo repetido quince veces por día.
+  // Por eso al cargar lo que volvió, se asume que se recupera entero. El chef
+  // solo toca el reparto cuando algo se pierde — que es la excepción.
+  if(campo === 'sobrante'){
+    const _l0 = window._sdLineasDraft[idx];
+    if(!_l0._repartoTocado){
+      _l0.reutilizado = val;
+      _l0.redestinado = '';
+    }
+  }
+  // Si el chef toca el reparto a mano, deja de completarse solo.
+  if(campo === 'reutilizado' || campo === 'redestinado'){
+    window._sdLineasDraft[idx]._repartoTocado = true;
+  }
 
   // El error se avisa EN EL MOMENTO y sobre el producto que se tocó. Antes
   // aparecía recién al guardar y nombraba el primero de la lista que estaba
