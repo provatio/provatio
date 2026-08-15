@@ -6772,6 +6772,16 @@ async function quitarFotoFicha(recetaId){
   renderFichaPlato(recetaId);
 }
 
+function zoomFotoFicha(recetaId){
+  const r = demoData.recetas.find(x=>x.id===recetaId);
+  if(!r || !r.fotoData) return;
+  openModal(`
+    <div style="padding:0;line-height:0;background:#000;border-radius:16px;overflow:hidden" onclick="closeModal()">
+      <img src="${r.fotoData}" style="width:100%;display:block;cursor:zoom-out">
+    </div>
+  `);
+}
+
 function actualizarProcedimientoFicha(id, val){
   const r = demoData.recetas.find(x=>x.id===id);
   if(!r) return;
@@ -6807,7 +6817,7 @@ function renderFichaPlato(id){
       <div class="card-header"><span class="card-title">Foto del plato</span></div>
       <div class="card-body">
         ${receta.fotoData ? `
-          <img src="${receta.fotoData}" alt="Foto de ${esc(receta.nombre)}" style="width:100%;max-width:420px;border-radius:10px;display:block;margin-bottom:12px;object-fit:cover">
+          <img src="${receta.fotoData}" alt="Foto de ${esc(receta.nombre)}" style="width:100%;max-width:420px;border-radius:10px;display:block;margin-bottom:12px;object-fit:cover;cursor:zoom-in" onclick="zoomFotoFicha('${escJs(receta.id)}')">
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
               ${ico('upload',13)} Cambiar foto
