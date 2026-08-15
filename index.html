@@ -6811,7 +6811,7 @@ function renderFichaPlato(id){
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
               ${ico('upload',13)} Cambiar foto
-              <input type="file" accept="image/*" capture="environment" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
+              <input type="file" accept="image/*" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
             </label>
             <button class="btn btn-danger btn-sm" onclick="quitarFotoFicha('${escJs(receta.id)}')">${ico('trash',13)} Sacar foto</button>
           </div>
@@ -6819,7 +6819,7 @@ function renderFichaPlato(id){
           <div style="font-size:12px;color:var(--gris-2);margin-bottom:10px">Para que el plato se emplate siempre igual. Sacala con el celu, ahí mismo en la cocina.</div>
           <label class="btn btn-primary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;width:fit-content">
             ${ico('upload',13)} Subir foto
-            <input type="file" accept="image/*" capture="environment" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
+            <input type="file" accept="image/*" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
           </label>
         `}
       </div>
@@ -10300,6 +10300,9 @@ function getGastosFijos(){
     {id:uid(), concepto:'Sueldos y cargas', monto:0},
     {id:uid(), concepto:'Servicios (luz, gas, agua, internet)', monto:0},
     {id:uid(), concepto:'Impuestos y tasas', monto:0},
+    {id:uid(), concepto:'Mantenimiento', monto:0},
+    {id:uid(), concepto:'Sueldo del dueño', monto:0},
+    {id:uid(), concepto:'Otros', monto:0},
   ];
   return op.gastosFijos;
 }
@@ -10310,6 +10313,8 @@ function renderResultado(){
   const gastos = getGastosFijos();
   const totalFijos = gastos.reduce((s,g)=>s+(+g.monto||0),0);
   const dias = op.diasOperativos || 26;
+  // Un dueño que no se paga a sí mismo cree que gana más de lo que gana.
+  const tieneSueldoDueno = gastos.some(g=>/due[ñn]o/i.test(g.concepto||''));
 
   const recetasConPrecio = demoData.recetas.filter(r=>r.opId===op.id && r.precioVenta>0);
   let margenPctProm = null, margenPesosProm = null, ticketProm = null;
@@ -10347,6 +10352,12 @@ function renderResultado(){
 
   // Ingeniería de menú (Kasavana & Smith) para el mes seleccionado
   const km = expandirMatrizConDelivery(clasificarMenu(mesSel), mesSel);
+
+  // Porciones por día: lo que hace falta vender vs. lo que se está vendiendo hoy,
+  // según las unidades cargadas en la matriz de menú para el mes seleccionado.
+  const eqPorcionesDia = eqPorciones ? Math.ceil(eqPorciones/dias) : null;
+  const totalUnidMes = km.listo ? km.matriz.reduce((s,i)=>s+(+i.unid||0),0) : 0;
+  const promDiaActual = (km.listo && totalUnidMes>0 && dias>0) ? totalUnidMes/dias : null;
 
   // Snapshot para el informe descargable
   window._saludCalc = {totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, costoBuffets, nBuffets, matriz: km.matriz, kmListo: km.listo};
@@ -10390,6 +10401,12 @@ function renderResultado(){
       </div>
     </div>
 
+    ${!tieneSueldoDueno ? `
+    <div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px;font-size:13px"><strong>No tenés cargado tu sueldo como gasto.</strong> Un dueño que no se paga a sí mismo cree que gana más de lo que gana — sumalo aunque hoy sea $0, para que el resultado de abajo sea real.</div>
+      <button class="btn btn-secondary btn-sm" onclick="agregarSueldoDueno()">${ico('plus',13)} Agregar sueldo del dueño</button>
+    </div>` : ''}
+
     ${recetasConPrecio.length === 0 ? `
       <div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:16px;margin-bottom:20px">
         <div style="font-weight:700;font-size:13px;margin-bottom:6px">Falta un dato clave</div>
@@ -10418,6 +10435,22 @@ function renderResultado(){
           <div class="metric-sub">sobre ${recetasConPrecio.length} receta${recetasConPrecio.length!==1?'s':''} con precio</div>
         </div>
       </div>
+
+      ${eqPorcionesDia !== null ? `
+      <div style="background:${promDiaActual===null ? 'var(--crema)' : (promDiaActual>=eqPorcionesDia ? '#E4F3E6' : '#FCE8E8')};border:1px solid ${promDiaActual===null?'var(--crema-2)':(promDiaActual>=eqPorcionesDia?'#A9D8B2':'#EFB2B2')};border-radius:10px;padding:16px 18px;margin-bottom:20px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:4px;color:${promDiaActual===null?'var(--negro)':(promDiaActual>=eqPorcionesDia?'#1B7A34':'#C02626')}">
+          ${promDiaActual===null
+            ? `Con este ticket promedio necesitás ${fmt(eqPorcionesDia)} porciones por día para cubrir los fijos.`
+            : (promDiaActual>=eqPorcionesDia
+                ? `Con este ticket promedio necesitás ${fmt(eqPorcionesDia)} porciones por día para cubrir los fijos — y estás vendiendo ${fmt(Math.round(promDiaActual))}. Vas cubierto.`
+                : `Con este ticket promedio necesitás ${fmt(eqPorcionesDia)} porciones por día para cubrir los fijos. Estás vendiendo ${fmt(Math.round(promDiaActual))}.`)}
+        </div>
+        <div style="font-size:12px;color:var(--gris-1)">
+          ${promDiaActual===null
+            ? `Cargá las unidades vendidas en Ingeniería de menú (más abajo) para comparar contra lo que realmente estás vendiendo.`
+            : `Según las unidades vendidas cargadas en Ingeniería de menú para ${mesSel}, promediadas sobre ${dias} días operativos.`}
+        </div>
+      </div>` : ''}
 
       ${(eqPesos && totalFijos>0) ? `
       <div class="card">
@@ -10492,6 +10525,16 @@ function renderResultado(){
               </div>
             </div>
             <div style="font-size:12px;color:var(--gris-2);margin-top:12px">Cálculo sobre el margen de contribución promedio de tus recetas. Cuando carguemos ventas reales por plato (próxima fase), este número va a ser exacto en lugar de estimado.</div>
+
+            ${ventasEst>0 ? `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;margin-bottom:6px">
+              <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gris-1)">De cada $100 que entran</span>
+              <button class="btn btn-secondary btn-sm" onclick="descargarGrafico('chart-estr','estructura-${(op.nombre||'operacion').replace(/[^a-z0-9]/gi,'-').toLowerCase()}')">${ico('download',13)} Descargar</button>
+            </div>
+            <div style="font-size:11px;color:var(--gris-2);margin-bottom:8px">Solo la operación regular — eventos y buffets ya están descontados arriba, aparte.</div>
+            <div id="chart-estr" style="overflow-x:auto">${chartEstructura100(ventasEst, ventasEst*(1-margenPctProm), totalFijos, ventasEst*margenPctProm-totalFijos)}</div>
+            ` : ''}
+
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;margin-bottom:6px">
               <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gris-1)">El recorrido del peso</span>
               <button class="btn btn-secondary btn-sm" onclick="descargarGrafico('chart-casc','resultado-${(op.nombre||'operacion').replace(/[^a-z0-9]/gi,'-').toLowerCase()}')">${ico('download',13)} Descargar</button>
@@ -10625,6 +10668,7 @@ function renderResultado(){
 }
 
 function addGastoFijo(){ getGastosFijos().push({id:uid(), concepto:'', monto:0}); renderResultado(); }
+function agregarSueldoDueno(){ getGastosFijos().push({id:uid(), concepto:'Sueldo del dueño', monto:0}); renderResultado(); }
 function updGastoFijo(id, campo, val){
   const g = getGastosFijos().find(x=>x.id===id);
   if(!g) return;
@@ -10782,6 +10826,50 @@ function chartCascada(ventas, margenPct, fijos, margenEventos=0){
     <line x1="${mL}" y1="${Y(0)}" x2="${mL+pw}" y2="${Y(0)}" stroke="#D8D2C8" stroke-width="1.5"/>
     ${svg}
     <text x="${mL}" y="${H-8}" font-family="Arial" font-size="10" fill="#8A8A80">El recorrido del peso: de la venta al resultado</text>
+  </svg>`;
+}
+
+// De cada $100 que entran (operación regular, sin eventos ni buffets — esos ya
+// se muestran aparte): cuánto es mercadería, cuánto estructura, y cuánto queda.
+// Si mercadería + estructura superan las ventas, la barra sigue de largo más
+// allá de la marca del 100% y el déficit se dice en texto — no se disimula.
+function chartEstructura100(ventas, mercaderia, estructura, resultado){
+  const W=640, H=260, mL=20, mR=20, mT=44, barH=54;
+  const pw = W-mL-mR;
+  const totalRef = Math.max(ventas, mercaderia+estructura, 1);
+  const px = v => mL + (v/totalRef)*pw;
+  const y0 = mT;
+
+  const xMercFin = px(mercaderia);
+  const xEstFin = px(mercaderia+estructura);
+  const xVentas = px(ventas);
+
+  let barras = `<rect x="${mL}" y="${y0}" width="${Math.max(0,xMercFin-mL)}" height="${barH}" fill="#8B1A1A"/>`;
+  barras += `<rect x="${xMercFin}" y="${y0}" width="${Math.max(0,xEstFin-xMercFin)}" height="${barH}" fill="#5A5A52"/>`;
+  if(resultado >= 0){
+    barras += `<rect x="${xEstFin}" y="${y0}" width="${Math.max(0,xVentas-xEstFin)}" height="${barH}" fill="#2D5016"/>`;
+  }
+
+  const marca = `
+    <line x1="${xVentas}" y1="${y0-10}" x2="${xVentas}" y2="${y0+barH+10}" stroke="#1A1A18" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="${xVentas}" y="${y0-16}" font-family="Arial" font-size="11" font-weight="bold" fill="#1A1A18" text-anchor="middle">100% de tus ventas · $${fmt(ventas)}</text>`;
+
+  const deficit = resultado < 0
+    ? `<text x="${mL}" y="${y0+barH+28}" font-family="Arial" font-size="12" font-weight="bold" fill="#C02626">− $${fmt(Math.abs(resultado))} sin cubrir — mercadería + estructura superan lo que entra</text>`
+    : '';
+
+  const pctMerc = ventas>0 ? mercaderia/ventas*100 : 0;
+  const pctEst = ventas>0 ? estructura/ventas*100 : 0;
+  const pctRes = ventas>0 ? resultado/ventas*100 : 0;
+  const filaLeg = (i, color, label, val, pct) => `
+    <rect x="${mL}" y="${y0+barH+40+i*22}" width="12" height="12" rx="3" fill="${color}"/>
+    <text x="${mL+18}" y="${y0+barH+50+i*22}" font-family="Arial" font-size="12" fill="#2A2A22">${label}: $${fmt(val)} · ${fmtD(pct)}%</text>`;
+  const leyenda = filaLeg(0,'#8B1A1A','Mercadería',mercaderia,pctMerc)
+    + filaLeg(1,'#5A5A52','Estructura',estructura,pctEst)
+    + filaLeg(2, resultado>=0?'#2D5016':'#C02626', 'Resultado', resultado, pctRes);
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
+    ${barras}${marca}${deficit}${leyenda}
   </svg>`;
 }
 
