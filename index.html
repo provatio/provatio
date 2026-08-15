@@ -731,6 +731,8 @@ input:focus, select:focus, textarea:focus {
   align-items: center;
   justify-content: center;
   padding: 0;
+  overflow: hidden;
+  touch-action: none;
 }
 .foto-zoom-overlay.open { display: flex; }
 .foto-zoom-overlay img {
@@ -741,6 +743,21 @@ input:focus, select:focus, textarea:focus {
   object-fit: contain;
   cursor: zoom-out;
   display: block;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.foto-zoom-close {
+  position: fixed; top: 14px; right: 14px; z-index: 310;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(255,255,255,0.14); color: #fff; border: none;
+  font-size: 24px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.foto-zoom-hint {
+  position: fixed; bottom: 18px; left: 0; right: 0; z-index: 310;
+  text-align: center; color: rgba(255,255,255,0.55); font-size: 11px;
+  pointer-events: none;
 }
 
 .modal {
@@ -1052,8 +1069,14 @@ input:focus, select:focus, textarea:focus {
 </div>
 
 <!-- ZOOM DE FOTO -->
-<div class="foto-zoom-overlay" id="foto-zoom-overlay" onclick="cerrarZoomFoto()">
+<div class="foto-zoom-overlay" id="foto-zoom-overlay"
+     onpointerdown="_fzOnPointerDown(event)"
+     onpointermove="_fzOnPointerMove(event)"
+     onpointerup="_fzOnPointerUp(event)"
+     onpointercancel="_fzOnPointerUp(event)">
   <img id="foto-zoom-img" src="" alt="">
+  <button class="foto-zoom-close" onclick="cerrarZoomFoto()" aria-label="Cerrar">×</button>
+  <div class="foto-zoom-hint" id="foto-zoom-hint">Pellizcá para agrandar · arrastrá para mover</div>
 </div>
 
 <script>
@@ -6797,16 +6820,126 @@ async function quitarFotoFicha(recetaId){
   renderFichaPlato(recetaId);
 }
 
+// ── ZOOM DE FOTO (pellizcar para agrandar) ──
+const FZ_MAX_SCALE = 4;
+let _fzScale = 1, _fzPanX = 0, _fzPanY = 0;
+const _fzPointers = new Map();
+let _fzStartDist = 0, _fzStartScale = 1, _fzStartPanX = 0, _fzStartPanY = 0;
+let _fzDragStart = null;
+let _fzMoved = false;
+let _fzHintShown = false;
+
 function zoomFotoFicha(recetaId){
   const r = demoData.recetas.find(x=>x.id===recetaId);
   if(!r || !r.fotoData) return;
   document.getElementById('foto-zoom-img').src = r.fotoData;
+  _fzReset();
   document.getElementById('foto-zoom-overlay').classList.add('open');
+  const hint = document.getElementById('foto-zoom-hint');
+  if(hint){
+    hint.style.display = _fzHintShown ? 'none' : 'block';
+    if(!_fzHintShown){
+      _fzHintShown = true;
+      setTimeout(()=>{ hint.style.display = 'none'; }, 2200);
+    }
+  }
 }
 
 function cerrarZoomFoto(){
   document.getElementById('foto-zoom-overlay').classList.remove('open');
   document.getElementById('foto-zoom-img').src = '';
+  _fzReset();
+}
+
+function _fzReset(){
+  _fzScale = 1; _fzPanX = 0; _fzPanY = 0;
+  _fzPointers.clear();
+  _fzStartDist = 0;
+  _fzDragStart = null;
+  _fzApplyTransform();
+}
+
+function _fzApplyTransform(){
+  const img = document.getElementById('foto-zoom-img');
+  if(img) img.style.transform = `translate(${_fzPanX}px, ${_fzPanY}px) scale(${_fzScale})`;
+}
+
+function _fzDist(p1, p2){
+  return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+
+function _fzClampPan(){
+  const maxX = Math.max(0, (_fzScale - 1) * window.innerWidth / 2);
+  const maxY = Math.max(0, (_fzScale - 1) * window.innerHeight / 2);
+  _fzPanX = Math.max(-maxX, Math.min(maxX, _fzPanX));
+  _fzPanY = Math.max(-maxY, Math.min(maxY, _fzPanY));
+}
+
+function _fzOnPointerDown(e){
+  if(e.target.closest && e.target.closest('.foto-zoom-close')) return;
+  e.preventDefault();
+  try{ e.target.setPointerCapture(e.pointerId); }catch(err){}
+  _fzPointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  _fzMoved = false;
+  if(_fzPointers.size === 2){
+    const pts = [..._fzPointers.values()];
+    _fzStartDist = _fzDist(pts[0], pts[1]);
+    _fzStartScale = _fzScale;
+    _fzStartPanX = _fzPanX;
+    _fzStartPanY = _fzPanY;
+    _fzDragStart = null;
+  } else if(_fzPointers.size === 1){
+    const p = [..._fzPointers.values()][0];
+    _fzDragStart = {x:p.x, y:p.y, panX:_fzPanX, panY:_fzPanY};
+  }
+}
+
+function _fzOnPointerMove(e){
+  if(!_fzPointers.has(e.pointerId)) return;
+  e.preventDefault();
+  _fzPointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(_fzPointers.size === 2 && _fzStartDist > 0){
+    const pts = [..._fzPointers.values()];
+    const dist = _fzDist(pts[0], pts[1]);
+    let newScale = _fzStartScale * (dist / _fzStartDist);
+    newScale = Math.min(FZ_MAX_SCALE, Math.max(1, newScale));
+    _fzScale = newScale;
+    _fzPanX = _fzStartPanX;
+    _fzPanY = _fzStartPanY;
+    _fzMoved = true;
+    _fzClampPan();
+    _fzApplyTransform();
+  } else if(_fzPointers.size === 1 && _fzDragStart && _fzScale > 1){
+    const p = [..._fzPointers.values()][0];
+    const dx = p.x - _fzDragStart.x;
+    const dy = p.y - _fzDragStart.y;
+    if(Math.abs(dx) > 4 || Math.abs(dy) > 4) _fzMoved = true;
+    _fzPanX = _fzDragStart.panX + dx;
+    _fzPanY = _fzDragStart.panY + dy;
+    _fzClampPan();
+    _fzApplyTransform();
+  }
+}
+
+function _fzOnPointerUp(e){
+  if(e.target.closest && e.target.closest('.foto-zoom-close')) return;
+  _fzPointers.delete(e.pointerId);
+  if(_fzPointers.size < 2) _fzStartDist = 0;
+  if(_fzPointers.size === 0){
+    _fzDragStart = null;
+    if(_fzScale < 1){ _fzScale = 1; }
+    if(!_fzMoved){
+      if(_fzScale > 1.02){
+        _fzScale = 1; _fzPanX = 0; _fzPanY = 0;
+        _fzApplyTransform();
+      } else {
+        cerrarZoomFoto();
+      }
+    } else {
+      _fzApplyTransform();
+    }
+    _fzMoved = false;
+  }
 }
 
 function actualizarProcedimientoFicha(id, val){
