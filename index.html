@@ -723,6 +723,26 @@ input:focus, select:focus, textarea:focus {
 }
 .modal-overlay.open { display: flex; }
 
+.foto-zoom-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.94);
+  z-index: 300;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.foto-zoom-overlay.open { display: flex; }
+.foto-zoom-overlay img {
+  max-width: 100vw;
+  max-height: 100vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  cursor: zoom-out;
+  display: block;
+}
+
 .modal {
   background: var(--blanco);
   border-radius: 16px;
@@ -1029,6 +1049,11 @@ input:focus, select:focus, textarea:focus {
 <!-- MODAL GLOBAL -->
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalOverlay(event)">
   <div class="modal" id="modal-container"></div>
+</div>
+
+<!-- ZOOM DE FOTO -->
+<div class="foto-zoom-overlay" id="foto-zoom-overlay" onclick="cerrarZoomFoto()">
+  <img id="foto-zoom-img" src="" alt="">
 </div>
 
 <script>
@@ -6775,11 +6800,13 @@ async function quitarFotoFicha(recetaId){
 function zoomFotoFicha(recetaId){
   const r = demoData.recetas.find(x=>x.id===recetaId);
   if(!r || !r.fotoData) return;
-  openModal(`
-    <div style="padding:0;line-height:0;background:#000;border-radius:16px;overflow:hidden" onclick="closeModal()">
-      <img src="${r.fotoData}" style="width:100%;display:block;cursor:zoom-out">
-    </div>
-  `);
+  document.getElementById('foto-zoom-img').src = r.fotoData;
+  document.getElementById('foto-zoom-overlay').classList.add('open');
+}
+
+function cerrarZoomFoto(){
+  document.getElementById('foto-zoom-overlay').classList.remove('open');
+  document.getElementById('foto-zoom-img').src = '';
 }
 
 function actualizarProcedimientoFicha(id, val){
