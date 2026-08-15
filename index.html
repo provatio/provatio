@@ -6729,8 +6729,8 @@ function renderFichaPlato(id){
     </div>
     <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center">
       ${badgeLinea(receta.tipoServicio)}
-      <span class="badge badge-gray">${esc(receta.tipoPlato||'')}</span>
-      <span style="font-size:12px;color:var(--gris-2)">${porciones} porción${porciones!==1?'es':''} de referencia</span>
+      ${receta.tipoPlato ? `<span class="badge badge-gray">${esc(receta.tipoPlato)}</span>` : ''}
+      <span style="font-size:12px;color:var(--gris-2)">${porciones} ${porciones!==1?'porciones':'porción'} de referencia</span>
     </div>
 
     ${incompletos.length ? `
