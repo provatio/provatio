@@ -4177,6 +4177,7 @@ function navigate(vista, params={}){
     adminProvatio: renderAdminProvatio,
     equipoProvatio: renderEquipoProvatio,
     recetas: renderRecetas,
+    fichaPlato: (params)=>renderFichaPlato(params.id),
     semanal: renderSemanal,
     evento: renderEvento,
     buffet: renderBuffet,
@@ -6328,6 +6329,7 @@ function renderRecetas(){
       <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'<span style="color:var(--gris-3)">—</span>'}</td>
       <td>${pct!==null?semaforo(pct):'<span class="sem" style="color:var(--gris-2)">Sin precio</span>'}</td>
       <td style="white-space:nowrap"><div style="display:flex;gap:6px">
+        <button class="btn btn-secondary btn-sm" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ficha</button>
         <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
         <button class="btn btn-danger btn-sm" onclick="delReceta('${escJs(r.id)}')">${ico('trash',13)} Eliminar</button>
       </div></td>
@@ -6400,7 +6402,10 @@ function filtrarRecetas(q){
                 <td style="text-align:right">$${fmt(merc)}</td>
                 <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'—'}</td>
                 <td style="text-align:right">${pct!==null?fmtD(pct)+'%':'—'}</td>
-                <td><button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button></td>
+                <td style="white-space:nowrap"><div style="display:flex;gap:6px">
+                  <button class="btn btn-secondary btn-sm" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ficha</button>
+                  <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
+                </div></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -6561,6 +6566,7 @@ function renderEditorReceta(){
   setContent(r.nombre||'Nueva receta', `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="recetaEditando=null;limpiarBorradorEditor();renderRecetas()">← Volver</button>
+      ${demoData.recetas.some(x=>x.id===r.id) ? `<button class="btn btn-secondary" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ver ficha</button>` : ''}
       <input type="text" id="rec-nombre" value="${esc(r.nombre)}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
         <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCentroProduccion() ? "$ PRECIO TRANSFERENCIA" : "$ PRECIO VENTA"}</span>
@@ -6622,6 +6628,166 @@ function renderEditorReceta(){
     </div>
 
     ${((op.tieneDelivery || esDarkKitchen()) && !esNivelCocina()) ? renderVarianteDelivery(r, merc) : ''}
+  `);
+}
+
+// ── FICHA DE PLATO — pantalla de solo lectura para dos públicos: cocinero y dueño ──
+// Al cocinero le dice cómo se hace y qué ingrediente mover si hay que bajar el costo.
+// Al dueño le dice qué le deja el plato. El precio de venta y el margen se ocultan
+// a nivel cocina (esNivelCocina), igual que en el resto del sistema.
+function _fichaDesglose(receta, porciones){
+  const {merc, items} = calcReceta(receta, porciones);
+  const desglose = items.map(it=>{
+    let nombre = '—', costo = 0, falta = null;
+    if(it.esCondimento){
+      nombre = 'Condimentos básicos';
+      costo = it.calc && !it.calc.error ? (it.calc.costo_porcion||0) : 0;
+    } else if(it.recetaId){
+      const sub = getRecetas().find(x=>x.id===it.recetaId);
+      nombre = sub ? sub.nombre : 'Receta elaborada';
+      if(it.calc && it.calc.rendG>0) costo = it.calc.costo_porcion||0;
+      else falta = 'sin rendimiento cargado en la sub-receta';
+    } else if(it.productoCP !== undefined){
+      const prod = resolverInsumoCP(it.productoCP);
+      nombre = prod ? prod.nombre : 'Insumo de Centro de Producción';
+      if(prod && prod.costoXkg>0) costo = (it.calc && it.calc.costo_porcion) || 0;
+      else falta = 'sin costo cargado en el Centro de Producción';
+    } else {
+      const ing = getIngrediente(it.ingId);
+      if(!ing){ nombre = '— sin elegir —'; falta = 'ingrediente no seleccionado'; }
+      else {
+        nombre = ing.nombre;
+        if(!it.neto) falta = 'cantidad (gramaje) no cargada';
+        else if(it.calc && it.calc.error) falta = it.calc.error;
+        else if(!(ing.precio>0)) falta = 'sin precio cargado';
+        else costo = (it.calc && it.calc.costo_porcion) || 0;
+      }
+    }
+    return {nombre, costo, falta};
+  });
+  return {merc, incompletos: desglose.filter(d=>d.falta), validos: desglose.filter(d=>!d.falta && d.costo>0)};
+}
+
+function chartTortaCosto(items){
+  const ordenados = [...items].sort((a,b)=>b.costo-a.costo);
+  const TOP = 5;
+  let vis = ordenados.slice(0, TOP);
+  const resto = ordenados.slice(TOP);
+  if(resto.length){
+    vis = [...vis, {nombre:`Resto (${resto.length})`, costo: resto.reduce((s,x)=>s+x.costo,0)}];
+  }
+  const total = vis.reduce((s,x)=>s+x.costo,0);
+  if(!total) return '';
+  const W=640,H=Math.max(240, 60+vis.length*26), cx=140, cy=H/2, r=82, grosor=34;
+  let ang=-Math.PI/2, arcos='', leyenda='';
+  vis.forEach((it,i)=>{
+    const frac = it.costo/total;
+    const a2 = ang + frac*Math.PI*2;
+    const large = frac>0.5?1:0;
+    const x1=cx+r*Math.cos(ang), y1=cy+r*Math.sin(ang);
+    const x2=cx+r*Math.cos(a2-0.004), y2=cy+r*Math.sin(a2-0.004);
+    arcos += `<path d="M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}" fill="none" stroke="${CHART_COLORS[i%CHART_COLORS.length]}" stroke-width="${grosor}"/>`;
+    const ly = 34+i*26;
+    leyenda += `
+      <rect x="290" y="${ly-10}" width="12" height="12" rx="3" fill="${CHART_COLORS[i%CHART_COLORS.length]}"/>
+      <text x="310" y="${ly}" font-family="Arial" font-size="12" fill="#2A2A22">${esc((it.nombre||'—').slice(0,32))}</text>
+      <text x="${W-20}" y="${ly}" font-family="Arial" font-size="12" fill="#5A5A52" text-anchor="end">$${fmt(it.costo)} · ${fmtD(frac*100)}%</text>`;
+    ang = a2;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
+    ${arcos}
+    <text x="${cx}" y="${cy-4}" font-family="Georgia" font-size="18" font-weight="bold" fill="#1A1A18" text-anchor="middle">$${fmt(total)}</text>
+    <text x="${cx}" y="${cy+16}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="middle">COSTO / PORCIÓN</text>
+    ${leyenda}
+  </svg>`;
+}
+
+function actualizarProcedimientoFicha(id, val){
+  const r = demoData.recetas.find(x=>x.id===id);
+  if(!r) return;
+  r.procedimiento = val;
+  guardarEnFirestore();
+  showToast('Procedimiento guardado','success');
+}
+
+function renderFichaPlato(id){
+  const receta = demoData.recetas.find(r=>r.id===id);
+  if(!receta){ showToast('Receta no encontrada','error'); navigate('recetas'); return; }
+  vistaActual = 'fichaPlato';
+  const porciones = receta.porciones || 1;
+  const {merc, incompletos, validos} = _fichaDesglose(receta, porciones);
+  const verPlata = !esNivelCocina();
+  const pct = receta.precioVenta > 0 ? merc/receta.precioVenta*100 : null;
+  const margenPesos = receta.precioVenta > 0 ? receta.precioVenta - merc : null;
+  const slug = (receta.nombre||'plato').replace(/[^a-z0-9]/gi,'-').toLowerCase();
+
+  setContent(receta.nombre || 'Ficha de plato', `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn btn-secondary" onclick="navigate('recetas')">← Volver</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(receta.id)}')">${ico('edit',13)} Editar receta</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center">
+      ${badgeLinea(receta.tipoServicio)}
+      <span class="badge badge-gray">${esc(receta.tipoPlato||'')}</span>
+      <span style="font-size:12px;color:var(--gris-2)">${porciones} porción${porciones!==1?'es':''} de referencia</span>
+    </div>
+
+    ${incompletos.length ? `
+    <div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:14px 16px;margin-bottom:20px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:6px">⚠ Este costo está incompleto</div>
+      <div style="font-size:13px">Falta esto, y no se reemplaza por cero para que el número no engañe:</div>
+      <ul style="margin:8px 0 0 18px;padding:0;font-size:13px">
+        ${incompletos.map(d=>`<li>${esc(d.nombre)} — ${esc(d.falta)}</li>`).join('')}
+      </ul>
+    </div>` : ''}
+
+    <div class="metric-grid">
+      <div class="metric">
+        <div class="metric-label">Costo por porción</div>
+        <div class="metric-value">$${fmt(merc)}</div>
+      </div>
+      ${verPlata ? `
+      <div class="metric">
+        <div class="metric-label">Precio de venta</div>
+        ${receta.precioVenta>0
+          ? `<div class="metric-value">$${fmt(receta.precioVenta)}</div>`
+          : `<div class="metric-value" style="font-size:14px;color:var(--bordo)">Falta cargar</div>`}
+      </div>
+      <div class="metric">
+        <div class="metric-label">Margen de contribución</div>
+        ${margenPesos!==null
+          ? `<div class="metric-value">$${fmt(margenPesos)}</div><div class="metric-sub">${fmtD(100-pct)}% del precio</div>`
+          : `<div class="metric-value" style="font-size:14px;color:var(--gris-2)">— Sin precio</div>`}
+      </div>
+      <div class="metric"><div class="metric-label">Food cost</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
+      ` : ''}
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Procedimiento</span></div>
+      <div class="card-body">
+        <div style="font-size:12px;color:var(--gris-2);margin-bottom:8px">Los cuatro o cinco pasos que hacen que este plato salga igual siempre. No es un recetario.</div>
+        <textarea rows="4" placeholder="Ej: 1) Sellar el lomo en plancha bien caliente, 2 min por lado. 2) Reposar 3 min..."
+          style="width:100%;font-size:14px;padding:10px;border:1.5px solid var(--crema-2);border-radius:8px;font-family:inherit;resize:vertical"
+          onchange="actualizarProcedimientoFicha('${escJs(receta.id)}', this.value)">${esc(receta.procedimiento||'')}</textarea>
+      </div>
+    </div>
+
+    ${validos.length ? `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">De dónde se va la plata de este plato</span>
+        <button class="btn btn-secondary btn-sm" onclick="descargarGrafico('chart-torta','costo-${slug}')">${ico('download',13)} Descargar</button>
+      </div>
+      <div class="card-body" id="chart-torta" style="overflow-x:auto">
+        ${chartTortaCosto(validos)}
+      </div>
+      <div class="card-body" style="border-top:1px solid var(--crema-2);font-size:12px;color:var(--gris-1)">
+        ${ico('bulb',14)} Para bajar el costo, moveé el ingrediente de arriba de la lista — mover los de abajo casi no cambia el número.
+      </div>
+    </div>
+    ` : `<div style="font-size:13px;color:var(--gris-2);background:var(--crema);border-radius:10px;padding:14px 16px">Todavía no hay costo cargado para mostrar de dónde se va la plata. Completá lo que falta arriba.</div>`}
   `);
 }
 
