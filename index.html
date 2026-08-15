@@ -6702,6 +6702,76 @@ function chartTortaCosto(items){
   </svg>`;
 }
 
+// ── FOTO DEL PLATO — comprimida en el navegador y guardada DENTRO de la receta ──
+// Sin Firebase Storage (eso pide plan Blaze y tarjeta). Se guarda como imagen
+// chica en base64 adentro del mismo documento que ya usa guardarEnFirestore().
+// Ojo con el peso: se busca automáticamente la calidad más alta que entre en
+// ~70 KB por foto, para no inflar el documento de la operación (hoy ~95 KB).
+// El día que haya presupuesto para Storage, esto migra sin perder nada.
+const FOTO_PLATO_MAX_KB = 70;
+function _comprimirImagenADataURL(file, maxDim=480, calidadInicial=0.6){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      let {width, height} = img;
+      if(width > maxDim || height > maxDim){
+        const f = width > height ? maxDim/width : maxDim/height;
+        width = Math.round(width*f); height = Math.round(height*f);
+      }
+      const c = document.createElement('canvas');
+      c.width = width; c.height = height;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      // Bajamos calidad (y si hace falta, tamaño) hasta entrar en el límite de peso.
+      let calidad = calidadInicial, dataUrl = c.toDataURL('image/jpeg', calidad);
+      let intentos = 0;
+      while(dataUrl.length/1024 > FOTO_PLATO_MAX_KB && intentos < 6){
+        calidad = Math.max(0.25, calidad - 0.12);
+        dataUrl = c.toDataURL('image/jpeg', calidad);
+        intentos++;
+      }
+      if(dataUrl.length/1024 > FOTO_PLATO_MAX_KB && maxDim > 320){
+        // Todavía pesada: reintentar con menos resolución.
+        _comprimirImagenADataURL(file, 320, 0.5).then(resolve).catch(reject);
+        return;
+      }
+      resolve(dataUrl);
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('No pude leer la imagen')); };
+    img.src = url;
+  });
+}
+
+async function actualizarFotoFicha(input, recetaId){
+  const file = input.files && input.files[0];
+  input.value = '';
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ showToast('Elegí una imagen','error'); return; }
+  try{
+    mostrarProgreso('Guardando foto…');
+    const dataUrl = await _comprimirImagenADataURL(file);
+    const r = demoData.recetas.find(x=>x.id===recetaId);
+    if(r){ r.fotoData = dataUrl; await guardarEnFirestore(); }
+    ocultarProgreso();
+    showToast('Foto guardada','success');
+    renderFichaPlato(recetaId);
+  }catch(e){
+    ocultarProgreso();
+    console.warn('[Provatio] error guardando foto:', e);
+    showToast('No pude guardar la foto — probá con otra imagen','error');
+  }
+}
+
+async function quitarFotoFicha(recetaId){
+  if(!confirm('¿Sacar la foto de este plato?')) return;
+  const r = demoData.recetas.find(x=>x.id===recetaId);
+  if(r){ delete r.fotoData; await guardarEnFirestore(); }
+  showToast('Foto sacada','success');
+  renderFichaPlato(recetaId);
+}
+
 function actualizarProcedimientoFicha(id, val){
   const r = demoData.recetas.find(x=>x.id===id);
   if(!r) return;
@@ -6731,6 +6801,28 @@ function renderFichaPlato(id){
       ${badgeLinea(receta.tipoServicio)}
       ${receta.tipoPlato ? `<span class="badge badge-gray">${esc(receta.tipoPlato)}</span>` : ''}
       <span style="font-size:12px;color:var(--gris-2)">${porciones} ${porciones!==1?'porciones':'porción'} de referencia</span>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Foto del plato</span></div>
+      <div class="card-body">
+        ${receta.fotoData ? `
+          <img src="${receta.fotoData}" alt="Foto de ${esc(receta.nombre)}" style="width:100%;max-width:420px;border-radius:10px;display:block;margin-bottom:12px;object-fit:cover">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+              ${ico('upload',13)} Cambiar foto
+              <input type="file" accept="image/*" capture="environment" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
+            </label>
+            <button class="btn btn-danger btn-sm" onclick="quitarFotoFicha('${escJs(receta.id)}')">${ico('trash',13)} Sacar foto</button>
+          </div>
+        ` : `
+          <div style="font-size:12px;color:var(--gris-2);margin-bottom:10px">Para que el plato se emplate siempre igual. Sacala con el celu, ahí mismo en la cocina.</div>
+          <label class="btn btn-primary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;width:fit-content">
+            ${ico('upload',13)} Subir foto
+            <input type="file" accept="image/*" capture="environment" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
+          </label>
+        `}
+      </div>
     </div>
 
     ${incompletos.length ? `
