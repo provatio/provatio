@@ -5094,6 +5094,28 @@ function getCategorias(){
   return op.categorias;
 }
 
+function _sinAcentos(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+// Evita categorías casi-duplicadas (ej. "Verduras" apareciendo aparte de
+// "Verduras y frutas") cuando el texto de categoría viene de afuera — la IA
+// que lee una carta, o una columna de Excel — y no coincide letra por letra
+// con una que ya existe. Si el texto nuevo es exactamente una que ya existe,
+// o está contenido en una (o al revés), usa la existente en vez de crear otra.
+// El error se previene acá, no se corrige después con 50 productos ya cargados.
+function _normalizarCategoria(catCruda, categoriasExistentes){
+  const cruda = String(catCruda||'').trim();
+  if(!cruda) return '';
+  const crudaN = _sinAcentos(cruda);
+  let match = categoriasExistentes.find(c=>_sinAcentos(c)===crudaN);
+  if(match) return match;
+  match = categoriasExistentes.find(c=>{
+    const cN = _sinAcentos(c);
+    return cN.includes(crudaN) || crudaN.includes(cN);
+  });
+  return match || cruda;
+}
+
 function modalNuevaCategoria(){
   openModal(`
     <div class="modal-header">
@@ -5120,6 +5142,12 @@ function guardarNuevaCategoria(){
   if(!nombre){ showToast('Escribí el nombre de la categoría','error'); return; }
   const cats = getCategorias();
   if(cats.some(c=>c.toLowerCase()===nombre.toLowerCase())){ showToast('Esa categoría ya existe','error'); return; }
+  // Avisa si se parece mucho a una que ya existe (ej. "Verduras" con "Verduras
+  // y frutas" ya cargada) — para no terminar con dos categorías casi iguales.
+  const parecida = _normalizarCategoria(nombre, cats);
+  if(parecida && parecida.toLowerCase() !== nombre.toLowerCase()){
+    if(!confirm(`Ya tenés una categoría parecida: "${parecida}". ¿Crear "${nombre}" de todas formas?`)) return;
+  }
   cats.push(nombre);
   closeModal();
   if(vistaActual) navigate(vistaActual); else renderIngredientes();
@@ -5191,6 +5219,15 @@ function niCrearCategoriaNueva(){
     niSeleccionarCategoria(existente);
     showToast('Ya existe "'+existente+'" — la seleccionamos','info');
     return;
+  }
+  // Avisa si se parece mucho a una que ya existe (ej. "Verduras" con "Verduras
+  // y frutas" ya cargada) — para no terminar con dos categorías casi iguales.
+  const parecida = _normalizarCategoria(limpio, cats);
+  if(parecida && parecida.toLowerCase() !== limpio.toLowerCase()){
+    if(confirm(`Ya tenés la categoría "${parecida}", parecida a "${limpio}". ¿Usar "${parecida}" en vez de crear una nueva?`)){
+      niSeleccionarCategoria(parecida);
+      return;
+    }
   }
   cats.push(limpio);
   guardarEnFirestore();
@@ -14139,10 +14176,13 @@ function aplicarCartaLeida(){
   [...d.ings.values()].forEach(i=>{
     const clave = _n(i.nombre);
     if(!clave || idPorNombre.has(clave)) return;    // vacío o ya lo tenía: no lo piso
-    if(i.cat && !cats.includes(i.cat)) cats.push(i.cat);
+    // La categoría la propone la IA en texto libre — se normaliza contra las que
+    // ya existen para no terminar con "Verduras" al lado de "Verduras y frutas".
+    const catNorm = _normalizarCategoria(i.cat, cats) || 'Secos y almacén';
+    if(!cats.includes(catNorm)) cats.push(catNorm);
     const id = proximoId('i','i',demoData.ingredientes);
     demoData.ingredientes.push({
-      id, nombre:i.nombre, cat:i.cat,
+      id, nombre:i.nombre, cat:catNorm,
       unidadTipo: i.unidadMedida==='unidades'?'unidades':'kg',
       unidadMedida: i.unidadMedida, unidad: i.unidadMedida==='unidades'?'unidades':'kg',
       bulto:i.bulto, precio:i.precio,
@@ -14452,6 +14492,7 @@ function confirmarExcelImport(){
 
   // Importar ingredientes
   if(document.getElementById('xi-ings').checked){
+    const catsExcel = getCategorias();
     ings.forEach(row=>{
       const gv2 = window._getVal || ((r,...k)=>{ for(const x of k){ if(r[x]!==undefined&&String(r[x]).trim()) return String(r[x]).trim(); } return ''; });
       const nombre = gv2(row,'NOMBRE DEL INGREDIENTE','NOMBRE');
@@ -14460,16 +14501,22 @@ function confirmarExcelImport(){
       if(existing){
         // Ingrediente ya existe — NO pisar precio ni configuración
         // Solo actualizar categoría si estaba vacía
-        if(!existing.cat || existing.cat==='Otro'){
-          existing.cat = gv2(row,'CATEGORÍA','CATEGORIA')||existing.cat||'Otro';
+        if(!existing.cat || existing.cat==='Otros'){
+          const catCruda = gv2(row,'CATEGORÍA','CATEGORIA');
+          existing.cat = catCruda ? _normalizarCategoria(catCruda, catsExcel) : (existing.cat||'Otros');
         }
         return;
       }
-      // Ingrediente nuevo — agregar con todos los datos
+      // Ingrediente nuevo — agregar con todos los datos. La categoría de la
+      // planilla se normaliza contra las que ya existen (mismo criterio que
+      // la carta leída por IA) para no crear "Verduras" al lado de "Verduras y frutas".
+      const catCrudaNueva = gv2(row,'CATEGORÍA','CATEGORIA');
+      const catNormExcel = catCrudaNueva ? _normalizarCategoria(catCrudaNueva, catsExcel) : 'Otros';
+      if(!catsExcel.includes(catNormExcel)) catsExcel.push(catNormExcel);
       const ingData = {
         id: 'xi-'+Date.now()+'-'+Math.random().toString(36).substr(2,4),
         nombre,
-        cat: gv2(row,'CATEGORÍA','CATEGORIA')||'Otro',
+        cat: catNormExcel,
         unidad: gv2(row,'UNIDAD DE COMPRA','UNIDAD')||'kg',
         bulto: parseFloat(gv2(row,'CANTIDAD POR BULTO','CANTIDAD')||1),
         precio: parseFloat(gv2(row,'PRECIO POR BULTO ($)','PRECIO')||0),
@@ -14863,7 +14910,7 @@ function crearIngDesdeSubproducto(corteId, nombreParte, costoXkg){
       <div class="form-group">
         <label>Categoría</label>
         <select id="sub-cat">
-          ${['Carnes vacunas','Cerdo','Aves y granja','Pescados','Verduras y frutas','Secos y almacén','Lácteos','Otro'].map(c=>`<option>${c}</option>`).join('')}
+          ${getCategorias().map(c=>`<option${c===(ing?.cat)?' selected':''}>${c}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
