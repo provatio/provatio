@@ -6689,6 +6689,11 @@ function renderEditorReceta(){
       <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
     </div>
 
+    ${((r.tipoPlato==='Elaborado' || esCentroProduccion()) && !(r.rendimientoG>0)) ? `
+    <div class="alert alert-warn" style="margin-bottom:16px">
+      ⚠ Sin "Rendimiento total" cargado, esta preparación no se puede usar como insumo en otras recetas${esCentroProduccion() ? ' ni transferir a las sucursales' : ''}. El precio que cargaste arriba (${esCentroProduccion() ? 'transferencia' : 'venta'}) no se convierte a $/kg en ningún lado hasta completar este dato — cargá cuántos gramos rinde <strong>en total</strong> esta preparación tal como está definida acá (no por porción, salvo que "porciones de referencia" sea 1 y quieras que coincidan).
+    </div>` : ''}
+
     <div class="card">
       <div class="card-header">
         <span class="card-title">Ingredientes</span>
@@ -7887,7 +7892,7 @@ function getProductosCP(){
 
   // Productos manuales cargados desde la pantalla "Centro de Producción"
   const manuales = (cp._productos || []).map(p => {
-    let costoXkg = 0;
+    let costoXkg = 0, transfSugerido = 0;
     if(p.tipoProd === 'porcionado'){
       const ing = ingsCP.find(i => i.id === p.ingId);
       if(ing && ing.precio > 0){
@@ -7896,11 +7901,22 @@ function getProductosCP(){
       }
     } else if(p.tipoProd === 'redistribuido'){
       costoXkg = p.precioXkg || 0;   // lo que le cuesta comprarlo al CP
+    } else if(p.tipoProd === 'elaborado' && p.recetaId){
+      // Este producto manual está vinculado a una receta del CP (selector
+      // "Receta que lo produce"). Antes esto quedaba en 0 sin avisar — el
+      // precio mostrado dependía 100% de lo que se cargara a mano, aunque la
+      // receta ya tuviera su propio costo y precio de transferencia.
+      const receta = recetasCP.find(r => r.id === p.recetaId);
+      if(receta && receta.rendimientoG > 0){
+        const costoProd = calcularCostoRecetaCP(receta, cp);
+        costoXkg = costoProd / receta.rendimientoG * 1000;
+        transfSugerido = receta.precioVenta > 0 ? receta.precioVenta / receta.rendimientoG * 1000 : 0;
+      }
     }
     return {
       ...p,
       costoProduccionXkg: costoXkg,
-      _transfSugerido: 0,
+      _transfSugerido: transfSugerido,
       modoUso: p.modoUso || (p.tipoProd === 'porcionado' ? 'porcionado' : 'directo'),
     };
   });
@@ -7968,6 +7984,17 @@ function updDespachoCP(prodId, campo, val){
   cp._despacho[prodId][campo] = val;
   guardarEnFirestore();
   renderCP();
+}
+
+// Borra el precio cargado a mano para que un producto "Elaborado" vuelva a
+// seguir el precio de transferencia vigente de la receta que lo produce.
+function usarPrecioRecetaCP(prodId){
+  const cp = getCentroProduccion();
+  if(!cp || !cp._despacho || !cp._despacho[prodId]) return;
+  cp._despacho[prodId].precioTransf = 0;
+  guardarEnFirestore();
+  renderCP();
+  showToast('Ahora sigue el precio de la receta','success');
 }
 
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
@@ -8061,7 +8088,11 @@ function renderCP(){
         onchange="updDespachoCP('${escJs(p.id)}','precioTransf',num(this.value))"
         style="font-size:13px;width:100px;text-align:right;font-weight:700${p.tienePrecioTransferencia?'':';border-color:#B8540A'}">
       <div style="font-size:10px;color:var(--gris-2);margin-top:2px">$/kg al local</div>
-      ${p.tienePrecioTransferencia ? '' : '<div style="font-size:10px;color:#B8540A;margin-top:2px">⚠ va al costo</div>'}`;
+      ${p.tienePrecioTransferencia ? '' : '<div style="font-size:10px;color:#B8540A;margin-top:2px">⚠ va al costo</div>'}
+      ${(p.tipoProd==='elaborado' && p.precioTransfManual>0 && p._transfSugerido>0 && Math.round(p.precioTransfManual)!==Math.round(p._transfSugerido))
+        ? `<div style="font-size:10px;color:#B8540A;margin-top:3px;max-width:120px">⚠ la receta hoy sugiere $${fmt(p._transfSugerido)}/kg
+             <a href="#" onclick="usarPrecioRecetaCP('${escJs(p.id)}');return false" style="color:inherit;text-decoration:underline">usar ese</a></div>`
+        : ''}`;
     const costoProd = p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg` : '—';
     const margen = p.costoXkg > 0
       ? `<span style="color:${p.margenXkg>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(p.margenXkg))}/kg</span>`
