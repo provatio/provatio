@@ -10614,7 +10614,6 @@ function renderCompras(){
       <td style="text-align:right"><span class="calc">${bultos} ${d.unidad}</span></td>
       <td style="text-align:right">$${fmt(d.precio)}</td>
       <td style="text-align:right;font-weight:600">$${fmt(costo)}</td>
-      <td><input type="text" placeholder="Cantidad real..." style="width:130px;font-size:12px"></td>
     </tr>`;
   }).join('');
 
@@ -10631,9 +10630,13 @@ function renderCompras(){
     <div class="card">
       <div class="card-header">
         <span class="card-title">Consolidación de compras — ${esc(semanaActiva.etiqueta)}</span>
-        ${hayDatos?`<button class="btn btn-secondary btn-sm" onclick="window.print()">${ico('print',13)} Imprimir</button>`:''}
+        <div style="display:flex;gap:8px">
+          ${hayDatos?`<button class="btn btn-secondary btn-sm" onclick="navigate('desvios')">${ico('trenddown',13)} Cargar compras reales</button>`:''}
+          ${hayDatos?`<button class="btn btn-secondary btn-sm" onclick="window.print()">${ico('print',13)} Imprimir</button>`:''}
+        </div>
       </div>
       ${hayDatos?`
+        <div style="padding:0 18px;font-size:12px;color:var(--gris-2)">Esto es lo que <strong>deberías</strong> comprar según lo planificado. Para cargar lo que compraste de verdad y ver el desvío, andá a "Informe de ventas".</div>
         <div class="table-wrap">
           <table>
             <thead><tr>
@@ -10642,13 +10645,11 @@ function renderCompras(){
               <th style="text-align:right">Bultos</th>
               <th style="text-align:right">Precio/unidad</th>
               <th style="text-align:right">Costo est.</th>
-              <th>Cantidad real</th>
             </tr></thead>
             <tbody>${rows}</tbody>
             <tr style="background:var(--azul);color:var(--blanco)">
               <td colspan="4"><strong>TOTAL MERCADERÍA</strong></td>
               <td style="text-align:right"><strong>$${fmt(totalCosto)}</strong></td>
-              <td></td>
             </tr>
           </table>
         </div>
