@@ -8596,23 +8596,184 @@ function renderBuffet(){
   `);
 }
 
-// ── PLANIFICACIÓN SEMANAL ──
-let semanaData = {
-  semana: 'Semana 1',
-  dias: ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'],
-  plan: {} // {dia: {tipoServicio: {recetaId, porciones}}}
-};
+// ── PLANIFICACIÓN SEMANAL — persistida por operación, archivada por semana ──
+// Antes esto vivía en una variable de memoria (`semanaData`) que se perdía al
+// refrescar la página y no distinguía una semana de otra. Ahora cada semana es
+// un objeto propio, identificado por su lunes (fechaInicio, ISO), guardado
+// dentro de la operación (op.planesSemanales) y por lo tanto en Firestore.
+
+function _lunesDeSemana(d){
+  const dt = new Date(d);
+  const dia = dt.getDay(); // 0 = domingo
+  const diff = dia===0 ? -6 : 1-dia;
+  dt.setDate(dt.getDate()+diff);
+  return dt.toISOString().slice(0,10);
+}
+function _fmtFechaCorta(fechaISO){
+  const d = new Date(fechaISO+'T00:00:00');
+  return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+}
+function _etiquetaSemana(fechaInicio){
+  return 'Semana del ' + _fmtFechaCorta(fechaInicio);
+}
+function getPlanesSemanales(){
+  const op = getOp();
+  if(!op) return {};
+  if(!op.planesSemanales) op.planesSemanales = {};
+  return op.planesSemanales;
+}
+function _nuevaSemana(fechaInicio){
+  return {
+    fechaInicio,
+    etiqueta: _etiquetaSemana(fechaInicio),
+    dias: ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'],
+    plan: {}, // {dia: {tipoServicio: {recetaId, porciones}}}
+    desvios: {comprasReales:[], ventasReales:[]},
+  };
+}
+function getSemanaActiva(){
+  const op = getOp();
+  if(!op) return _nuevaSemana(_lunesDeSemana(new Date()));
+  const planes = getPlanesSemanales();
+  let id = op.semanaActivaId;
+  if(!id){ id = _lunesDeSemana(new Date()); op.semanaActivaId = id; }
+  if(!planes[id]) planes[id] = _nuevaSemana(id);
+  return planes[id];
+}
+function cambiarSemanaActiva(fechaInicio){
+  const op = getOp();
+  if(!op) return;
+  op.semanaActivaId = fechaInicio;
+  if(!getPlanesSemanales()[fechaInicio]) getPlanesSemanales()[fechaInicio] = _nuevaSemana(fechaInicio);
+  guardarEnFirestore();
+  renderSemanal();
+}
+function semanaAnteriorNav(){
+  const actual = getSemanaActiva();
+  const d = new Date(actual.fechaInicio+'T00:00:00'); d.setDate(d.getDate()-7);
+  cambiarSemanaActiva(d.toISOString().slice(0,10));
+}
+function semanaSiguienteNav(){
+  const actual = getSemanaActiva();
+  const d = new Date(actual.fechaInicio+'T00:00:00'); d.setDate(d.getDate()+7);
+  cambiarSemanaActiva(d.toISOString().slice(0,10));
+}
+function renombrarSemana(valor){
+  const semana = getSemanaActiva();
+  semana.etiqueta = (valor||'').trim() || _etiquetaSemana(semana.fechaInicio);
+  guardarEnFirestore();
+}
+// "Arrancamos mandando mercadería de más y vamos ajustando" — para eso sirve
+// duplicar: trae el menú de la semana guardada más reciente (con algo cargado)
+// para no partir de cero, y de ahí el dueño ajusta cantidades hacia abajo.
+function duplicarSemanaAnterior(){
+  const actual = getSemanaActiva();
+  const anteriores = Object.values(getPlanesSemanales())
+    .filter(s=>s.fechaInicio!==actual.fechaInicio && Object.keys(s.plan||{}).length)
+    .sort((a,b)=>b.fechaInicio.localeCompare(a.fechaInicio));
+  if(!anteriores.length){ showToast('No hay otra semana con menú cargado para copiar','error'); return; }
+  const previa = anteriores[0];
+  if(Object.keys(actual.plan||{}).length && !confirm(`Esta semana ya tiene platos cargados. ¿Reemplazar con la planificación de "${previa.etiqueta}"?`)) return;
+  actual.plan = JSON.parse(JSON.stringify(previa.plan||{}));
+  guardarEnFirestore();
+  showToast('Copiado desde '+previa.etiqueta,'success');
+  renderSemanal();
+}
+// Sugiere porciones en vez de un fijo de 120: primero mira la última vez que
+// planificaste ese plato (en cualquier semana guardada); si nunca lo
+// planificaste, promedia las ventas reales del mes en Ingeniería de menú.
+// Con el tiempo, el punto de partida deja de ser un número inventado.
+function _sugerirPorciones(recetaId){
+  const op = getOp();
+  if(!op) return 120;
+  const actual = getSemanaActiva();
+  const otras = Object.values(getPlanesSemanales())
+    .filter(s=>s.fechaInicio!==actual.fechaInicio)
+    .sort((a,b)=>b.fechaInicio.localeCompare(a.fechaInicio));
+  for(const s of otras){
+    for(const dia of Object.keys(s.plan||{})){
+      for(const servicio of Object.keys(s.plan[dia]||{})){
+        const sel = s.plan[dia][servicio];
+        if(sel && sel.recetaId===recetaId && sel.porciones>0) return sel.porciones;
+      }
+    }
+  }
+  const mes = _mesLocal();
+  const unidMes = +((op.ventasPorMes||{})[mes]||{})[recetaId] || 0;
+  const dias = op.diasOperativos || 26;
+  if(unidMes>0) return Math.max(1, Math.round(unidMes/dias));
+  return 120;
+}
+
+// Consolida ingredientes y costo teórico de UNA semana — lo usan Lista de
+// compras y la vista mensual, para no repetir esta cuenta dos veces.
+function _consolidarSemana(semana){
+  const consolidado = {};
+  let slotsLlenos = 0;
+  Object.entries(semana.plan||{}).forEach(([dia, servicios])=>{
+    Object.entries(servicios).forEach(([servicio, sel])=>{
+      if(!sel || !sel.recetaId) return;
+      slotsLlenos++;
+      const receta = getRecetas().find(r=>r.id===sel.recetaId);
+      if(!receta) return;
+      receta.ingredientes.forEach(ing=>{
+        if(ing.esCondimento) return;
+        const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, sel.porciones||120, false);
+        if(!c||c.error) return;
+        const ingObj = getIngrediente(ing.ingId);
+        if(!ingObj) return;
+        if(!consolidado[ingObj.nombre]) consolidado[ingObj.nombre]={kg:0,precio:ingObj.precio,bulto:ingObj.bulto,unidad:ingObj.unidad};
+        consolidado[ingObj.nombre].kg += c.kg_total;
+      });
+    });
+  });
+  const totalCosto = Object.values(consolidado).reduce((s,d)=>s+d.kg*d.precio,0);
+  const op = getOp();
+  const slotsTotal = (semana.dias||[]).length * ((op&&op.tiposServicio)?op.tiposServicio.length:0);
+  return {consolidado, totalCosto, slotsLlenos, slotsTotal};
+}
 
 function renderSemanal(){
   const op = getOp();
-
+  if(!op){ renderDashboardAdmin(); return; }
+  const vista = window._planVista || 'semana';
   setContent('Planificación semanal', `
-    <div class="alert alert-info">${ico('calendar',14)} Planificá el menú de la semana. Al completarlo se genera automáticamente la lista de compras consolidada.</div>
+    <div class="tabs">
+      <div class="tab ${vista==='semana'?'active':''}" onclick="window._planVista='semana';renderSemanal()">${ico('calendar',13)} Semana</div>
+      <div class="tab ${vista==='mes'?'active':''}" onclick="window._planVista='mes';renderSemanal()">${ico('chart',13)} Vista mensual</div>
+    </div>
+    ${vista==='semana' ? _htmlPlanSemana() : _htmlPlanMes()}
+  `);
+}
+
+function _htmlPlanSemana(){
+  const op = getOp();
+  const semana = getSemanaActiva();
+  const archivadas = Object.values(getPlanesSemanales()).sort((a,b)=>b.fechaInicio.localeCompare(a.fechaInicio));
+  const hayOtrasConDatos = archivadas.some(s=>s.fechaInicio!==semana.fechaInicio && Object.keys(s.plan||{}).length);
+
+  return `
+    <div class="alert alert-info">${ico('calendar',14)} Planificá el menú de la semana. Al completarlo se genera automáticamente la lista de compras consolidada. Cada semana se guarda sola — volvé a cualquiera desde el selector o desde la vista mensual.</div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-body" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="semanaAnteriorNav()" title="Semana anterior">‹</button>
+        <div style="flex:1;min-width:180px">
+          <input type="text" value="${esc(semana.etiqueta)}" style="font-weight:700;font-size:14px;width:100%" onchange="renombrarSemana(this.value)">
+          <div style="font-size:11px;color:var(--gris-2)">desde el ${_fmtFechaCorta(semana.fechaInicio)}</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="semanaSiguienteNav()" title="Semana siguiente">›</button>
+        <select style="width:auto;font-size:12px" onchange="if(this.value)cambiarSemanaActiva(this.value)">
+          <option value="">Ir a semana guardada…</option>
+          ${archivadas.map(s=>`<option value="${s.fechaInicio}"${s.fechaInicio===semana.fechaInicio?' selected':''}>${esc(s.etiqueta)}</option>`).join('')}
+        </select>
+        ${hayOtrasConDatos ? `<button class="btn btn-secondary btn-sm" onclick="duplicarSemanaAnterior()">${ico('refresh',13)} Duplicar semana anterior</button>` : ''}
+      </div>
+    </div>
 
     <div class="card">
       <div class="card-header">
         <span class="card-title">Menú semanal</span>
-        <input type="text" value="${semanaData.semana}" style="width:160px" onchange="semanaData.semana=this.value">
       </div>
       <div class="table-wrap">
         <table>
@@ -8623,11 +8784,11 @@ function renderSemanal(){
             </tr>
           </thead>
           <tbody>
-            ${semanaData.dias.map(dia=>`
+            ${semana.dias.map(dia=>`
               <tr>
                 <td><strong>${dia}</strong></td>
                 ${op.tiposServicio.map(servicio=>{
-                  const sel = (semanaData.plan[dia]||{})[servicio];
+                  const sel = (semana.plan[dia]||{})[servicio];
                   return `<td>
                     <select onchange="setPlanSemanal('${dia}','${servicio}',this.value)" style="width:100%;font-size:12px">
                       <option value="">— elegí receta —</option>
@@ -8651,22 +8812,74 @@ function renderSemanal(){
       <button class="btn btn-primary" onclick="navigate('compras')">${ico('cart',13)} Ver lista de compras</button>
       <button class="btn btn-secondary" onclick="limpiarSemana()">${ico('trash',13)} Limpiar semana</button>
     </div>
-  `);
+  `;
+}
+
+function _htmlPlanMes(){
+  const mes = window._planMes || _mesLocal();
+  const planes = Object.values(getPlanesSemanales())
+    .filter(s=>(s.fechaInicio||'').slice(0,7)===mes)
+    .sort((a,b)=>a.fechaInicio.localeCompare(b.fechaInicio));
+
+  let totalMes = 0, semanasConDatos = 0;
+  const filas = planes.map(s=>{
+    const {totalCosto, slotsLlenos, slotsTotal} = _consolidarSemana(s);
+    if(slotsLlenos>0){ totalMes += totalCosto; semanasConDatos++; }
+    const fin = new Date(s.fechaInicio+'T00:00:00'); fin.setDate(fin.getDate()+5);
+    return `<tr style="cursor:pointer" onclick="window._planVista='semana';cambiarSemanaActiva('${s.fechaInicio}')">
+      <td><strong>${esc(s.etiqueta)}</strong><div style="font-size:11px;color:var(--gris-2)">${_fmtFechaCorta(s.fechaInicio)} al ${_fmtFechaCorta(fin.toISOString().slice(0,10))}</div></td>
+      <td style="text-align:right">${slotsLlenos}/${slotsTotal} comidas</td>
+      <td style="text-align:right;font-weight:600">${slotsLlenos>0?'$'+fmt(totalCosto):'<span style="color:var(--gris-3)">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-body" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="font-size:13px;font-weight:600">Mes:</label>
+        <input type="month" value="${mes}" style="width:auto" onchange="window._planMes=this.value;renderSemanal()">
+      </div>
+    </div>
+    ${planes.length ? `
+    <div class="metric-grid" style="margin-bottom:16px">
+      <div class="metric"><div class="metric-label">Semanas con menú cargado</div><div class="metric-value">${semanasConDatos}</div></div>
+      <div class="metric"><div class="metric-label">Costo mercadería del mes (teórico)</div><div class="metric-value" style="color:var(--rojo)">$${fmt(totalMes)}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Semanas de ${mes}</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Semana</th><th style="text-align:right">Comidas cargadas</th><th style="text-align:right">Costo teórico</th></tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+    </div>
+    ` : `<div class="empty"><div class="empty-icon">${ico('calendar',40)}</div><h3>Sin semanas guardadas este mes</h3><p>Planificá alguna semana de ${mes} en la pestaña "Semana" para verla acá.</p></div>`}
+  `;
 }
 
 function setPlanSemanal(dia, servicio, recetaId){
-  if(!semanaData.plan[dia]) semanaData.plan[dia]={};
-  if(!recetaId){ delete semanaData.plan[dia][servicio]; }
-  else semanaData.plan[dia][servicio]={recetaId, porciones:120};
+  const semana = getSemanaActiva();
+  if(!semana.plan[dia]) semana.plan[dia]={};
+  if(!recetaId){ delete semana.plan[dia][servicio]; }
+  else semana.plan[dia][servicio]={recetaId, porciones:_sugerirPorciones(recetaId)};
+  guardarEnFirestore();
   renderSemanal();
 }
 
 function setPlanPorciones(dia, servicio, porciones){
-  if(semanaData.plan[dia]&&semanaData.plan[dia][servicio])
-    semanaData.plan[dia][servicio].porciones=porciones;
+  const semana = getSemanaActiva();
+  if(semana.plan[dia]&&semana.plan[dia][servicio])
+    semana.plan[dia][servicio].porciones=porciones;
+  guardarEnFirestore();
 }
 
-function limpiarSemana(){ semanaData.plan={}; renderSemanal(); }
+function limpiarSemana(){
+  if(!confirm('¿Vaciar el menú de esta semana? Las demás semanas guardadas no se tocan.')) return;
+  getSemanaActiva().plan={};
+  guardarEnFirestore();
+  renderSemanal();
+}
 
 // ── LISTA DE COMPRAS ──
 // ══════════════════════════════════════════════════════════════════════
@@ -10387,27 +10600,10 @@ function _desperdicioDeclaradoPeriodo(desde, hasta){
 function fmt1(n){ return (Math.round((+n||0)*10)/10).toLocaleString('es-AR'); }
 
 function renderCompras(){
-  // Consolidar desde plan semanal
-  const consolidado = {};
-
-  Object.entries(semanaData.plan).forEach(([dia, servicios])=>{
-    Object.entries(servicios).forEach(([servicio, sel])=>{
-      const receta = getRecetas().find(r=>r.id===sel.recetaId);
-      if(!receta) return;
-      receta.ingredientes.forEach(ing=>{
-        if(ing.esCondimento) return;
-        const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, sel.porciones||120, false);
-        if(!c||c.error) return;
-        const ingObj = getIngrediente(ing.ingId);
-        if(!ingObj) return;
-        if(!consolidado[ingObj.nombre]) consolidado[ingObj.nombre]={kg:0,precio:ingObj.precio,bulto:ingObj.bulto,unidad:ingObj.unidad};
-        consolidado[ingObj.nombre].kg += c.kg_total;
-      });
-    });
-  });
-
+  // Consolidar desde la semana activa de la planificación (persistida y archivada por semana)
+  const semanaActiva = getSemanaActiva();
+  const {consolidado, totalCosto} = _consolidarSemana(semanaActiva);
   const hayDatos = Object.keys(consolidado).length > 0;
-  const totalCosto = Object.values(consolidado).reduce((s,d)=>s+d.kg*d.precio,0);
 
   const rows = Object.entries(consolidado).sort((a,b)=>a[0].localeCompare(b[0])).map(([nombre,d])=>{
     const bultos = Math.ceil(d.kg/d.bulto);
@@ -10434,7 +10630,7 @@ function renderCompras(){
 
     <div class="card">
       <div class="card-header">
-        <span class="card-title">Consolidación de compras — ${semanaData.semana}</span>
+        <span class="card-title">Consolidación de compras — ${esc(semanaActiva.etiqueta)}</span>
         ${hayDatos?`<button class="btn btn-secondary btn-sm" onclick="window.print()">${ico('print',13)} Imprimir</button>`:''}
       </div>
       ${hayDatos?`
@@ -16120,15 +16316,13 @@ function renderHistorialServicio(){
 
 function renderDesvios(){
   const op = getOp();
-  const semana = demoData.semanaActualDesvios || {
-    label: 'Semana actual',
-    comprasReales: [], // [{ingId, nombre, kgReal, precioReal}]
-    ventasReales: [],  // [{recetaId, porcionesReal}]
-  };
+  const semanaActiva = getSemanaActiva();
+  if(!semanaActiva.desvios) semanaActiva.desvios = {comprasReales:[], ventasReales:[]};
+  const semana = semanaActiva.desvios; // [{ingId, nombre, kgReal, precioReal}], [{recetaId, porcionesReal}]
 
-  // Calcular compras teóricas desde planificación semanal
+  // Calcular compras teóricas desde la planificación de la semana activa
   const consolidadoTeorico = {};
-  Object.entries(semanaData.plan||{}).forEach(([dia, servicios])=>{
+  Object.entries(semanaActiva.plan||{}).forEach(([dia, servicios])=>{
     Object.entries(servicios).forEach(([servicio, sel])=>{
       const receta = getRecetas().find(r=>r.id===sel.recetaId);
       if(!receta) return;
@@ -16172,6 +16366,10 @@ function renderDesvios(){
   const desvioTotal = totalReal > 0 ? ((totalReal-totalTeorico)/totalTeorico*100) : null;
 
   setContent('Informe de ventas', `
+    <div class="alert alert-info" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span>${ico('calendar',14)} Mostrando <strong>${esc(semanaActiva.etiqueta)}</strong> — los desvíos se cargan y comparan por semana, igual que la planificación.</span>
+      <a href="#" onclick="navigate('semanal');return false" style="color:inherit;text-decoration:underline;white-space:nowrap">Cambiar de semana</a>
+    </div>
     <div class="tabs">
       <div class="tab active" onclick="switchTabDesvios('analisis',this)">${ico('chart',13)} Análisis de ventas</div>
       <div class="tab" onclick="switchTabDesvios('carga-manual',this)">${ico('edit',13)} Carga manual</div>
@@ -16327,10 +16525,11 @@ function switchTabDesvios(tab, btn){
 }
 
 function guardarComprasReales(){
-  if(!demoData.semanaActualDesvios) demoData.semanaActualDesvios = {comprasReales:[], ventasReales:[]};
-  
+  const semanaActiva = getSemanaActiva();
+  if(!semanaActiva.desvios) semanaActiva.desvios = {comprasReales:[], ventasReales:[]};
+
   const consolidadoTeorico = {};
-  Object.entries(semanaData.plan||{}).forEach(([dia, servicios])=>{
+  Object.entries(semanaActiva.plan||{}).forEach(([dia, servicios])=>{
     Object.entries(servicios).forEach(([servicio, sel])=>{
       const receta = getRecetas().find(r=>r.id===sel.recetaId);
       if(!receta) return;
@@ -16342,14 +16541,14 @@ function guardarComprasReales(){
     });
   });
 
-  demoData.semanaActualDesvios.comprasReales = [];
+  semanaActiva.desvios.comprasReales = [];
   Object.keys(consolidadoTeorico).forEach(ingId=>{
     const kgEl = document.getElementById('real-kg-'+ingId);
     const precioEl = document.getElementById('real-precio-'+ingId);
     const kgReal = parseFloat(kgEl?.value);
     const precioReal = parseFloat(precioEl?.value);
     if(!isNaN(kgReal) && kgReal>0){
-      demoData.semanaActualDesvios.comprasReales.push({ingId, kgReal, precioReal: precioReal||0});
+      semanaActiva.desvios.comprasReales.push({ingId, kgReal, precioReal: precioReal||0});
     }
   });
 
@@ -16375,22 +16574,23 @@ function importarDesviosDesdeExcel(){
         const wb = XLSX.read(ev.target.result, {type:'binary'});
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(sheet, {defval:''});
-        
-        if(!demoData.semanaActualDesvios) demoData.semanaActualDesvios = {comprasReales:[], ventasReales:[]};
-        demoData.semanaActualDesvios.comprasReales = [];
-        
+
+        const semanaActiva = getSemanaActiva();
+        if(!semanaActiva.desvios) semanaActiva.desvios = {comprasReales:[], ventasReales:[]};
+        semanaActiva.desvios.comprasReales = [];
+
         data.forEach(row=>{
           const nombre = String(row['INGREDIENTE']||row['Ingrediente']||'').trim();
           const kgReal = parseFloat(row['KG REAL']||row['Kg real']||0);
           const precioReal = parseFloat(row['PRECIO REAL']||row['Precio real']||0);
           if(!nombre||!kgReal) return;
           const ing = demoData.ingredientes.find(i=>i.nombre===nombre);
-          if(ing) demoData.semanaActualDesvios.comprasReales.push({
+          if(ing) semanaActiva.desvios.comprasReales.push({
             ingId: ing.id, kgReal, precioReal
           });
         });
-        
-        showToast(`${demoData.semanaActualDesvios.comprasReales.length} registros importados`,'success');
+
+        showToast(`${semanaActiva.desvios.comprasReales.length} registros importados`,'success');
         guardarEnFirestore();
         renderDesvios();
       } catch(err){ showToast('Error: '+err.message,'error'); }
