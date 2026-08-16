@@ -5285,8 +5285,8 @@ function renderIngredientes(){
               <thead><tr>
                 <th>Nombre</th><th>Unidad de compra</th>
                 <th style="text-align:right">Cantidad</th>
-                <th style="text-align:right">Precio por unidad ($)</th>
-                <th style="text-align:right">Precio unitario</th>
+                <th style="text-align:right" title="Lo que pagás por el bulto entero: el cajón, la bolsa, la docena, la caja de latas — como venga en la compra">Precio bulto ($)</th>
+                <th style="text-align:right" title="El precio ya dividido a la medida real (kg, litro o unidad) — el que se usa para calcular el costo de las recetas">Precio unidad</th>
                 <th style="text-align:center" title="Controlar el stock de este producto para detectar faltantes">Control stock</th>
                 <th style="text-align:right" title="Cantidad mínima que querés tener siempre — Provatio sugiere el pedido cuando bajás de acá">Stock mínimo</th>
                 <th>Acciones</th>
@@ -5341,9 +5341,82 @@ function renderIngredientes(){
       <button class="btn btn-secondary btn-sm" onclick="toggleTodosIngCat(true)">Expandir todo</button>
       <button class="btn btn-secondary btn-sm" onclick="toggleTodosIngCat(false)">Colapsar todo</button>
       <button class="btn btn-secondary btn-sm" onclick="modalNuevaCategoria()">+ Categoría</button>
+      ${demoData.ingredientes.some(i=>(i.unidadMedida||'kg')==='unidades')
+        ? `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" onclick="renderDiagnosticoUnidades()">⚠ Revisar recetas con ingredientes "por unidad"</button>`
+        : ''}
     </div>
     <div id="ing-lista">${acordeon}</div>
   `, `<button class="btn btn-primary btn-sm" onclick="modalNuevoIng()">+ Nuevo ingrediente</button>`);
+}
+
+// ── DIAGNÓSTICO (no cambia ningún cálculo) ──────────────────────────────────
+// Un ingrediente cargado como "unidades" (huevo, latas, etc.) tiene un peso
+// neto por unidad para poder usarse en recetas "en gramos". Pero hoy la
+// columna "Neto (g)" del editor de receta, para estos ingredientes, en
+// realidad interpreta lo cargado como CANTIDAD DE UNIDADES, no como gramos
+// — aunque el título de la columna diga "g". Antes de tocar esa lógica de
+// cálculo (que puede correr el costo de recetas ya cargadas), esta pantalla
+// muestra, para cada receta que usa uno de estos ingredientes, cómo se está
+// calculando HOY y cómo daría SI el número cargado fuera gramos — para
+// decidir con datos reales si hace falta un fix y de qué tipo.
+function renderDiagnosticoUnidades(){
+  const ingsUnidad = getIngredientesConCP().filter(i=>(i.unidadMedida||'kg')==='unidades');
+  const idsUnidad = new Set(ingsUnidad.map(i=>i.id));
+  const recetas = getRecetas();
+  const filas = [];
+  recetas.forEach(r=>{
+    (r.ingredientes||[]).forEach(ri=>{
+      if(ri.productoCP !== undefined || ri.recetaId !== undefined) return; // no aplica a insumos CP ni sub-recetas
+      if(!idsUnidad.has(ri.ingId)) return;
+      const ing = getIngrediente(ri.ingId);
+      if(!ing) return;
+      const neto = +ri.neto || 0;
+      const c = calcIngrediente(ri.ingId, ri.tecnica, neto, r.porciones||1, false);
+      const pesoUnitario = ing.pesoUnitario || 60;
+      const precioXunidad = (ing.precio||0) / (ing.bulto||1);
+      const precioXkgEquiv = pesoUnitario ? precioXunidad / (pesoUnitario/1000) : 0;
+      const mermaPct = (c && !c.error) ? (c.merma_pct||0) : 0;
+      const factor = 1 - mermaPct/100;
+      const brutoSiFueraGramos = factor>0 ? neto/factor : neto;
+      const costoSiFueraGramos = (brutoSiFueraGramos/1000) * precioXkgEquiv;
+      filas.push({
+        receta: r.nombre, ingrediente: ing.nombre, neto,
+        costoActual: (c && !c.error) ? c.costo_porcion : null,
+        costoError: (c && c.error) ? c.error : null,
+        costoSiFueraGramos,
+      });
+    });
+  });
+
+  const filasHtml = filas.length ? filas.map(f=>`
+    <tr>
+      <td>${esc(f.receta)}</td>
+      <td>${esc(f.ingrediente)}</td>
+      <td style="text-align:right">${fmtD(f.neto)}</td>
+      <td style="text-align:right">${f.costoError ? `<span class="calc calc-err">${esc(f.costoError)}</span>` : `$${fmt(f.costoActual)}`}</td>
+      <td style="text-align:right">$${fmt(f.costoSiFueraGramos)}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="5" style="text-align:center;color:var(--gris-3);padding:24px">No encontré recetas de esta operación que usen ingredientes cargados "por unidad".</td></tr>`;
+
+  setContent('Diagnóstico: ingredientes "por unidad" en recetas', `
+    <div class="alert alert-warn" style="margin-bottom:16px">
+      Esta pantalla es solo de consulta — no cambia ningún cálculo ni guarda nada.
+      <br><br>
+      Hoy, si un ingrediente está cargado como "unidades" en Mis Ingredientes (huevo, latas, etc.),
+      lo que cargás en la columna "Neto (g)" de una receta en realidad se interpreta como
+      <strong>cantidad de unidades</strong>, no como gramos, aunque la columna diga "g".
+      <br><br>
+      Para cada receta de esta operación que usa uno de estos ingredientes, comparo el costo que el
+      sistema calcula HOY (interpretando lo cargado como unidades) contra lo que daría SI ese mismo
+      número en realidad fuera gramos. Si los dos números son parecidos, esa receta probablemente
+      está bien como está. Si son muy distintos, esa receta seguramente está mal calculada.
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Receta</th><th>Ingrediente</th><th style="text-align:right">Neto cargado</th>
+        <th style="text-align:right">Costo hoy (como unidades)</th><th style="text-align:right">Costo si fuera gramos</th></tr></thead>
+      <tbody>${filasHtml}</tbody>
+    </table></div>
+  `, `<button class="btn btn-secondary btn-sm" onclick="navigate('ingredientes')">← Volver a Ingredientes</button>`);
 }
 
 
@@ -5375,8 +5448,8 @@ function filtrarIngredientes(q){
           <thead><tr>
             <th>Nombre</th><th>Categoría</th><th>Unidad de compra</th>
             <th style="text-align:right">Cantidad</th>
-            <th style="text-align:right">Precio ($)</th>
-            <th style="text-align:right">Precio unitario</th>
+            <th style="text-align:right" title="Lo que pagás por el bulto entero: el cajón, la bolsa, la docena, la caja de latas — como venga en la compra">Precio bulto ($)</th>
+            <th style="text-align:right" title="El precio ya dividido a la medida real (kg, litro o unidad) — el que se usa para calcular el costo de las recetas">Precio unidad</th>
             <th>Acciones</th>
           </tr></thead>
           <tbody>
@@ -7900,7 +7973,20 @@ function getProductosCP(){
         costoXkg = costoBase / (1 - (p.mermaPorcionado||0)/100);
       }
     } else if(p.tipoProd === 'redistribuido'){
-      costoXkg = p.precioXkg || 0;   // lo que le cuesta comprarlo al CP
+      // Si está vinculado a un ingrediente real de "Mis ingredientes", el costo
+      // sale de ahí (y de paso permite saber si se mide por kilo o por unidad,
+      // como el huevo). Lo cargado a mano sigue mandando si el CP lo tipeó.
+      if(p.precioXkg > 0){
+        costoXkg = p.precioXkg;
+      } else if(p.ingId){
+        const ing = ingsCP.find(i => i.id === p.ingId);
+        if(ing && ing.precio > 0){
+          const costoBase = (ing.precio||0) / (ing.bulto||1);
+          costoXkg = (ing.unidadMedida==='unidades' && ing.pesoUnitario)
+            ? costoBase / (ing.pesoUnitario/1000)   // $/unidad → $/kg equivalente
+            : costoBase;
+        }
+      }
     } else if(p.tipoProd === 'elaborado' && p.recetaId){
       // Este producto manual está vinculado a una receta del CP (selector
       // "Receta que lo produce"). Antes esto quedaba en 0 sin avisar — el
@@ -7953,11 +8039,17 @@ function getProductosCP(){
                    : (p._transfSugerido > 0 ? p._transfSugerido : costoProd);
       const definido = transfManual > 0 || p._transfSugerido > 0;
 
-      // Cómo se despacha: por kilo, o por porción de X gramos. El precio de
-      // transferencia SIEMPRE se carga por kilo; la porción se deriva. Así, si
-      // el CP cambia el gramaje, no hay que tocar ningún precio.
-      const unidad = d.unidad === 'porcion' ? 'porcion' : 'kg';
-      const gramos = +d.gramos || 0;
+      // Cómo se despacha: por kilo, por porción, o por unidad entera (huevo,
+      // lata, botella — no tiene sentido pedirlos "en gramos"). El precio de
+      // transferencia SIEMPRE se carga por kilo; porción/unidad se derivan.
+      // Si todavía no se eligió nada a mano, y el producto está vinculado a un
+      // ingrediente que en "Mis ingredientes" ya es "por unidad", arrancamos
+      // ahí en vez de forzar kilos — es el mismo dato, no hay que repetirlo.
+      const ingVinculado = ((p.tipoProd==='porcionado' || p.tipoProd==='redistribuido') && p.ingId)
+        ? ingsCP.find(i => i.id === p.ingId) : null;
+      const unidad = d.unidad ? d.unidad
+        : (ingVinculado && ingVinculado.unidadMedida==='unidades') ? 'unidades' : 'kg';
+      const gramos = +d.gramos || (unidad==='unidades' && ingVinculado ? (ingVinculado.pesoUnitario||0) : 0);
 
       return {
         ...p,
@@ -7967,7 +8059,8 @@ function getProductosCP(){
         margenXkg: transf - costoProd,
         despachoUnidad: unidad,
         gramosPorcion: gramos,
-        precioPorcion: (unidad === 'porcion' && gramos > 0) ? transf * gramos / 1000 : null,
+        // Mismo cálculo para "porción" y "unidad" — ambas parten de gramos c/u.
+        precioPorcion: ((unidad === 'porcion' || unidad === 'unidades') && gramos > 0) ? transf * gramos / 1000 : null,
       };
     })
     .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es'));
@@ -7980,7 +8073,12 @@ function updDespachoCP(prodId, campo, val){
   const cp = getCentroProduccion();
   if(!cp) return;
   if(!cp._despacho) cp._despacho = {};
-  if(!cp._despacho[prodId]) cp._despacho[prodId] = { unidad:'kg', gramos:0 };
+  // Importante: NO fijamos "unidad:'kg'" acá por defecto. Si el producto está
+  // vinculado a un ingrediente que ya es "por unidad" (huevo, etc.), getProductosCP
+  // lo auto-sugiere solo mientras nadie tocó el selector a mano — si inicializáramos
+  // 'kg' acá en el primer click (por ejemplo al cargar el precio de transferencia),
+  // tapamos esa auto-sugerencia para siempre sin que el usuario haya elegido nada.
+  if(!cp._despacho[prodId]) cp._despacho[prodId] = { gramos:0 };
   cp._despacho[prodId][campo] = val;
   guardarEnFirestore();
   renderCP();
@@ -8116,26 +8214,32 @@ function renderCP(){
              onchange="updProductoCP('${p.id}','mermaPorcionado',num(this.value))">
            <span style="font-size:11px;color:var(--gris-2)">% se pierde al fraccionar</span>
          </div>`
-      : `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Lo que te cuesta comprarlo:</div>
+      : `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Vinculado a (opcional, para tomar costo y unidad de "Mis ingredientes"):</div>
+         <select onchange="updProductoCP('${p.id}','ingId',this.value)" style="font-size:12px;width:100%;margin-bottom:4px">
+           <option value="">— sin vincular —</option>
+           ${ingsCP.map(i=>`<option value="${i.id}"${i.id===p.ingId?' selected':''}>${esc(i.nombre)}</option>`).join('')}
+         </select>
          <input type="text" inputmode="decimal" value="${p.precioXkg||0}" placeholder="Precio por kg" style="font-size:12px;width:140px"
            onchange="updProductoCP('${p.id}','precioXkg',num(this.value))">
-         <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg</span>`;
+         <span style="font-size:11px;color:var(--gris-2);margin-left:4px">$/kg (dejá en 0 para usar el de la pieza vinculada)</span>`;
 
     // Cómo sale del CP: a granel por kilo, o ya porcionado. Si va porcionado,
     // el local pide porciones enteras y la app deriva el precio del kilo.
     const _dUn = p.despachoUnidad || 'kg';
+    const _dUnEtiqueta = _dUn==='unidades' ? 'unidad' : 'porción';
     const despachoCell = `
       <select onchange="updDespachoCP('${escJs(p.id)}','unidad',this.value)" style="font-size:12px;display:block;margin-bottom:4px;width:100%">
-        <option value="kg"${_dUn!=='porcion'?' selected':''}>⚖️ Por kilo</option>
+        <option value="kg"${_dUn==='kg'?' selected':''}>⚖️ Por kilo</option>
         <option value="porcion"${_dUn==='porcion'?' selected':''}>🍽️ Por porción</option>
+        <option value="unidades"${_dUn==='unidades'?' selected':''}>🔢 Por unidades</option>
       </select>
-      ${_dUn==='porcion' ? `
+      ${(_dUn==='porcion' || _dUn==='unidades') ? `
         <input type="text" inputmode="decimal" min="1" step="10" value="${p.gramosPorcion||''}" placeholder="gramos"
           onchange="updDespachoCP('${escJs(p.id)}','gramos',num(this.value))"
           style="font-size:12px;width:78px">
-        <span style="font-size:11px;color:var(--gris-2)">g c/u</span>
+        <span style="font-size:11px;color:var(--gris-2)">g por ${_dUnEtiqueta}</span>
         ${p.precioPorcion
-          ? `<div style="font-size:11px;color:var(--oliva);font-weight:700;margin-top:3px">$${fmt(p.precioPorcion)} la porción</div>`
+          ? `<div style="font-size:11px;color:var(--oliva);font-weight:700;margin-top:3px">$${fmt(p.precioPorcion)} la ${_dUnEtiqueta}</div>`
           : `<div style="font-size:11px;color:#B8540A;margin-top:3px">⚠ falta el gramaje</div>`}
       ` : ''}`;
 
@@ -9016,15 +9120,17 @@ function renderPedidoSugerido(){
     // La sugerencia viene calculada en kg, así que se traduce y se redondea para
     // arriba: media porción no existe en una cocina.
     const _pCP = vaAlCP ? prodPorNombre.get((i.nombre||'').toLowerCase().trim()) : null;
-    const porPorcion = !!(_pCP && _pCP.despachoUnidad === 'porcion' && _pCP.gramosPorcion > 0);
+    const porUnidad = !!(_pCP && (_pCP.despachoUnidad === 'porcion' || _pCP.despachoUnidad === 'unidades') && _pCP.gramosPorcion > 0);
+    const porPorcion = porUnidad; // alias histórico: ahora cubre tanto "porción" como "unidades"
+    const _etiquetaUnidadPedido = (_pCP && _pCP.despachoUnidad === 'unidades') ? 'unidades' : 'porciones';
     let unidadPedido = unidad, sugeridoFinal = sugerido, detalleFinal = detalle;
-    if(porPorcion){
-      unidadPedido = 'porciones';
+    if(porUnidad){
+      unidadPedido = _etiquetaUnidadPedido;
       if(sugerido != null && sugerido > 0){
         sugeridoFinal = Math.ceil(sugerido * 1000 / _pCP.gramosPorcion);
-        detalleFinal = `${detalle} · ${fmt1(sugerido)} kg ≈ ${sugeridoFinal} porc. de ${_pCP.gramosPorcion}g`;
+        detalleFinal = `${detalle} · ${fmt1(sugerido)} kg ≈ ${sugeridoFinal} ${_etiquetaUnidadPedido} de ${_pCP.gramosPorcion}g`;
       } else {
-        detalleFinal = `porciones de ${_pCP.gramosPorcion}g`;
+        detalleFinal = `${_etiquetaUnidadPedido} de ${_pCP.gramosPorcion}g`;
       }
     }
     return { id:i.id, nombre:i.nombre, cat,
