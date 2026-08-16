@@ -10838,7 +10838,7 @@ function renderResultado(){
 }
 
 function addGastoFijo(){ getGastosFijos().push({id:uid(), concepto:'', monto:0}); renderResultado(); }
-function agregarSueldoDueno(){ getGastosFijos().push({id:uid(), concepto:'Sueldo del dueño', monto:0}); renderResultado(); }
+function agregarSueldoDueno(){ getGastosFijos().push({id:uid(), concepto:'Sueldo del dueño', monto:0}); renderResultado(); guardarEnFirestore(); }
 function updGastoFijo(id, campo, val){
   const g = getGastosFijos().find(x=>x.id===id);
   if(!g) return;
@@ -11033,7 +11033,7 @@ function chartEstructura100(ventas, mercaderia, estructura, resultado){
   const pctRes = ventas>0 ? resultado/ventas*100 : 0;
   const filaLeg = (i, color, label, val, pct) => `
     <rect x="${mL}" y="${y0+barH+40+i*22}" width="12" height="12" rx="3" fill="${color}"/>
-    <text x="${mL+18}" y="${y0+barH+50+i*22}" font-family="Arial" font-size="12" fill="#2A2A22">${label}: $${fmt(val)} · ${fmtD(pct)}%</text>`;
+    <text x="${mL+18}" y="${y0+barH+50+i*22}" font-family="Arial" font-size="12" fill="#2A2A22">${label}: ${val<0?'−':''}$${fmt(Math.abs(val))} · ${val<0?'−':''}${fmtD(Math.abs(pct))}%</text>`;
   const leyenda = filaLeg(0,'#8B1A1A','Mercadería',mercaderia,pctMerc)
     + filaLeg(1,'#5A5A52','Estructura',estructura,pctEst)
     + filaLeg(2, resultado>=0?'#2D5016':'#C02626', 'Resultado', resultado, pctRes);
