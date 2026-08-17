@@ -10401,11 +10401,16 @@ function renderStock(){
 
   const hoy = new Date().toISOString().slice(0,10);
 
+  // Ventas diarias cargadas (alimentan el consumo teórico de más abajo).
+  const ventasPorDia = (op && op.ventasPorDia) || {};
+  const diasVentas = Object.keys(ventasPorDia).sort();
+
   setContent('Control de stock', `
     <div class="alert alert-info" style="margin-bottom:16px">
       ${ico('bulb',14)} Contá cuánto tenés hoy de cada producto crítico. Provatio compara
-      contra el conteo anterior y las compras para detectar faltantes sin explicación.
+      contra el conteo anterior, las compras y las ventas cargadas para detectar faltantes sin explicación.
       ${ultimo ? `<br><span style="font-size:12px;color:var(--gris-2)">Último conteo: <strong>${fmtFechaCorta(ultimo.fecha)}</strong></span>` : ''}
+      <br><span style="font-size:12px;color:var(--gris-2)">Ventas diarias cargadas: <strong>${diasVentas.length} día${diasVentas.length===1?'':'s'}</strong>${diasVentas.length?` · la última, ${fmtFechaCorta(diasVentas[diasVentas.length-1])}`:''}</span>
     </div>
 
     <div class="card" style="margin-bottom:16px">
@@ -10467,7 +10472,7 @@ function renderStock(){
       ${ico('bulb',14)} Cuando cargues una <strong>segunda toma de inventario</strong>, Provatio va a comparar
       contra esta y las compras del período para mostrarte el desvío.
     </div>` : '')}
-  `);
+  `, `<button class="btn btn-secondary btn-sm" onclick="importarVentasDiarias()">${ico('chart',13)} Importar ventas diarias</button>`);
 }
 
 // Borrador en memoria mientras el usuario carga (para no perder si navega sin querer)
@@ -10720,35 +10725,63 @@ function _htmlFaltantes(conteosOrdenados, criticos){
     </div>`;
 }
 
+// Cuántos días tiene un mes 'YYYY-MM'.
+function _diasEnMes(mesStr){
+  const [y,m] = mesStr.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+// Suma al acumulador `out` el consumo bruto de ingredientes que implican
+// `ventasDia` ({recetaId: unidades}), multiplicado por `factor` — factor=1
+// para un día con ventas reales cargadas, o 1/díasDelMes cuando se está
+// estimando ese día a partir del total mensual (ver más abajo).
+function _sumarConsumoDeVentas(out, ventasDia, factor){
+  Object.keys(ventasDia||{}).forEach(recId=>{
+    const unidades = (+ventasDia[recId] || 0) * factor;
+    if(!unidades) return;
+    const rec = demoData.recetas.find(r=>r.id===recId.replace('_dlv',''));
+    if(!rec || !rec.ingredientes) return;
+    const porcionesRec = rec.porciones || 1;
+    rec.ingredientes.forEach(ri=>{
+      const calc = calcIngrediente(ri.ingId, ri.tecnica, ri.neto, 1, ri.esCondimento, ri.unidad);
+      if(!calc || calc.error || calc.esCondimento) return;
+      const ing = getIngrediente(ri.ingId);
+      if(!ing) return;
+      // kg_total de calc es para 1 porción; multiplicamos por unidades vendidas
+      const brutoUnidadIng = (calc.kg_total!=null ? calc.kg_total : 0); // en kg (o unidades si aplica)
+      out[ri.ingId] = (out[ri.ingId]||0) + brutoUnidadIng * unidades / porcionesRec;
+    });
+  });
+}
+
 // Consumo teórico (peso BRUTO en la unidad del ingrediente) en el período,
-// según las ventas por mes cruzadas con las recetas.
+// según las ventas cruzadas con las recetas.
+// Recorre día por día [desde, hasta]: si ese día tiene ventas diarias
+// cargadas (op.ventasPorDia, vía "Importar ventas diarias"), se usan tal
+// cual — es el dato exacto. Si no, se estima ese día repartiendo el total
+// del MES en partes iguales entre sus días (op.ventasPorMes, vía "Importar
+// ventas desde Excel" en Salud del negocio) — mejor aproximación que contar
+// el mes entero sin importar cuántos días del rango realmente lo tocan,
+// que es lo que hacía antes este cálculo.
 function _consumoTeoricoPeriodo(desde, hasta){
   const op = getOp();
   const out = {};
+  const ventasPorDia = (op && op.ventasPorDia) || {};
   const ventasPorMes = (op && op.ventasPorMes) || {};
-  // Meses que caen dentro del rango [desde, hasta] (formato mes: 'YYYY-MM')
-  const mesDesde = desde.slice(0,7), mesHasta = hasta.slice(0,7);
-  Object.keys(ventasPorMes).forEach(mes=>{
-    if(mes < mesDesde || mes > mesHasta) return;
-    const ventas = ventasPorMes[mes] || {};
-    Object.keys(ventas).forEach(recId=>{
-      const unidades = +ventas[recId] || 0;
-      if(!unidades) return;
-      const rec = demoData.recetas.find(r=>r.id===recId.replace('_dlv',''));
-      if(!rec || !rec.ingredientes) return;
-      const porcionesRec = rec.porciones || 1;
-      rec.ingredientes.forEach(ri=>{
-        const calc = calcIngrediente(ri.ingId, ri.tecnica, ri.neto, 1, ri.esCondimento, ri.unidad);
-        if(!calc || calc.error || calc.esCondimento) return;
-        // bruto por porción, en la unidad del ingrediente
-        const ing = getIngrediente(ri.ingId);
-        if(!ing) return;
-        // kg_total de calc es para 1 porción; multiplicamos por unidades vendidas
-        const brutoUnidadIng = (calc.kg_total!=null ? calc.kg_total : 0); // en kg (o unidades si aplica)
-        out[ri.ingId] = (out[ri.ingId]||0) + brutoUnidadIng * unidades / porcionesRec;
-      });
-    });
-  });
+
+  const dIni = new Date(desde+'T12:00:00');
+  const dFin = new Date(hasta+'T12:00:00');
+  if(isNaN(dIni) || isNaN(dFin) || dIni > dFin) return out;
+
+  for(let d = new Date(dIni); d <= dFin; d.setDate(d.getDate()+1)){
+    const iso = d.toISOString().slice(0,10);
+    if(ventasPorDia[iso]){
+      _sumarConsumoDeVentas(out, ventasPorDia[iso], 1);
+    } else {
+      const mes = iso.slice(0,7);
+      if(ventasPorMes[mes]) _sumarConsumoDeVentas(out, ventasPorMes[mes], 1/_diasEnMes(mes));
+    }
+  }
   return out;
 }
 
@@ -11723,6 +11756,90 @@ function importarVentasDesdeExcel(mes){
         if(sinMatch.length) console.log('Ventas sin match:', sinMatch);
       } catch(err){
         showToast('Error al leer el Excel: '+err.message, 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  input.click();
+}
+
+// Convierte lo que venga en la columna "fecha" de un resumen de ventas a
+// 'YYYY-MM-DD'. Cubre: fecha ya parseada por SheetJS (cellDates:true), texto
+// ISO, DD/MM/YYYY (formato habitual acá) y número de serie de Excel (por si
+// la celda no vino formateada como fecha). Devuelve null si no reconoce nada
+// — el llamador cae a "hoy" en ese caso, nunca inventa una fecha rara.
+function _normalizarFechaImportada(val){
+  if(val==null || val==='') return null;
+  if(val instanceof Date && !isNaN(val)) return val.toISOString().slice(0,10);
+  const s = String(val).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if(m) return `${m[3]}-${String(+m[2]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;
+  const n = Number(s);
+  if(!isNaN(n) && n>20000 && n<80000){ // rango razonable de números de serie de Excel
+    const base = new Date(Date.UTC(1899,11,30));
+    base.setUTCDate(base.getUTCDate()+n);
+    return base.toISOString().slice(0,10);
+  }
+  return null;
+}
+
+// Importa un resumen de ventas DIARIAS (Excel o CSV, uno por turno/día o con
+// varias fechas mezcladas) para alimentar el consumo teórico de Control de
+// stock. Separado a propósito de "Importar ventas desde Excel" (mensual, para
+// Salud del negocio) — Javier los quiere como dos cosas distintas: diario
+// para stock, mensual para rentabilidad. Mismo criterio de columnas que el
+// importador mensual (nombre del producto + cantidad vendida), más una
+// columna de fecha opcional; si el archivo no trae fecha, todo se carga bajo
+// el día de hoy (pensado para el caso típico: un archivo por cierre de turno).
+function importarVentasDiarias(){
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.xlsx,.xls,.csv';
+  input.onchange = e => {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array', cellDates:true});
+        let sheetName = wb.SheetNames.find(n=>/venta/i.test(n)) || wb.SheetNames[0];
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
+        const op = getOp();
+        if(!op.ventasPorDia) op.ventasPorDia = {};
+        const norm = s => String(s||'').toLowerCase().trim().replace(/\s+/g,' ');
+        const recetasOp = getRecetas();
+        const hoy = new Date().toISOString().slice(0,10);
+        const porDia = {}; // {fecha: {recetaId: unidades}} — soporta un archivo con varias fechas mezcladas
+        let ok=0, sinMatch=[];
+        data.forEach(row=>{
+          const nombre = row['RECETA']||row['Receta']||row['receta']||row['PLATO']||row['Plato']||row['PRODUCTO']||row['Producto']||row['producto'];
+          const unid = parseFloat(row['UNIDADES VENDIDAS']||row['Unidades vendidas']||row['UNIDADES']||row['Unidades']||row['CANTIDAD']||row['Cantidad']||row['CANT']||row['Cant']||0);
+          const fechaCol = row['FECHA']||row['Fecha']||row['fecha'];
+          const fecha = _normalizarFechaImportada(fechaCol) || hoy;
+          if(!nombre || !unid) return;
+          const receta = recetasOp.find(r=>norm(r.nombre)===norm(nombre))
+            || recetasOp.find(r=>norm(r.nombre).includes(norm(nombre)) || norm(nombre).includes(norm(r.nombre)));
+          if(receta){
+            if(!porDia[fecha]) porDia[fecha] = {};
+            porDia[fecha][receta.id] = (porDia[fecha][receta.id]||0) + Math.max(0,unid);
+            ok++;
+          } else sinMatch.push(nombre);
+        });
+        const fechasCargadas = Object.keys(porDia).sort();
+        fechasCargadas.forEach(fecha=>{
+          if(!op.ventasPorDia[fecha]) op.ventasPorDia[fecha] = {};
+          Object.assign(op.ventasPorDia[fecha], porDia[fecha]);
+        });
+        guardarEnFirestore();
+        let msg = `${ok} línea${ok===1?'':'s'} de venta cargada${ok===1?'':'s'}`;
+        if(fechasCargadas.length===1) msg += ` para el ${fmtFechaCorta(fechasCargadas[0])}`;
+        else if(fechasCargadas.length>1) msg += ` entre el ${fmtFechaCorta(fechasCargadas[0])} y el ${fmtFechaCorta(fechasCargadas[fechasCargadas.length-1])}`;
+        if(sinMatch.length) msg += ` · ${sinMatch.length} sin coincidencia`;
+        showToast(msg, ok?'success':'error');
+        if(sinMatch.length) console.log('Ventas diarias sin match:', sinMatch);
+        if(vistaActual==='stock') renderStock();
+      } catch(err){
+        showToast('Error al leer el archivo: '+err.message, 'error');
       }
     };
     reader.readAsArrayBuffer(file);
