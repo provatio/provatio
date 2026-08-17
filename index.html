@@ -1397,7 +1397,7 @@ async function toggleSoporteProvatio(activar){
   const eid = getEmpresaId();
   if(!eid){ showToast('No hay empresa activa','error'); return; }
   if(!esDueno()){ showToast('Solo el dueño puede cambiar esto','error'); return; }
-  if(!activar && !confirm('¿Cerrarle el acceso a Provatio?\n\n'
+  if(!activar && !await pedirConfirmacionSimple('¿Cerrarle el acceso a Provatio?\n\n'
       + 'Dejan de ver tus recetas, costos y facturas al instante.\n'
       + 'Podés volver a abrirlo cuando quieras.')) return;
   try{
@@ -2890,6 +2890,19 @@ function pedirTexto(titulo, valorInicial, ayuda){
 //
 // Se usa con await: if(!(await pedirConfirmacion('¿Título?'))) return;
 // ═══════════════════════════════════════════════════════════════════════
+// Reemplazo directo de confirm(mensaje) de un solo argumento: mismo mensaje
+// que antes (a veces con "\n\n" separando la pregunta de la explicación),
+// pero mostrado en el cuadro propio de arriba en vez del nativo bloqueado.
+// Barrido completo — todos los confirm() del sistema pasan por acá ahora,
+// no solo el de guardado: si el diálogo nativo está bloqueado en esta
+// ventana, lo estaba en TODOS lados que pedían confirmar algo, no solo uno.
+function pedirConfirmacionSimple(mensaje){
+  const partes = String(mensaje||'').split('\n\n');
+  const titulo = partes[0] || 'Confirmar';
+  const ayuda = partes.slice(1).join('\n\n') || '';
+  return pedirConfirmacion(titulo, ayuda, 'Confirmar', 'Cancelar');
+}
+
 function pedirConfirmacion(titulo, ayuda, textoSi, textoNo){
   return new Promise(function(resolve){
     var prev = document.getElementById('prov-confirmar');
@@ -4683,7 +4696,7 @@ async function sumarAlEquipoProvatio(){
   const mail = (document.getElementById('ep-mail').value||'').trim().toLowerCase();
   if(!mail || mail.indexOf('@')<0){ showToast('Escribí un mail válido','error'); return; }
   if(mail === PROVATIO_FUNDADOR){ showToast('El fundador ya está siempre','info'); return; }
-  if(!confirm('Sumar a '+mail+' al equipo Provatio.\n\nVa a poder ver todas las cuentas, activarlas y suspenderlas.\n¿Seguimos?')) return;
+  if(!await pedirConfirmacionSimple('Sumar a '+mail+' al equipo Provatio.\n\nVa a poder ver todas las cuentas, activarlas y suspenderlas.\n¿Seguimos?')) return;
   try{
     const ref = db.collection('provatio').doc('equipo');
     const d = await ref.get();
@@ -4696,7 +4709,7 @@ async function sumarAlEquipoProvatio(){
 }
 
 async function quitarDelEquipoProvatio(mail){
-  if(!confirm('Sacar a '+mail+' del equipo Provatio.\n\nPierde el acceso de administración al instante. ¿Seguimos?')) return;
+  if(!await pedirConfirmacionSimple('Sacar a '+mail+' del equipo Provatio.\n\nPierde el acceso de administración al instante. ¿Seguimos?')) return;
   try{
     const ref = db.collection('provatio').doc('equipo');
     const d = await ref.get();
@@ -5201,7 +5214,7 @@ function modalNuevaCategoria(){
   setTimeout(()=>{ document.getElementById('nc-nombre')?.focus(); }, 80);
 }
 
-function guardarNuevaCategoria(){
+async function guardarNuevaCategoria(){
   const nombre = document.getElementById('nc-nombre').value.trim();
   if(!nombre){ showToast('Escribí el nombre de la categoría','error'); return; }
   const cats = getCategorias();
@@ -5210,7 +5223,7 @@ function guardarNuevaCategoria(){
   // y frutas" ya cargada) — para no terminar con dos categorías casi iguales.
   const parecida = _normalizarCategoria(nombre, cats);
   if(parecida && parecida.toLowerCase() !== nombre.toLowerCase()){
-    if(!confirm(`Ya tenés una categoría parecida: "${parecida}". ¿Crear "${nombre}" de todas formas?`)) return;
+    if(!await pedirConfirmacionSimple(`Ya tenés una categoría parecida: "${parecida}". ¿Crear "${nombre}" de todas formas?`)) return;
   }
   cats.push(nombre);
   closeModal();
@@ -5271,7 +5284,7 @@ function niSeleccionarCategoria(cat){
   closeModal();
 }
 
-function niCrearCategoriaNueva(){
+async function niCrearCategoriaNueva(){
   const nombre = document.getElementById('ni-cat-nueva').value.trim();
   if(!nombre){ showToast('Escribí un nombre para la categoría','error'); return; }
   // Capitalizar primera letra
@@ -5288,7 +5301,7 @@ function niCrearCategoriaNueva(){
   // y frutas" ya cargada) — para no terminar con dos categorías casi iguales.
   const parecida = _normalizarCategoria(limpio, cats);
   if(parecida && parecida.toLowerCase() !== limpio.toLowerCase()){
-    if(confirm(`Ya tenés la categoría "${parecida}", parecida a "${limpio}". ¿Usar "${parecida}" en vez de crear una nueva?`)){
+    if(await pedirConfirmacionSimple(`Ya tenés la categoría "${parecida}", parecida a "${limpio}". ¿Usar "${parecida}" en vez de crear una nueva?`)){
       niSeleccionarCategoria(parecida);
       return;
     }
@@ -5709,8 +5722,8 @@ function editarIng(id){
   modalNuevoIng(ing);
 }
 
-function delIng(id){
-  if(!confirm('¿Eliminar este ingrediente?')) return;
+async function delIng(id){
+  if(!await pedirConfirmacionSimple('¿Eliminar este ingrediente?')) return;
   demoData.ingredientes = demoData.ingredientes.filter(i=>i.id!==id);
   renderIngredientes(); showToast('Ingrediente eliminado');
 }
@@ -6044,7 +6057,7 @@ function calcularPrecioUnitario(){
   }
 }
 
-function guardarNuevoIng(idExistente){
+async function guardarNuevoIng(idExistente){
   const nombre = document.getElementById('ni-nombre').value.trim();
   const precio = num(document.getElementById('ni-precio').value);
   const bulto = num(document.getElementById('ni-bulto').value)||1;
@@ -6071,7 +6084,7 @@ function guardarNuevoIng(idExistente){
     // dos productos de verdad, igual que "tapa de nalga" y "nalga". Solo se
     // avisa, y decide el chef.
     const parecido = demoData.ingredientes.find(i=>_nombreParecidoIng(i.nombre, nombre));
-    if(parecido && !confirm(
+    if(parecido && !await pedirConfirmacionSimple(
         'Ya tenés cargado "'+parecido.nombre+'", que se parece mucho a "'+nombre+'".\n\n'
       + 'Si es el mismo producto procesado de otra forma (rallado, hervido, en cubos), '
       + 'NO lo cargues de nuevo: agregale una merma al que ya existe.\n\n'
@@ -6316,8 +6329,8 @@ function editarMerma(id){
   }, 50);
 }
 
-function delMerma(id){ 
-  if(!confirm('¿Eliminar esta merma?')) return;
+async function delMerma(id){ 
+  if(!await pedirConfirmacionSimple('¿Eliminar esta merma?')) return;
   demoData.mermas=demoData.mermas.filter(m=>m.id!==id); renderMermas();
   guardarEnFirestore(); }
 
@@ -6661,8 +6674,8 @@ function editarReceta(id){
   renderEditorReceta();
 }
 
-function delReceta(id){
-  if(!confirm('¿Eliminar esta receta?')) return;
+async function delReceta(id){
+  if(!await pedirConfirmacionSimple('¿Eliminar esta receta?')) return;
   demoData.recetas = demoData.recetas.filter(r=>r.id!==id);
   renderRecetas();
   guardarEnFirestore();   // persistir el borrado; si no, la receta vuelve al recargar
@@ -7006,7 +7019,7 @@ async function actualizarFotoFicha(input, recetaId){
 }
 
 async function quitarFotoFicha(recetaId){
-  if(!confirm('¿Sacar la foto de este plato?')) return;
+  if(!await pedirConfirmacionSimple('¿Sacar la foto de este plato?')) return;
   const r = demoData.recetas.find(x=>x.id===recetaId);
   if(r){ delete r.fotoData; await guardarEnFirestore(); }
   showToast('Foto sacada','success');
@@ -7368,8 +7381,8 @@ function updIngReceta(idx,field,val){
   renderEditorReceta();
 }
 
-function quitarIngReceta(idx){ 
-  if(!confirm('¿Quitar este ingrediente de la receta?')) return;
+async function quitarIngReceta(idx){ 
+  if(!await pedirConfirmacionSimple('¿Quitar este ingrediente de la receta?')) return;
   recetaEditando.ingredientes.splice(idx,1); 
   renderEditorReceta(); 
 }
@@ -7628,8 +7641,8 @@ function toggleEstadoEvento(id){
   renderEvento();
 }
 
-function delEvento(id){
-  if(!confirm('¿Eliminar este evento?')) return;
+async function delEvento(id){
+  if(!await pedirConfirmacionSimple('¿Eliminar este evento?')) return;
   demoData.eventos = demoData.eventos.filter(e=>e.id!==id);
   guardarEnFirestore();
   renderEvento();
@@ -8692,8 +8705,8 @@ function toggleEstadoBuffet(id){
   guardarEnFirestore(); renderBuffet();
 }
 
-function delBuffet(id){
-  if(!confirm('¿Eliminar este servicio de buffet?')) return;
+async function delBuffet(id){
+  if(!await pedirConfirmacionSimple('¿Eliminar este servicio de buffet?')) return;
   demoData.buffets=demoData.buffets.filter(b=>b.id!==id);
   guardarEnFirestore(); renderBuffet();
 }
@@ -8994,14 +9007,14 @@ function renombrarSemana(valor){
 // "Arrancamos mandando mercadería de más y vamos ajustando" — para eso sirve
 // duplicar: trae el menú de la semana guardada más reciente (con algo cargado)
 // para no partir de cero, y de ahí el dueño ajusta cantidades hacia abajo.
-function duplicarSemanaAnterior(){
+async function duplicarSemanaAnterior(){
   const actual = getSemanaActiva();
   const anteriores = Object.values(getPlanesSemanales())
     .filter(s=>s.fechaInicio!==actual.fechaInicio && Object.keys(s.plan||{}).length)
     .sort((a,b)=>b.fechaInicio.localeCompare(a.fechaInicio));
   if(!anteriores.length){ showToast('No hay otra semana con menú cargado para copiar','error'); return; }
   const previa = anteriores[0];
-  if(Object.keys(actual.plan||{}).length && !confirm(`Esta semana ya tiene platos cargados. ¿Reemplazar con la planificación de "${previa.etiqueta}"?`)) return;
+  if(Object.keys(actual.plan||{}).length && !await pedirConfirmacionSimple(`Esta semana ya tiene platos cargados. ¿Reemplazar con la planificación de "${previa.etiqueta}"?`)) return;
   actual.plan = JSON.parse(JSON.stringify(previa.plan||{}));
   guardarEnFirestore();
   showToast('Copiado desde '+previa.etiqueta,'success');
@@ -9202,8 +9215,8 @@ function setPlanPorciones(dia, servicio, porciones){
   guardarEnFirestore();
 }
 
-function limpiarSemana(){
-  if(!confirm('¿Vaciar el menú de esta semana? Las demás semanas guardadas no se tocan.')) return;
+async function limpiarSemana(){
+  if(!await pedirConfirmacionSimple('¿Vaciar el menú de esta semana? Las demás semanas guardadas no se tocan.')) return;
   getSemanaActiva().plan={};
   guardarEnFirestore();
   renderSemanal();
@@ -9547,7 +9560,7 @@ function renderPedidoSugerido(){
 // El local suma a su lista un producto de la carta del CP. Se crea como
 // ingrediente propio, marcado como provisto por el CP y con el precio de
 // transferencia, así entra en las recetas y en el costo como cualquier otro.
-function sumarProductoDelCP(prodId){
+async function sumarProductoDelCP(prodId){
   const op = getOp();
   const cp = (op && op.grupoId) ? demoData.operaciones[op.grupoId] : null;
   if(!cp){ showToast('Esta operación no está vinculada a un CP','error'); return; }
@@ -9561,7 +9574,7 @@ function sumarProductoDelCP(prodId){
     renderPedidoSugerido(); return;
   }
 
-  if(!confirm(
+  if(!await pedirConfirmacionSimple(
     `¿Sumar "${nombre}" a tu lista de ingredientes?\n\n` +
     `Precio del CP: $${fmt(prod.costoXkg||0)}/kg\n\n` +
     `Va a quedar disponible para tus recetas y para pedirle al CP.`
@@ -9607,7 +9620,7 @@ async function autorizarPedidoLocal(pedId){
 
   const lineas = (p.lineas||[]).filter(l => (+l.cantidad||0) > 0);
   if(!lineas.length){ showToast('Quedó sin cantidades: no hay nada para pedir','error'); return; }
-  if(!confirm(`¿Autorizar y mandar ${lineas.length} producto(s) al CP?`)) return;
+  if(!await pedirConfirmacionSimple(`¿Autorizar y mandar ${lineas.length} producto(s) al CP?`)) return;
 
   const cpId = op.grupoId;
   const cp = cpId ? demoData.operaciones[cpId] : null;
@@ -9826,7 +9839,7 @@ async function confirmarRecepcionDetallada(pedidoId){
       conDif.map(d=>`· ${d.nombre}: pediste ${fmt1(d.pedido)}, recibiste ${fmt1(d.recibido)} — ${d.motivo}`).join('\n') +
       '\n\n¿Confirmás?'
     : '¿Confirmás que llegó todo conforme?';
-  if(!confirm(resumen)) return;
+  if(!await pedirConfirmacionSimple(resumen)) return;
 
   try{
     mostrarProgreso && mostrarProgreso('Confirmando recepción…');
@@ -10046,7 +10059,7 @@ async function confirmarPedidoCP(){
   // pedido NO viaja al CP: queda guardado acá, esperando la firma. El CP no
   // tiene por qué ver borradores de otra cocina.
   if(exigeAutorizacion() && !puedeAutorizarPedidos()){
-    if(!confirm(`¿Mandar ${lineas.length} producto(s) a autorización?\n\nEl encargado lo va a revisar antes de que salga al CP.`)) return;
+    if(!await pedirConfirmacionSimple(`¿Mandar ${lineas.length} producto(s) a autorización?\n\nEl encargado lo va a revisar antes de que salga al CP.`)) return;
     if(!op._pedidosPendientes) op._pedidosPendientes = [];
     // Un pedido pendiente por vez: si volvés a mandar, reemplaza al anterior.
     op._pedidosPendientes = op._pedidosPendientes.filter(p => p.autorPor !== (currentUser&&currentUser.email));
@@ -10068,7 +10081,7 @@ async function confirmarPedidoCP(){
     return;
   }
 
-  if(!confirm(`¿Confirmar el pedido de ${lineas.length} producto(s) al CP "${cp.nombre||''}"?\n\nDespués de confirmar, el CP lo va a ver para prepararlo.`)) return;
+  if(!await pedirConfirmacionSimple(`¿Confirmar el pedido de ${lineas.length} producto(s) al CP "${cp.nombre||''}"?\n\nDespués de confirmar, el CP lo va a ver para prepararlo.`)) return;
 
   try{
     mostrarProgreso && mostrarProgreso('Confirmando pedido al CP…');
@@ -10113,7 +10126,7 @@ async function confirmarPedidoCP(){
 // El CP marca que ya preparó y despachó el pedido de una sucursal.
 async function marcarPedidoDespachado(pedidoId){
   const cpId = currentOpId;
-  if(!confirm('¿Marcar este pedido como despachado?\n\nQueda esperando que la sucursal confirme que lo recibió.')) return;
+  if(!await pedirConfirmacionSimple('¿Marcar este pedido como despachado?\n\nQueda esperando que la sucursal confirme que lo recibió.')) return;
   try{
     mostrarProgreso && mostrarProgreso('Marcando despachado…');
     const pedidos = await _leerPedidosCP(cpId);
@@ -10146,7 +10159,7 @@ async function confirmarRecepcionPedido(pedidoId){
     showToast('No tenés habilitado recibir mercadería — avisale a quien controla los remitos','info');
     return;
   }
-  if(!confirm('¿Confirmar que recibiste este pedido?\n\nEl CP lo va a dar por cerrado.')) return;
+  if(!await pedirConfirmacionSimple('¿Confirmar que recibiste este pedido?\n\nEl CP lo va a dar por cerrado.')) return;
   try{
     mostrarProgreso && mostrarProgreso('Confirmando recepción…');
     const pedidos = await _leerPedidosCP(op.grupoId);
@@ -10508,7 +10521,7 @@ async function registrarDesperdicio(){
 async function borrarDesperdicio(regId){
   const op = getOp();
   if(!op) return;
-  if(!confirm('¿Borrar este registro de desperdicio?')) return;
+  if(!await pedirConfirmacionSimple('¿Borrar este registro de desperdicio?')) return;
   op.desperdiciosLog = (op.desperdiciosLog||[]).filter(r=>r.id!==regId);
   op.desperdicios = (op.desperdicios||[]).filter(d=>d.regId!==regId);
   await guardarEnFirestore();
@@ -12641,7 +12654,7 @@ async function _guardarEmpresa(empresaId){
 async function _limpiarEmpresasVacias(){
   const vacias = window._empresasVacias || [];
   if(!vacias.length) return;
-  if(!confirm(`¿Eliminar ${vacias.length} empresa(s) vacía(s)?\n\n${vacias.map(e=>'• '+e.nombre).join('\n')}\n\nSe borran las empresas y se libera a cualquier persona que tuvieran asignada. No afecta a las empresas con operaciones.`)) return;
+  if(!await pedirConfirmacionSimple(`¿Eliminar ${vacias.length} empresa(s) vacía(s)?\n\n${vacias.map(e=>'• '+e.nombre).join('\n')}\n\nSe borran las empresas y se libera a cualquier persona que tuvieran asignada. No afecta a las empresas con operaciones.`)) return;
   for(const e of vacias){
     await _borrarEmpresaCompleta(e.id, e.nombre);
   }
@@ -12705,7 +12718,7 @@ async function _ejecutarLimpiezaTotal(){
   const checks = Array.from(document.querySelectorAll('.lt-check:checked'));
   if(!checks.length){ showToast('No marcaste ninguna empresa','error'); return; }
   const elegidas = checks.map(c=>({id:c.value, nombre:c.getAttribute('data-nombre')}));
-  if(!confirm(`¿Borrar por completo ${elegidas.length} empresa(s)?\n\n${elegidas.map(e=>'• '+e.nombre).join('\n')}\n\nSe borran sus operaciones, su gente y la empresa. NO se puede deshacer.`)) return;
+  if(!await pedirConfirmacionSimple(`¿Borrar por completo ${elegidas.length} empresa(s)?\n\n${elegidas.map(e=>'• '+e.nombre).join('\n')}\n\nSe borran sus operaciones, su gente y la empresa. NO se puede deshacer.`)) return;
 
   mostrarProgreso && mostrarProgreso('Limpiando…');
   for(const e of elegidas){
@@ -12832,7 +12845,7 @@ async function modalGestionarCuenta(uid){
 }
 
 async function _gestLiberar(uid){
-  if(!confirm('¿Liberar esta cuenta de su empresa?\n\nQueda sin empresa, lista para asignarla a otra. Los datos de la empresa no se borran.')) return;
+  if(!await pedirConfirmacionSimple('¿Liberar esta cuenta de su empresa?\n\nQueda sin empresa, lista para asignarla a otra. Los datos de la empresa no se borran.')) return;
   try{
     // Borrar AMBOS vínculos: el del modelo nuevo (empresaId) y el legacy (operacionId).
     // Si queda operacionId viejo, la cuenta sigue medio enganchada aunque se libere.
@@ -12849,9 +12862,9 @@ async function _gestCambiarRol(uid, empresaId){
   const rol = document.getElementById('gest-rol').value;
   const opsMarcadas = Array.from(document.querySelectorAll('.gest-op:checked')).map(c=>c.value);
   if(rol!=='dueno' && opsMarcadas.length===0){
-    if(!confirm('No marcaste ningún local. Esta persona no va a ver ninguna operación al entrar.\n\n¿Guardar igual?')) return;
+    if(!await pedirConfirmacionSimple('No marcaste ningún local. Esta persona no va a ver ninguna operación al entrar.\n\n¿Guardar igual?')) return;
   }
-  if(!confirm(`¿Guardar rol "${rol}"${rol!=='dueno' && opsMarcadas.length ? ' con '+opsMarcadas.length+' local(es)' : ''}?`)) return;
+  if(!await pedirConfirmacionSimple(`¿Guardar rol "${rol}"${rol!=='dueno' && opsMarcadas.length ? ' con '+opsMarcadas.length+' local(es)' : ''}?`)) return;
   try{
     // Ficha de miembro: el dueño ve todo (lista vacía = sin restricción);
     // los demás ven SOLO lo tildado. Siempre activo para poder entrar.
@@ -12994,7 +13007,7 @@ async function _gestAsignar(uid){
     const e = await db.collection('empresas').doc(empresaId).get();
     if(e.exists) empNombre = e.data().nombre || empresaId;
   }catch(_){}
-  if(!confirm(`¿Asignar esta cuenta a "${empNombre}"?\n\nSi ya pertenecía a otra empresa, se cambia a esta.`)) return;
+  if(!await pedirConfirmacionSimple(`¿Asignar esta cuenta a "${empNombre}"?\n\nSi ya pertenecía a otra empresa, se cambia a esta.`)) return;
   try{
     // Vincular el usuario a la empresa
     await db.collection('usuarios').doc(uid).set({ empresaId }, {merge:true});
@@ -13779,10 +13792,10 @@ async function delOperacion(id){
   const op = demoData.operaciones[id];
   const nombre = op ? op.nombre : 'esta operación';
   // Doble confirmación: es destructivo e irreversible.
-  if(!confirm(`¿Eliminar "${nombre}"?\n\nSe borran TODAS sus recetas, ingredientes y datos. Esta acción no se puede deshacer.`)) return;
+  if(!await pedirConfirmacionSimple(`¿Eliminar "${nombre}"?\n\nSe borran TODAS sus recetas, ingredientes y datos. Esta acción no se puede deshacer.`)) return;
   // Si tiene locales colgando (es cabecera), avisar
   const colgantes = Object.values(demoData.operaciones||{}).filter(o=>o.grupoId===id);
-  if(colgantes.length && !confirm(`⚠ "${nombre}" tiene ${colgantes.length} local(es) vinculado(s) que quedarán sin cabecera. ¿Continuar igual?`)) return;
+  if(colgantes.length && !await pedirConfirmacionSimple(`⚠ "${nombre}" tiene ${colgantes.length} local(es) vinculado(s) que quedarán sin cabecera. ¿Continuar igual?`)) return;
 
   const eid = getEmpresaId();
 
@@ -13806,7 +13819,7 @@ async function delOperacion(id){
       if(restantes.empty){
         const empDoc = await db.collection('empresas').doc(eid).get();
         const empNombre = (empDoc.exists && empDoc.data().nombre) || 'esta empresa';
-        if(confirm(`"${empNombre}" quedó sin ninguna operación.\n\n¿Querés eliminar también la empresa y liberar a las personas que tenía asignadas?\n\nAceptar = borrar la empresa y dejar a su gente como cuentas libres\nCancelar = dejar la empresa vacía (podés crearle una operación nueva después)`)){
+        if(await pedirConfirmacionSimple(`"${empNombre}" quedó sin ninguna operación.\n\n¿Querés eliminar también la empresa y liberar a las personas que tenía asignadas?\n\nAceptar = borrar la empresa y dejar a su gente como cuentas libres\nCancelar = dejar la empresa vacía (podés crearle una operación nueva después)`)){
           await _borrarEmpresaCompleta(eid, empNombre);
         }
       }
@@ -13879,7 +13892,7 @@ async function restaurarBackup(event){
         return;
       }
       
-      if(!confirm(`¿Restaurar backup en la operación ACTUAL?\n\nSe cargarán ${backup.ingredientes.length} ingredientes, ${(backup.mermas||[]).length} mermas y ${backup.recetas.length} recetas.\n\n⚠ Asegurate de estar en la operación correcta (creá una nueva y vacía si es un cliente nuevo).`)) return;
+      if(!await pedirConfirmacionSimple(`¿Restaurar backup en la operación ACTUAL?\n\nSe cargarán ${backup.ingredientes.length} ingredientes, ${(backup.mermas||[]).length} mermas y ${backup.recetas.length} recetas.\n\n⚠ Asegurate de estar en la operación correcta (creá una nueva y vacía si es un cliente nuevo).`)) return;
 
       // Cargar en memoria, asignando todo a la operación activa
       demoData.ingredientes = backup.ingredientes;
@@ -14572,11 +14585,11 @@ function renderRevisionCarta(){
   `);
 }
 
-function aplicarCartaLeida(){
+async function aplicarCartaLeida(){
   const d = window._cartaDraft;
   if(!d) return;
   const reemplazar = document.getElementById('carta-reemplazar').checked;
-  if(!confirm(reemplazar
+  if(!await pedirConfirmacionSimple(reemplazar
       ? `Se van a REEMPLAZAR tus ingredientes, mermas y recetas por los ${d.recs.length} platos de la carta.\n\n¿Seguís?`
       : `Se van a AGREGAR ${d.recs.length} recetas a lo que ya tenés.\n\n¿Seguís?`)) return;
 
@@ -14744,9 +14757,9 @@ function renderImportExport(){
   `);
 }
 
-function limpiarTodosLosDatos(){
-  if(!confirm('⚠ ATENCIÓN: Esto va a eliminar TODAS las operaciones y datos de Firebase.\n\n¿Estás seguro? Esta acción no se puede deshacer.')) return;
-  if(!confirm('Segunda confirmación: ¿Confirmar el borrado total?')) return;
+async function limpiarTodosLosDatos(){
+  if(!await pedirConfirmacionSimple('⚠ ATENCIÓN: Esto va a eliminar TODAS las operaciones y datos de Firebase.\n\n¿Estás seguro? Esta acción no se puede deshacer.')) return;
+  if(!await pedirConfirmacionSimple('Segunda confirmación: ¿Confirmar el borrado total?')) return;
 
   const db = firebase.firestore();
   const uid = currentUser?.uid;
@@ -15291,14 +15304,14 @@ function guardarNuevoCorte(){
   guardarEnFirestore();
 }
 
-function editarCorte(id){
+async function editarCorte(id){
   // Por ahora eliminar y recrear
-  delCorte(id);
+  await delCorte(id);
   modalNuevoCorte();
 }
 
-function delCorte(id){
-  if(!confirm('¿Eliminar este corte?')) return;
+async function delCorte(id){
+  if(!await pedirConfirmacionSimple('¿Eliminar este corte?')) return;
   demoData.cortesEnteros = demoData.cortesEnteros.filter(c=>c.id!==id);
   renderSubproductos();
   showToast('Corte eliminado');
@@ -15597,7 +15610,7 @@ function getPlantillasSD(){
   if(!demoData.plantillasSD) demoData.plantillasSD = {};
   return Object.values(demoData.plantillasSD).filter(p => p && p.opId === currentOpId);
 }
-function sdGuardarPlantilla(){
+async function sdGuardarPlantilla(){
   const lineas = window._sdLineasDraft || [];
   if(!lineas.length){ showToast('No hay líneas para guardar como plantilla','error'); return; }
   // Si quedaron repetidos de antes, NO se llevan a la plantilla: se arrastrarían
@@ -15608,7 +15621,7 @@ function sdGuardarPlantilla(){
     if(_vistos.has(k)){ _rep.push(l.nombre); return false; }
     _vistos.add(k); return true;
   });
-  if(_rep.length && !confirm('Hay productos repetidos: '+[...new Set(_rep)].join(', ')
+  if(_rep.length && !await pedirConfirmacionSimple('Hay productos repetidos: '+[...new Set(_rep)].join(', ')
       +'.\n\nSe guarda uno solo de cada uno. ¿Seguimos?')) return;
   const _sugerido = ({barra:'Barra', almuerzo:'Almuerzo', salad:'Salad bar',
                       merienda:'Merienda', cena:'Cena'})[window._sdServicio] || 'Plantilla';
@@ -15635,12 +15648,12 @@ function sdGuardarPlantilla(){
     renderCierreServicio();
   });
 }
-function sdAplicarPlantilla(id){
+async function sdAplicarPlantilla(id){
   if(!id) return;
   const pl = (demoData.plantillasSD||{})[id];
   if(!pl){ showToast('No encontré esa plantilla','error'); return; }
   const _actual = window._sdLineasDraft || [];
-  if(_actual.length && !confirm(
+  if(_actual.length && !await pedirConfirmacionSimple(
       'Ya hay '+_actual.length+' producto(s) en este servicio.\n\n'
     + 'Cargar "'+pl.nombre+'" los reemplaza por sus '+pl.lineas.length+' líneas '
     + 'y se pierden los pesos escritos.\n\n¿Seguimos?')){
@@ -15651,10 +15664,10 @@ function sdAplicarPlantilla(id){
   showToast(pl.lineas.length+' líneas cargadas desde "'+pl.nombre+'"','success');
   renderCierreServicio();
 }
-function sdBorrarPlantilla(id){
+async function sdBorrarPlantilla(id){
   const pl = (demoData.plantillasSD||{})[id];
   if(!pl) return;
-  if(!confirm('¿Borrar la plantilla "'+pl.nombre+'"? Los cierres ya guardados no se tocan.')) return;
+  if(!await pedirConfirmacionSimple('¿Borrar la plantilla "'+pl.nombre+'"? Los cierres ya guardados no se tocan.')) return;
   delete demoData.plantillasSD[id];
   if(typeof guardarEnFirestore==='function') guardarEnFirestore();
   showToast('Plantilla borrada','success');
@@ -16052,11 +16065,11 @@ function sdNoSeRecupera(idx){
 
 // El último día antes de un parate NO se recupera nada: se marca todo junto en
 // vez de producto por producto.
-function sdNadaSeRecupera(){
+async function sdNadaSeRecupera(){
   const ls = window._sdLineasDraft || [];
   const conSobrante = ls.filter(l => num(l.sobrante) > 0);
   if(!conSobrante.length){ showToast('Todavía no cargaste lo que volvió','info'); return; }
-  if(!confirm('Marcar que NO se recupera nada de los '+conSobrante.length+' producto(s) con sobrante.\n\n'
+  if(!await pedirConfirmacionSimple('Marcar que NO se recupera nada de los '+conSobrante.length+' producto(s) con sobrante.\n\n'
             + 'Todo lo que volvió pasa a descarte. ¿Seguimos?')) return;
   conSobrante.forEach(l => { l.reutilizado='0'; l.redestinado='0'; l._repartoTocado = true; });
   _sdPersistirBorrador();
@@ -16064,18 +16077,18 @@ function sdNadaSeRecupera(){
   showToast(conSobrante.length+' producto(s) marcados como descarte','success');
 }
 
-function sdQuitarLinea(idx){
+async function sdQuitarLinea(idx){
   if(!window._sdLineasDraft) return;
   const l = window._sdLineasDraft[idx];
   if(!l) return;
-  if(!confirm('¿Sacar "'+l.nombre+'" del servicio de hoy?')) return;
+  if(!await pedirConfirmacionSimple('¿Sacar "'+l.nombre+'" del servicio de hoy?')) return;
   window._sdLineasDraft.splice(idx,1);
   _sdPersistirBorrador();
   renderCierreServicio();
 }
 
-function sdVaciarLineas(){
-  if(!confirm('¿Vaciar todas las líneas del servicio de hoy? Los cierres ya guardados no se tocan.')) return;
+async function sdVaciarLineas(){
+  if(!await pedirConfirmacionSimple('¿Vaciar todas las líneas del servicio de hoy? Los cierres ya guardados no se tocan.')) return;
   window._sdLineasDraft = [];
   _sdPersistirBorrador();
   renderCierreServicio();
@@ -17065,7 +17078,7 @@ function importarDesviosDesdeExcel(){
 
 
 async function eliminarUsuario(uid, email){
-  if(!confirm(`¿Eliminar el usuario ${email}?\n\nEsta acción no se puede deshacer. El usuario perderá el acceso inmediatamente.`)) return;
+  if(!await pedirConfirmacionSimple(`¿Eliminar el usuario ${email}?\n\nEsta acción no se puede deshacer. El usuario perderá el acceso inmediatamente.`)) return;
   try {
     await db.collection('usuarios').doc(uid).delete();
     showToast(`Usuario ${email} eliminado`, 'success');
@@ -17657,8 +17670,8 @@ function cerrarOnboarding(){
   if(overlay) overlay.style.display = 'none';
 }
 
-function saltarOnboarding(){
-  if(confirm('¿Saltás el tour de bienvenida? Podés volver a verlo desde el Dashboard en cualquier momento.')){
+async function saltarOnboarding(){
+  if(await pedirConfirmacionSimple('¿Saltás el tour de bienvenida? Podés volver a verlo desde el Dashboard en cualquier momento.')){
     completarOnboarding();
   }
 }
