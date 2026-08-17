@@ -2419,23 +2419,31 @@ function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadRe
   
   if(usaUnidades){
     // neto = cantidad de unidades por porción
-    // Calcular peso en gramos si está disponible (para lista de compras)
-    const pesoUnitario = ing.pesoUnitario || 60; // peso por defecto de un huevo = 60g
+    // OJO: acá NO se pone un peso por defecto (antes era 60g, el peso de un
+    // huevo — y ese número terminaba aplicándose a cualquier ingrediente por
+    // unidad que no tuviera el suyo propio cargado: brócoli, latas, lo que
+    // sea). Sin "peso por unidad" cargado en Mis Ingredientes, el costo en $
+    // sigue siendo correcto (no depende del peso), pero el kg_total (el que
+    // alimenta la lista de compras y el consumo teórico de stock) queda sin
+    // dato en vez de inventar uno — se marca con pesoUnitarioFalta para que
+    // quien mire pueda avisar en vez de mostrar un número que no es real.
+    const pesoUnitario = ing.pesoUnitario || 0;
+    const pesoUnitarioFalta = !pesoUnitario;
     neto_g = neto * pesoUnitario;
     precioXunidad = ing.precio / (ing.bulto || 1); // precio por unidad
-    
+
     const bruto_u = factor === 0 ? neto : neto / factor;
     const desperdicio_u = bruto_u * desperdicio_pct / 100;
     const bruto_con_desperdicio_u = bruto_u + desperdicio_u;
-    
+
     const costo_porcion = bruto_con_desperdicio_u * precioXunidad;
     const total_unidades = bruto_con_desperdicio_u * porciones;
-    const kg_total = total_unidades * pesoUnitario / 1000;
+    const kg_total = pesoUnitarioFalta ? null : total_unidades * pesoUnitario / 1000;
     const costo_total = costo_porcion * porciones;
-    
+
     return {
       bruto: bruto_u, bruto_con_desperdicio: bruto_con_desperdicio_u,
-      costo_porcion, costo_total, kg_total,
+      costo_porcion, costo_total, kg_total, pesoUnitarioFalta,
       bultos: Math.ceil(total_unidades / (ing.bulto || 1)),
       merma_pct, desperdicio_pct, subproducto, esMultifactorial,
       precio: precioXunidad,
@@ -3761,9 +3769,12 @@ function aplicarFactura(){
       const nid = 'fac' + Date.now().toString(36) + Math.floor(Math.random()*1000);
       const nombreNuevo = it.desc.trim();
       const catDestino = it.cat || _facSugerirCat(nombreNuevo);
+      // Sin peso por defecto para "unidades": cada producto pesa distinto
+      // (no es lo mismo una lata que un huevo) — queda sin cargar hasta que
+      // alguien lo complete en Mis Ingredientes, en vez de inventar un número.
       demoData.ingredientes.push({ id:nid, nombre:nombreNuevo, cat:catDestino,
         precio: Math.round(pu), bulto:1, unidad: it.unidad==='unidades'?'unidad':'kg',
-        ...(it.unidad==='litros'?{unidadMedida:'litros'}:{}), ...(it.unidad==='unidades'?{unidadMedida:'unidades',pesoUnitario:100}:{}) });
+        ...(it.unidad==='litros'?{unidadMedida:'litros'}:{}), ...(it.unidad==='unidades'?{unidadMedida:'unidades'}:{}) });
       // Coherencia ingrediente↔merma: nace con "Sin merma 0%" listo para ajustar
       if(!demoData.mermas) demoData.mermas = [];
       if(!demoData.mermas.some(m=>m.ingrediente===nombreNuevo)){
@@ -5380,18 +5391,22 @@ function renderDiagnosticoUnidades(){
       if(!ing) return;
       const neto = +ri.neto || 0;
       const c = calcIngrediente(ri.ingId, ri.tecnica, neto, r.porciones||1, false);
-      const pesoUnitario = ing.pesoUnitario || 60;
+      // Sin peso por defecto acá tampoco: si el ingrediente no tiene su
+      // "peso por unidad" cargado en Mis Ingredientes, no hay forma de saber
+      // qué daría "si fuera gramos" — se marca en vez de inventar un número.
+      const pesoUnitario = ing.pesoUnitario || 0;
       const precioXunidad = (ing.precio||0) / (ing.bulto||1);
       const precioXkgEquiv = pesoUnitario ? precioXunidad / (pesoUnitario/1000) : 0;
       const mermaPct = (c && !c.error) ? (c.merma_pct||0) : 0;
       const factor = 1 - mermaPct/100;
       const brutoSiFueraGramos = factor>0 ? neto/factor : neto;
-      const costoSiFueraGramos = (brutoSiFueraGramos/1000) * precioXkgEquiv;
+      const costoSiFueraGramos = pesoUnitario ? (brutoSiFueraGramos/1000) * precioXkgEquiv : null;
       filas.push({
         receta: r.nombre, ingrediente: ing.nombre, neto,
         costoActual: (c && !c.error) ? c.costo_porcion : null,
         costoError: (c && c.error) ? c.error : null,
         costoSiFueraGramos,
+        pesoUnitarioFalta: !pesoUnitario,
       });
     });
   });
@@ -5402,7 +5417,7 @@ function renderDiagnosticoUnidades(){
       <td>${esc(f.ingrediente)}</td>
       <td style="text-align:right">${fmtD(f.neto)}</td>
       <td style="text-align:right">${f.costoError ? `<span class="calc calc-err">${esc(f.costoError)}</span>` : `$${fmt(f.costoActual)}`}</td>
-      <td style="text-align:right">$${fmt(f.costoSiFueraGramos)}</td>
+      <td style="text-align:right">${f.pesoUnitarioFalta ? `<span class="calc calc-err" title="Sin 'peso por unidad' cargado en Mis Ingredientes">⚠ falta el peso</span>` : `$${fmt(f.costoSiFueraGramos)}`}</td>
     </tr>`).join('')
     : `<tr><td colspan="5" style="text-align:center;color:var(--gris-3);padding:24px">No encontré recetas de esta operación que usen ingredientes cargados "por unidad".</td></tr>`;
 
@@ -5875,10 +5890,13 @@ function modalNuevoIng(ingExistente){
         <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">
           Peso por unidad (g) — para recetas en gramos
         </label>
-        <input type="text" inputmode="decimal" id="ni-peso-unitario" value="${ing.pesoUnitario||60}" min="1"
+        <input type="text" inputmode="decimal" id="ni-peso-unitario" value="${ing.pesoUnitario||''}" min="1"
           style="width:120px;padding:9px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px"
-          placeholder="60">
+          placeholder="ej: 60 (huevo), 400 (lata)">
         <span style="font-size:12px;color:var(--gris-2);margin-left:8px">g/unidad</span>
+        <div style="font-size:11px;color:#B8540A;margin-top:4px">
+          ⚠ No hay un valor por defecto a propósito — cada producto pesa distinto. Sin este dato, el costo en $ sigue siendo correcto, pero la lista de compras y el control de stock no van a poder convertirlo a kilos.
+        </div>
       </div>
 
       <!-- Equivalencias especiales para huevos -->
@@ -6012,7 +6030,10 @@ function guardarNuevoIng(idExistente){
       return;
     }
   }
-  const pesoUnitario = num(document.getElementById('ni-peso-unitario')?.value||60);
+  // Sin default acá — si se deja vacío, queda sin cargar (no se inventa un
+  // peso). Antes caía a 60 (el de un huevo) y ese número terminaba pisando
+  // el peso real de cualquier otro producto por unidad que no lo tuviera.
+  const pesoUnitario = num(document.getElementById('ni-peso-unitario')?.value||0) || undefined;
   // Al editar, PARTIMOS del ingrediente que ya existe y solo pisamos los campos
   // del formulario. Antes se armaba un objeto nuevo desde cero y se perdían en
   // silencio los datos que este modal no muestra (controlaStock, stockMinimo…).
@@ -14322,10 +14343,13 @@ function renderRevisionCarta(){
   const d = window._cartaDraft;
   if(!d){ renderImportExport(); return; }
 
-  // Armar objetos con id para poder costear antes de guardar nada
+  // Armar objetos con id para poder costear antes de guardar nada.
+  // Sin peso por defecto para "unidades" — antes ponía 60 (el de un huevo)
+  // para cualquier ingrediente por unidad que la IA detectara, y ese número
+  // no tiene nada que ver con lo que realmente pesa, por ejemplo, un brócoli.
   const ingArr = [...d.ings.values()].map((i,ix)=>({ ...i, id:'ci'+ix,
     unidadTipo: i.unidadMedida==='unidades'?'unidades':'kg', unidad: i.unidadMedida==='unidades'?'unidades':'kg',
-    pesoUnitario: i.unidadMedida==='unidades' ? 60 : undefined }));
+    pesoUnitario: i.unidadMedida==='unidades' ? (i.pesoUnitario||undefined) : undefined }));
   const _norm = v => String(v==null?'':v).toLowerCase().trim();
   const porNombre = new Map(ingArr.map(i=>[_norm(i.nombre), i]));
   const mermaPct = new Map([...d.merm.values()].map(m=>[_norm(m.ingrediente)+'|'+(m.tecnica||'Sin merma'), +m.pct||0]));
@@ -14450,7 +14474,9 @@ function aplicarCartaLeida(){
       unidadTipo: i.unidadMedida==='unidades'?'unidades':'kg',
       unidadMedida: i.unidadMedida, unidad: i.unidadMedida==='unidades'?'unidades':'kg',
       bulto:i.bulto, precio:i.precio,
-      pesoUnitario: i.unidadMedida==='unidades' ? 60 : undefined,
+      // Sin peso por defecto para "unidades" (ver comentario en renderRevisionCarta) —
+      // se guarda solo si la IA lo trae, si no queda para completar a mano.
+      pesoUnitario: i.unidadMedida==='unidades' ? (i.pesoUnitario||undefined) : undefined,
       _estimado: true,
     });
     idPorNombre.set(clave, id);
