@@ -5958,10 +5958,14 @@ function actualizarUnidadMedida(){
   };
   if(sugerencias[tipo]) medidaEl.value = sugerencias[tipo];
 
-  // Mostrar equivalencias para huevo
+  // Mostrar equivalencias para huevo — SOLO si el nombre dice "huevo". Antes
+  // se mostraba para cualquier producto comprado por cajón, maple o docena
+  // (brócoli, por ejemplo, también se compra por cajón) y terminaba mostrando
+  // "Equivalencias de huevo" en la ficha de otra cosa — el mismo sesgo que el
+  // peso de 60g, solo que en la pantalla en vez de en el cálculo.
   const nombreEl = document.getElementById('ni-nombre');
   const esHuevo = nombreEl && nombreEl.value.toLowerCase().includes('huevo');
-  if(huevoEl) huevoEl.style.display = (esHuevo || tipo==='maple' || tipo==='docena' || tipo==='cajón') ? 'block' : 'none';
+  if(huevoEl) huevoEl.style.display = esHuevo ? 'block' : 'none';
 
   // Auto-completar cantidad según tipo para huevos
   const bultoEl = document.getElementById('ni-bulto');
