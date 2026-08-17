@@ -7250,7 +7250,7 @@ function renderVarianteDelivery(r, mercSalon){
     const esCPIng = ing._esCP || false;
     const modoUsoCP = ing._modoUso || 'granel';
                 return `<tr>
-                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px"><option value="">— elegí —</option>${demoData.ingredientes.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${esc(i.nombre)}</option>`).join('')}</select></td>
+                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px"><option value="">— elegí —</option>${getIngredientesConCP().sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i._esCP?'🏭 ':i._sincronizadoCP?'🔗 ':''}${esc(i.nombre)}</option>`).join('')}</select></td>
                   <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${tecnicas.length?'<option value="">— técnica —</option>'+tecnicas.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join(''):'<option>Elegí ingrediente</option>'}</select></td>
                   <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:75px;text-align:right" onchange="updIngDelivery(${idx},'neto',num(this.value))"></td>
                   <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
@@ -7289,7 +7289,9 @@ function updIngReceta(idx,field,val){
     recetaEditando.ingredientes[idx].tecnica='';
     const ing = getIngrediente(val);
     if(ing){
-      const tecnicas = [...new Set(demoData.mermas.filter(m=>m.ingrediente===ing.nombre).map(m=>m.tecnica))];
+      // Mismas mermas disponibles (propias + CP) que ve el desplegable de técnica,
+      // si no esto nunca auto-completa para un ingrediente que llega del CP.
+      const tecnicas = [...new Set(getMermasDisponibles().filter(m=>m.ingrediente===ing.nombre).map(m=>m.tecnica))];
       if(tecnicas.length===1) recetaEditando.ingredientes[idx].tecnica=tecnicas[0];
     }
   }
@@ -7351,7 +7353,7 @@ function updIngDelivery(idx, campo, val){
     ing.tecnica='';
     const io = getIngrediente(val);
     if(io){
-      const tecs = [...new Set(demoData.mermas.filter(m=>m.ingrediente===io.nombre).map(m=>m.tecnica))];
+      const tecs = [...new Set(getMermasDisponibles().filter(m=>m.ingrediente===io.nombre).map(m=>m.tecnica))];
       if(tecs.length===1) ing.tecnica=tecs[0];
     }
   }
@@ -10253,7 +10255,7 @@ function renderDesperdicio(){
               </select>` : `
               <select id="desp-item" style="width:100%">
                 <option value="">— elegí el ingrediente —</option>
-                ${demoData.ingredientes.map(i=>`<option value="${esc(i.id)}">${esc(i.nombre)}</option>`).join('')}
+                ${getIngredientesConCP().map(i=>`<option value="${esc(i.id)}">${i._esCP?'🏭 ':i._sincronizadoCP?'🔗 ':''}${esc(i.nombre)}</option>`).join('')}
               </select>`}
           </div>
           <div style="flex:1;min-width:110px">
