@@ -8150,7 +8150,9 @@ function calcularCostoRecetaCP(receta, cp){
 // ── CRUD de productos del CP ─────────────────────────────────────────────────
 
 function nuevoProductoCP(){
-  return { id: uid(), nombre:'', tipoProd:'elaborado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg', modoUso:'directo' };
+  // "Porcionado" es el único tipo que sigue necesitando carga manual: los otros
+  // dos (Elaborado y Redistribuido) ya se arman solos — ver getProductosCP().
+  return { id: uid(), nombre:'', tipoProd:'porcionado', recetaId:'', ingId:'', mermaPorcionado:0, precioXkg:0, unidad:'kg', modoUso:'porcionado' };
 }
 
 function limpiarProductosVacios(){
@@ -8189,6 +8191,62 @@ function updProductoCP(id, campo, val){
   if(!cp) return;
   const p = (cp._productos||[]).find(x => x.id === id);
   if(p){ p[campo] = val; guardarEnFirestore(); renderCP(); }
+}
+
+// Simplificación del catálogo del CP: "Elaborado" y "Redistribuido" cargados a
+// mano quedaron redundantes con dos mecanismos que ya existen y hacen lo mismo
+// solos — el rendimiento (g) de la receta (ver "desdeRecetas" en getProductosCP)
+// y el tilde "también lo vendo a los locales" del ingrediente (ver "vendibles").
+// Estas dos funciones migran una fila vieja al mecanismo automático, cuidando
+// de no perder el precio de transferencia ni el modo de despacho ya cargados.
+function migrarProductoCPElaborado(id){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  const p = (cp._productos||[]).find(x => x.id === id);
+  if(!p) return;
+  if(!p.recetaId){
+    showToast('Esta fila no está vinculada a ninguna receta — elegí una antes de simplificar','error');
+    return;
+  }
+  const recetasCP = (cp._datos && cp._datos.recetas) || [];
+  const receta = recetasCP.find(r => r.id === p.recetaId);
+  if(!receta || !(receta.rendimientoG > 0)){
+    showToast('Esa receta todavía no tiene el rendimiento (g) cargado — cargalo en la receta y esta fila se puede borrar','error');
+    return;
+  }
+  if(!confirm(`"${receta.nombre}" ya se calcula solo porque tiene rendimiento cargado en la receta. ¿Borrar esta fila manual?\n\nSi acá habías cargado un precio de transferencia a mano, se pierde: va a quedar el que sugiere la receta (o lo volvés a cargar en la fila automática que ya aparece en esta lista).`)) return;
+  cp._productos = cp._productos.filter(x => x.id !== id);
+  guardarEnFirestore();
+  renderCP();
+  showToast('Fila simplificada — ahora la produce sola la receta','success');
+}
+
+function migrarProductoCPRedistribuido(id){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  const p = (cp._productos||[]).find(x => x.id === id);
+  if(!p) return;
+  if(!p.ingId){
+    showToast('Vinculá un ingrediente de "Mis ingredientes" en esta fila antes de simplificarla','error');
+    return;
+  }
+  const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
+  const ing = ingsCP.find(i => i.id === p.ingId);
+  if(!ing){
+    showToast('No se encontró el ingrediente vinculado','error');
+    return;
+  }
+  if(!confirm(`Se va a tildar "también lo vendo a los locales" en "${ing.nombre}" (Mis Ingredientes) y se borra esta fila manual.\n\nEl precio de transferencia y el modo de despacho que cargaste acá se mantienen. ¿Confirmás?`)) return;
+  ing.vendeALocales = true;
+  const nuevoId = 'cp-ing-' + ing.id;
+  if(!cp._despacho) cp._despacho = {};
+  if(cp._despacho[id] && !cp._despacho[nuevoId]){
+    cp._despacho[nuevoId] = cp._despacho[id];
+  }
+  cp._productos = cp._productos.filter(x => x.id !== id);
+  guardarEnFirestore();
+  renderCP();
+  showToast('Fila simplificada — ahora sale del tilde en Mis Ingredientes','success');
 }
 
 // ── RENDER CENTRO DE PRODUCCIÓN ──────────────────────────────────────────────
@@ -8278,22 +8336,27 @@ function renderCP(){
           : `<div style="font-size:11px;color:#B8540A;margin-top:3px">⚠ falta el gramaje</div>`}
       ` : ''}`;
 
+    const modoUsoSelect = `<select onchange="updProductoCP('${p.id}','modoUso',this.value)" style="font-size:11px;display:block;margin-top:4px" title="Modo de uso en los locales">
+      <option value="directo"${(p.modoUso||'directo')==='directo'?' selected':''}>✅ Directo (sin merma local)</option>
+      <option value="granel"${p.modoUso==='granel'?' selected':''}>📦 Granel (merma según local)</option>
+      <option value="porcionado"${p.modoUso==='porcionado'?' selected':''}>🔪 Porcionado (costo fijo)</option>
+    </select>`;
+    const tipoCell = p.tipoProd === 'porcionado'
+      ? `<span class="badge badge-sc">🔪 Porcionado</span>${modoUsoSelect}`
+      : `${tipoBadge}
+         <div style="font-size:10px;color:#B8540A;margin-top:4px;line-height:1.4;max-width:150px">
+           ⚠ Modo antiguo: ${p.tipoProd==='elaborado'
+             ? 'esto ya se calcula solo con el rendimiento de la receta.'
+             : 'ahora se maneja con el tilde "también lo vendo a los locales" en Mis Ingredientes.'}
+           <br><a href="#" onclick="${p.tipoProd==='elaborado'?'migrarProductoCPElaborado':'migrarProductoCPRedistribuido'}('${escJs(p.id)}');return false" style="color:#B8540A;text-decoration:underline;font-weight:600">simplificar esta fila →</a>
+         </div>
+         ${modoUsoSelect}`;
+
     return `<tr>
       <td><input type="text" value="${esc(p.nombre)}" placeholder="Nombre del producto"
         style="border:none;background:transparent;font-weight:600;width:100%"
         onchange="updProductoCP('${p.id}','nombre',this.value)"></td>
-      <td>
-        <select onchange="updProductoCP('${p.id}','tipoProd',this.value)" style="font-size:12px;margin-bottom:4px;display:block">
-          <option value="elaborado"${p.tipoProd==='elaborado'?' selected':''}>Elaborado propio</option>
-          <option value="porcionado"${p.tipoProd==='porcionado'?' selected':''}>Porcionado</option>
-          <option value="redistribuido"${p.tipoProd==='redistribuido'?' selected':''}>Redistribuido</option>
-        </select>
-        <select onchange="updProductoCP('${p.id}','modoUso',this.value)" style="font-size:11px;display:block" title="Modo de uso en los locales">
-          <option value="directo"${(p.modoUso||'directo')==='directo'?' selected':''}>✅ Directo (sin merma local)</option>
-          <option value="granel"${p.modoUso==='granel'?' selected':''}>📦 Granel (merma según local)</option>
-          <option value="porcionado"${p.modoUso==='porcionado'?' selected':''}>🔪 Porcionado (costo fijo)</option>
-        </select>
-      </td>
+      <td>${tipoCell}</td>
       <td>${selector}</td>
       <td>${despachoCell}</td>
       <td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}</td>
@@ -8314,15 +8377,15 @@ function renderCP(){
     </div>
 
     <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#3A3A32;background:var(--blanco);border:1px solid var(--crema-2);border-radius:10px;padding:12px 14px;margin-bottom:20px;line-height:1.5">
-      <span>👨‍🍳 <strong>Elaborado:</strong> lo producís con una receta (salsas, pastas, chimichurri)</span>
-      <span>🔪 <strong>Porcionado:</strong> comprás la pieza entera y la fraccionás (vacío → porciones)</span>
-      <span>📦 <strong>Redistribuido:</strong> lo comprás hecho y lo repartís tal cual (aceite, latas)</span>
+      <span>👨‍🍳 <strong>Elaborado</strong> (salsas, pastas): se arma solo con el rendimiento (g) cargado en la receta del CP. No hace falta agregarlo acá.</span>
+      <span>📦 <strong>Redistribuido</strong> (aceite, latas): se arma solo con el tilde "también lo vendo a los locales" en la ficha del ingrediente, en Mis Ingredientes. No hace falta agregarlo acá.</span>
+      <span>🔪 <strong>Porcionado</strong> (vacío → porciones): es el único caso que se sigue cargando a mano, acá abajo — la fracción que se pierde al fraccionar es propia de cada pieza.</span>
     </div>
 
     <div class="card" style="margin-bottom:20px">
       <div class="card-header">
         <span class="card-title">${esMadre?'🏠':'🏭'} ${cp.nombre || tituloCP}</span>
-        <button class="btn btn-primary btn-sm" onclick="addProductoCP()">+ Producto</button>
+        <button class="btn btn-primary btn-sm" onclick="addProductoCP()">+ Producto porcionado</button>
           <button class="btn btn-secondary btn-sm" onclick="limpiarProductosVacios()" title="Elimina las filas de producto que quedaron sin nombre ni receta">🧹 Limpiar vacíos</button>
       </div>
       ${productos.length ? `
@@ -8342,9 +8405,10 @@ function renderCP(){
         </table>
       </div>` : `
       <div class="card-body" style="text-align:center;color:var(--gris-3)">
-        Agregá los productos que el Centro de Producción provee a los locales.
+        Agregá los productos porcionados que el Centro de Producción provee a los locales.
+        Los elaborados (con receta) y los redistribuidos (con el tilde en Mis Ingredientes) van a aparecer solos acá arriba.
         <br><br>
-        <button class="btn btn-primary" onclick="addProductoCP()">+ Primer producto</button>
+        <button class="btn btn-primary" onclick="addProductoCP()">+ Primer producto porcionado</button>
       </div>`}
     </div>
 
