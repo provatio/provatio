@@ -2363,20 +2363,28 @@ function getRecetas(){
 function getMermasOp(){ return demoData.mermas; } // mermas son globales (referencia)
 function getIngredientesOp(){ return demoData.ingredientes; } // ingredientes globales
 function getMerma(nombre, tecnica, estado, proceso){
+  // OJO: antes esto buscaba solo en demoData.mermas (las del local activo), que
+  // deja afuera las mermas cargadas en el Centro de Producción. Un local puede
+  // usar un ingrediente que le llega del CP (ej: espárragos en lata) sin tener
+  // él mismo cargada la merma — el CP ya la cargó. getMermasDisponibles() es
+  // la misma lista combinada (propias + CP) que ya usa el selector de técnica
+  // en el editor de receta; hay que buscar en esa MISMA lista acá, si no la
+  // técnica aparece para elegir pero el cálculo la rechaza como "sin merma".
+  const todas = getMermasDisponibles();
   // Buscar merma multifactorial primero (más específica)
   if(estado && proceso){
-    const mf = demoData.mermas.find(m=>
-      m.ingrediente===nombre && m.tecnica===tecnica && 
-      m.estado===estado && m.proceso===proceso && 
+    const mf = todas.find(m=>
+      m.ingrediente===nombre && m.tecnica===tecnica &&
+      m.estado===estado && m.proceso===proceso &&
       m.tipo==='multifactorial'
     );
     if(mf) return mf;
   }
   // Buscar merma simple
-  const ms = demoData.mermas.find(m=>m.ingrediente===nombre && m.tecnica===tecnica && !m.tipo);
+  const ms = todas.find(m=>m.ingrediente===nombre && m.tecnica===tecnica && !m.tipo);
   if(ms) return ms;
   // Buscar multifactorial solo por ingrediente y técnica (sin estado/proceso)
-  const mft = demoData.mermas.find(m=>m.ingrediente===nombre && m.tecnica===tecnica);
+  const mft = todas.find(m=>m.ingrediente===nombre && m.tecnica===tecnica);
   return mft || null;
 }
 
