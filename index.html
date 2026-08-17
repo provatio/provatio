@@ -1468,11 +1468,13 @@ async function guardarEnFirestore(){
       window._guardando = false;
       ocultarProgreso && ocultarProgreso();
       const cuando = conf.cuando ? (' el ' + new Date(conf.cuando).toLocaleString('es-AR')) : '';
-      const seguir = confirm(
-        'ATENCIÓN: ' + conf.quien + ' guardó cambios en esta operación' + cuando + '.\n\n' +
-        'Si continuás, tus cambios van a reemplazar los suyos.\n\n' +
-        'Aceptar = guardar igual (pisa lo del otro)\n' +
-        'Cancelar = recargar para ver los cambios de la otra persona (perdés lo que editaste acá)'
+      const seguir = await pedirConfirmacion(
+        'Otra persona guardó cambios acá',
+        conf.quien + ' guardó cambios en esta operación' + cuando + '.\n\n' +
+        'Si continuás, tus cambios van a reemplazar los suyos.\n' +
+        '"Recargar" trae los cambios de la otra persona, pero perdés lo que editaste en esta pantalla.',
+        'Guardar igual (pisa lo del otro)',
+        'Recargar'
       );
       if(!seguir){
         location.reload();
@@ -2872,6 +2874,49 @@ function pedirTexto(titulo, valorInicial, ayuda){
       if(e.key === 'Escape') cerrar(null);
     };
     setTimeout(function(){ inp.focus(); inp.select(); }, 60);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PEDIR CONFIRMACIÓN (sí/no)
+//
+// Reemplaza a confirm(), que es la misma familia de diálogo bloqueado que
+// prompt() en la app instalada (ver pedirTexto() arriba) — un diálogo nativo
+// del navegador que en una ventana "standalone" puede no mostrarse nunca.
+// El síntoma es peor que con prompt(): confirm() no devuelve vacío, se queda
+// esperando una respuesta que nunca llega, así que la función que lo llamó
+// queda colgada a mitad de camino (por eso "Guardando…" se quedaba fijo en
+// pantalla sin pasar a error ni a éxito).
+//
+// Se usa con await: if(!(await pedirConfirmacion('¿Título?'))) return;
+// ═══════════════════════════════════════════════════════════════════════
+function pedirConfirmacion(titulo, ayuda, textoSi, textoNo){
+  return new Promise(function(resolve){
+    var prev = document.getElementById('prov-confirmar');
+    if(prev) prev.remove();
+    var d = document.createElement('div');
+    d.id = 'prov-confirmar';
+    d.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(26,26,24,.55);'
+      + 'display:flex;align-items:center;justify-content:center;padding:20px';
+    d.innerHTML = '<div style="background:var(--blanco,#fff);border-radius:14px;padding:20px;'
+      + 'width:100%;max-width:440px;box-shadow:0 12px 40px rgba(0,0,0,.3)">'
+      + '<div style="font-weight:700;font-size:16px;margin-bottom:' + (ayuda?'8':'16') + 'px">' + esc(titulo) + '</div>'
+      + (ayuda ? '<div style="font-size:13px;color:var(--gris-2,#888);margin-bottom:16px;line-height:1.5;white-space:pre-line">' + esc(ayuda) + '</div>' : '')
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">'
+      + '<button id="prov-conf-no" class="btn btn-secondary">' + esc(textoNo||'Cancelar') + '</button>'
+      + '<button id="prov-conf-si" class="btn btn-primary">' + esc(textoSi||'Confirmar') + '</button>'
+      + '</div></div>';
+    document.body.appendChild(d);
+    function onKey(e){
+      if(e.key === 'Escape') cerrar(false);
+      if(e.key === 'Enter') cerrar(true);
+    }
+    function cerrar(v){ d.remove(); document.removeEventListener('keydown', onKey); resolve(v); }
+    d.querySelector('#prov-conf-no').onclick = function(){ cerrar(false); };
+    d.querySelector('#prov-conf-si').onclick = function(){ cerrar(true); };
+    d.onclick = function(e){ if(e.target === d) cerrar(false); };
+    document.addEventListener('keydown', onKey);
+    setTimeout(function(){ d.querySelector('#prov-conf-si').focus(); }, 60);
   });
 }
 
@@ -8199,7 +8244,7 @@ function updProductoCP(id, campo, val){
 // y el tilde "también lo vendo a los locales" del ingrediente (ver "vendibles").
 // Estas dos funciones migran una fila vieja al mecanismo automático, cuidando
 // de no perder el precio de transferencia ni el modo de despacho ya cargados.
-function migrarProductoCPElaborado(id){
+async function migrarProductoCPElaborado(id){
   const cp = getCentroProduccion();
   if(!cp) return;
   const p = (cp._productos||[]).find(x => x.id === id);
@@ -8214,14 +8259,20 @@ function migrarProductoCPElaborado(id){
     showToast('Esa receta todavía no tiene el rendimiento (g) cargado — cargalo en la receta y esta fila se puede borrar','error');
     return;
   }
-  if(!confirm(`"${receta.nombre}" ya se calcula solo porque tiene rendimiento cargado en la receta. ¿Borrar esta fila manual?\n\nSi acá habías cargado un precio de transferencia a mano, se pierde: va a quedar el que sugiere la receta (o lo volvés a cargar en la fila automática que ya aparece en esta lista).`)) return;
+  const ok = await pedirConfirmacion(
+    'Simplificar esta fila',
+    `"${receta.nombre}" ya se calcula solo porque tiene rendimiento cargado en la receta.\n\nSi acá habías cargado un precio de transferencia a mano, se pierde: va a quedar el que sugiere la receta (o lo volvés a cargar en la fila automática que ya aparece en esta lista).`,
+    'Borrar esta fila',
+    'Cancelar'
+  );
+  if(!ok) return;
   cp._productos = cp._productos.filter(x => x.id !== id);
   guardarEnFirestore();
   renderCP();
   showToast('Fila simplificada — ahora la produce sola la receta','success');
 }
 
-function migrarProductoCPRedistribuido(id){
+async function migrarProductoCPRedistribuido(id){
   const cp = getCentroProduccion();
   if(!cp) return;
   const p = (cp._productos||[]).find(x => x.id === id);
@@ -8236,7 +8287,13 @@ function migrarProductoCPRedistribuido(id){
     showToast('No se encontró el ingrediente vinculado','error');
     return;
   }
-  if(!confirm(`Se va a tildar "también lo vendo a los locales" en "${ing.nombre}" (Mis Ingredientes) y se borra esta fila manual.\n\nEl precio de transferencia y el modo de despacho que cargaste acá se mantienen. ¿Confirmás?`)) return;
+  const ok = await pedirConfirmacion(
+    'Simplificar esta fila',
+    `Se va a tildar "también lo vendo a los locales" en "${ing.nombre}" (Mis Ingredientes) y se borra esta fila manual.\n\nEl precio de transferencia y el modo de despacho que cargaste acá se mantienen.`,
+    'Simplificar',
+    'Cancelar'
+  );
+  if(!ok) return;
   ing.vendeALocales = true;
   const nuevoId = 'cp-ing-' + ing.id;
   if(!cp._despacho) cp._despacho = {};
