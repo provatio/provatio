@@ -5473,7 +5473,7 @@ function renderDiagnosticoUnidades(){
     <tr>
       <td>${esc(f.receta)}</td>
       <td>${esc(f.ingrediente)}</td>
-      <td style="text-align:right">${fmtD(f.neto)}</td>
+      <td style="text-align:right">${fmtD(f.neto)} unidades</td>
       <td style="text-align:right">${f.costoError ? `<span class="calc calc-err">${esc(f.costoError)}</span>` : `$${fmt(f.costoActual)}`}</td>
       <td style="text-align:right">${f.pesoUnitarioFalta ? `<span class="calc calc-err" title="Sin 'peso por unidad' cargado en Mis Ingredientes">⚠ falta el peso</span>` : `$${fmt(f.costoSiFueraGramos)}`}</td>
     </tr>`).join('')
@@ -5481,20 +5481,18 @@ function renderDiagnosticoUnidades(){
 
   setContent('Diagnóstico: ingredientes "por unidad" en recetas', `
     <div class="alert alert-warn" style="margin-bottom:16px">
-      Esta pantalla es solo de consulta — no cambia ningún cálculo ni guarda nada.
+      Esta pantalla es solo para mirar — no cambia ni guarda nada.
       <br><br>
-      Hoy, si un ingrediente está cargado como "unidades" en Mis Ingredientes (huevo, latas, etc.),
-      lo que cargás en la columna "Neto (g)" de una receta en realidad se interpreta como
-      <strong>cantidad de unidades</strong>, no como gramos, aunque la columna diga "g".
+      Huevo, latas y otros ingredientes "por unidad": lo que cargaste en la receta se lee como
+      <strong>cantidad de unidades</strong> (0,5 = medio huevo), no como gramos, aunque la columna diga "g".
       <br><br>
-      Para cada receta de esta operación que usa uno de estos ingredientes, comparo el costo que el
-      sistema calcula HOY (interpretando lo cargado como unidades) contra lo que daría SI ese mismo
-      número en realidad fuera gramos. Si los dos números son parecidos, esa receta probablemente
-      está bien como está. Si son muy distintos, esa receta seguramente está mal calculada.
+      Mirá cada fila y preguntate solo esto: <strong>¿esa cantidad tiene sentido como unidades, para ese
+      ingrediente, en esa receta?</strong> Si sí, dejala como está. Si no — por ejemplo, si en realidad
+      habías cargado un peso en gramos — decime cuál es y la corregimos juntos.
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Receta</th><th>Ingrediente</th><th style="text-align:right">Neto cargado</th>
-        <th style="text-align:right">Costo hoy (como unidades)</th><th style="text-align:right">Costo si fuera gramos</th></tr></thead>
+      <thead><tr><th>Receta</th><th>Ingrediente</th><th style="text-align:right">Cantidad cargada</th>
+        <th style="text-align:right">Costo así (unidades)</th><th style="text-align:right">Costo si en cambio fuera gramos</th></tr></thead>
       <tbody>${filasHtml}</tbody>
     </table></div>
   `, `<button class="btn btn-secondary btn-sm" onclick="navigate('ingredientes')">← Volver a Ingredientes</button>`);
@@ -5905,7 +5903,7 @@ function modalNuevoIng(ingExistente){
           </div>
           <div>
             <label style="display:block;font-size:11px;font-weight:600;color:var(--gris-1);margin-bottom:6px">Unidad de medida</label>
-            <select id="ni-unidad-medida" style="width:100%;padding:9px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px">
+            <select id="ni-unidad-medida" onchange="sincronizarUIIng()" style="width:100%;padding:9px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px">
               <option value="kg"${ing.unidadMedida==='kg'?' selected':''}>kg (kilogramos)</option>
               <option value="litros"${ing.unidadMedida==='litros'?' selected':''}>litros</option>
               <option value="unidades"${ing.unidadMedida==='unidades'?' selected':''}>unidades</option>
