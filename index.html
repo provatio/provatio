@@ -5975,10 +5975,11 @@ function modalNuevoIng(ingExistente){
     </div>
   `);
 
-  // Inicializar cálculo
-  setTimeout(()=>{ 
-    actualizarUnidadMedida(); 
-    calcularPrecioUnitario(); 
+  // Inicializar cálculo — sincroniza lo que se VE con lo que ya está elegido,
+  // sin pisar la unidad de medida (eso solo cuando la persona toca el
+  // selector "unidad de compra" a mano, ver actualizarUnidadMedida()).
+  setTimeout(()=>{
+    sincronizarUIIng();
     const btn = document.getElementById('btn-guardar-ing');
     if(btn) btn.onclick = ()=>guardarNuevoIng(btn.dataset.ingId||'');
   }, 50);
@@ -5994,18 +5995,14 @@ function niRefrescarMermas(){
   wrap.innerHTML = _bloqueMermasIng(nom, cat);
 }
 
+// Se dispara cuando la persona TOCA el selector "unidad de compra" — ahí sí
+// tiene sentido re-sugerir la unidad de medida y, para huevo, la cantidad
+// por bulto: es una decisión activa suya en ese momento, no algo que el
+// sistema le imponga de arriba.
 function actualizarUnidadMedida(){
   const tipo = document.getElementById('ni-unidad-tipo')?.value;
   const medidaEl = document.getElementById('ni-unidad-medida');
-  const huevoEl = document.getElementById('ni-equiv-huevo');
   if(!medidaEl) return;
-
-  // Mostrar campo peso unitario si corresponde
-  const medidaEl2 = document.getElementById('ni-unidad-medida');
-  const pesoWrap = document.getElementById('ni-peso-unitario-wrap');
-  if(pesoWrap && medidaEl2){
-    pesoWrap.style.display = medidaEl2.value === 'unidades' ? 'block' : 'none';
-  }
 
   // Sugerir unidad de medida según tipo de compra
   const sugerencias = {
@@ -6016,6 +6013,38 @@ function actualizarUnidadMedida(){
   };
   if(sugerencias[tipo]) medidaEl.value = sugerencias[tipo];
 
+  // Auto-completar cantidad según tipo, pero SOLO para huevo — el nombre lo dice
+  const nombreEl = document.getElementById('ni-nombre');
+  const esHuevo = nombreEl && nombreEl.value.toLowerCase().includes('huevo');
+  const bultoEl = document.getElementById('ni-bulto');
+  if(bultoEl && esHuevo){
+    const cantidades = {'cajón':360, 'maple':30, 'docena':12, 'unidad':1};
+    if(cantidades[tipo]) bultoEl.value = cantidades[tipo];
+  }
+
+  sincronizarUIIng();
+}
+
+// Refleja en pantalla lo que YA está elegido (mostrar/ocultar el peso por
+// unidad, la equivalencia de huevo, recalcular el precio) SIN pisar ningún
+// valor cargado. Se usa al abrir el modal — nuevo ingrediente o edición de
+// uno existente — para que se vea tal cual está guardado.
+//
+// Antes esta parte vivía adentro de actualizarUnidadMedida(), que TAMBIÉN
+// pisaba la unidad de medida con una sugerencia genérica ("Caja" → "kg")
+// cada vez que se llamaba — y se llamaba sola al abrir el modal. Por eso
+// "Espárragos en lata" (comprado por caja, medido en unidades) volvía a
+// kg con solo abrir "Editar", sin que nadie tocara nada: mismo patrón que
+// el "60" hardcodeado — una sugerencia pensada para un campo vacío se
+// aplicaba también sobre un dato ya cargado a mano.
+function sincronizarUIIng(){
+  const medidaEl = document.getElementById('ni-unidad-medida');
+  const huevoEl = document.getElementById('ni-equiv-huevo');
+  const pesoWrap = document.getElementById('ni-peso-unitario-wrap');
+  if(pesoWrap && medidaEl){
+    pesoWrap.style.display = medidaEl.value === 'unidades' ? 'block' : 'none';
+  }
+
   // Mostrar equivalencias para huevo — SOLO si el nombre dice "huevo". Antes
   // se mostraba para cualquier producto comprado por cajón, maple o docena
   // (brócoli, por ejemplo, también se compra por cajón) y terminaba mostrando
@@ -6024,13 +6053,6 @@ function actualizarUnidadMedida(){
   const nombreEl = document.getElementById('ni-nombre');
   const esHuevo = nombreEl && nombreEl.value.toLowerCase().includes('huevo');
   if(huevoEl) huevoEl.style.display = esHuevo ? 'block' : 'none';
-
-  // Auto-completar cantidad según tipo para huevos
-  const bultoEl = document.getElementById('ni-bulto');
-  if(bultoEl && esHuevo){
-    const cantidades = {'cajón':360, 'maple':30, 'docena':12, 'unidad':1};
-    if(cantidades[tipo]) bultoEl.value = cantidades[tipo];
-  }
 
   calcularPrecioUnitario();
 }
