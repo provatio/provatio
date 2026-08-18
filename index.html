@@ -8058,6 +8058,23 @@ function getProductosCP(){
   const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
   const _desp = cp._despacho || {};
 
+  // Convierte un precio "por unidad de compra" (ej: $/lata, $/huevo) a un
+  // "$/kg equivalente", usando el peso neto de esa unidad. Ese peso puede
+  // venir de dos lados — el ingrediente ("Peso por unidad" en Mis
+  // Ingredientes) o, si eso quedó sin cargar, el "g por unidad" que el CP ya
+  // haya puesto en "Cómo se despacha" para ESTE producto — es el mismo dato
+  // físico (cuánto pesa una lata), no hay que cargarlo dos veces. Si no hay
+  // ninguno de los dos, devuelve null: NO hay que inventar un $/kg mostrando
+  // el precio por unidad mal etiquetado — eso fue justo lo que pasó con
+  // Espárragos en lata, donde $5.417 por lata se mostraba como si fuera
+  // $5.417/kg (30 veces menos de lo que realmente cuesta el kilo).
+  function _costoXkgDesdeUnidad(ing, prodId){
+    const costoBase = (ing.precio||0) / (ing.bulto||1); // $/unidad de compra
+    if(ing.unidadMedida !== 'unidades') return costoBase;
+    const pesoG = ing.pesoUnitario || (_desp[prodId] && _desp[prodId].gramos) || 0;
+    return pesoG ? costoBase / (pesoG/1000) : null;
+  }
+
   const desdeRecetas = recetasCP
     .filter(r => r.rendimientoG > 0)
     .map(r => {
@@ -8078,7 +8095,7 @@ function getProductosCP(){
 
   // Productos manuales cargados desde la pantalla "Centro de Producción"
   const manuales = (cp._productos || []).map(p => {
-    let costoXkg = 0, transfSugerido = 0;
+    let costoXkg = 0, transfSugerido = 0, pesoFaltaParaKg = false;
     if(p.tipoProd === 'porcionado'){
       const ing = ingsCP.find(i => i.id === p.ingId);
       if(ing && ing.precio > 0){
@@ -8094,10 +8111,9 @@ function getProductosCP(){
       } else if(p.ingId){
         const ing = ingsCP.find(i => i.id === p.ingId);
         if(ing && ing.precio > 0){
-          const costoBase = (ing.precio||0) / (ing.bulto||1);
-          costoXkg = (ing.unidadMedida==='unidades' && ing.pesoUnitario)
-            ? costoBase / (ing.pesoUnitario/1000)   // $/unidad → $/kg equivalente
-            : costoBase;
+          const c = _costoXkgDesdeUnidad(ing, p.id);
+          costoXkg = c || 0;
+          if(c === null) pesoFaltaParaKg = true;
         }
       }
     } else if(p.tipoProd === 'elaborado' && p.recetaId){
@@ -8116,6 +8132,7 @@ function getProductosCP(){
       ...p,
       costoProduccionXkg: costoXkg,
       _transfSugerido: transfSugerido,
+      pesoFaltaParaKg,
       modoUso: p.modoUso || (p.tipoProd === 'porcionado' ? 'porcionado' : 'directo'),
     };
   });
@@ -8125,15 +8142,20 @@ function getProductosCP(){
   // también sale suelta para los locales. Se marca con un tilde en su ficha.
   const vendibles = ingsCP
     .filter(i => i.vendeALocales === true)
-    .map(i => ({
-      id: 'cp-ing-' + i.id,
-      nombre: i.nombre,
-      tipoProd: 'redistribuido',
-      modoUso: 'granel',
-      ingId: i.id,
-      costoProduccionXkg: (i.precio||0) / (i.bulto||1),   // lo que la compra el CP
-      _transfSugerido: 0,
-    }));
+    .map(i => {
+      const idProd = 'cp-ing-' + i.id;
+      const c = (i.precio > 0) ? _costoXkgDesdeUnidad(i, idProd) : 0;
+      return {
+        id: idProd,
+        nombre: i.nombre,
+        tipoProd: 'redistribuido',
+        modoUso: 'granel',
+        ingId: i.id,
+        costoProduccionXkg: c || 0,   // lo que la compra el CP
+        pesoFaltaParaKg: c === null,
+        _transfSugerido: 0,
+      };
+    });
 
   return [...desdeRecetas, ...manuales, ...vendibles]
     // Si un producto quedó cargado a mano Y además el ingrediente está tildado,
@@ -8195,6 +8217,20 @@ function updDespachoCP(prodId, campo, val){
   cp._despacho[prodId][campo] = val;
   guardarEnFirestore();
   renderCP();
+}
+
+// El campo "Precio transf." se muestra y se carga en la MISMA unidad en la
+// que el producto se despacha (por kilo, por porción o por unidad) — pero
+// puertas adentro siempre se guarda en $/kg, porque es el único formato que
+// le sirve a cualquier receta que mida ese insumo por peso. Esta función hace
+// esa conversión, para que nadie tenga que hacerla de cabeza: escribir "el
+// precio de la lata" en un campo pensado para "$/kg" fue justo el error que
+// costeó Espárragos 30 veces mal.
+function setPrecioTransfCP(prodId, valorInput, gramos){
+  const val = num(valorInput);
+  const g = +gramos || 0;
+  const precioXkg = (g > 0 && val) ? val / (g/1000) : val;
+  updDespachoCP(prodId, 'precioTransf', precioXkg);
 }
 
 // Borra el precio cargado a mano para que un producto "Elaborado" vuelva a
@@ -8362,20 +8398,37 @@ function renderCP(){
                     : p.tipoProd==='porcionado'  ? '<span class="badge badge-sc">Porcionado</span>'
                     : '<span style="background:#E8F4F8;color:#1A5276;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">Redistribuido</span>';
 
+    // El precio de transferencia se guarda SIEMPRE en $/kg (así lo puede usar
+    // cualquier receta que mida por peso), pero pedirle a la persona que
+    // convierta $/lata a $/kg de cabeza antes de tipear es exactamente el
+    // error que hizo que Espárragos quedara costeado 30 veces mal: escribió
+    // $5.417 (lo que factura por lata) en un campo que se leía como $/kg.
+    // Si el producto se despacha "por unidad" o "por porción" y ya se sabe
+    // cuánto pesa cada una, el campo ahora se muestra y se carga EN ESA
+    // unidad — la conversión a $/kg la hace el sistema, no la persona.
+    const _dUnT = p.despachoUnidad || 'kg';
+    const _gramosT = p.gramosPorcion || 0;
+    const _porUnidadT = (_dUnT === 'unidades' || _dUnT === 'porcion') && _gramosT > 0;
+    const _etiquetaT = _dUnT==='unidades' ? '$/unidad al local' : _dUnT==='porcion' ? '$/porción al local' : '$/kg al local';
+    const _aEsaUnidad = (xkg) => _porUnidadT ? Math.round(xkg * _gramosT/1000) : Math.round(xkg);
     const precioTransf = `
       <input type="text" inputmode="decimal" min="0" step="10"
-        value="${p.precioTransfManual > 0 ? p.precioTransfManual : (p.tienePrecioTransferencia ? Math.round(p.costoXkg) : '')}"
-        placeholder="${Math.round(p.costoProduccionXkg||0) || 'precio'}"
-        onchange="updDespachoCP('${escJs(p.id)}','precioTransf',num(this.value))"
+        value="${p.precioTransfManual > 0 ? _aEsaUnidad(p.precioTransfManual) : (p.tienePrecioTransferencia ? _aEsaUnidad(p.costoXkg) : '')}"
+        placeholder="${_aEsaUnidad(p.costoProduccionXkg||0) || 'precio'}"
+        onchange="setPrecioTransfCP('${escJs(p.id)}', this.value, ${_gramosT})"
         style="font-size:13px;width:100px;text-align:right;font-weight:700${p.tienePrecioTransferencia?'':';border-color:#B8540A'}">
-      <div style="font-size:10px;color:var(--gris-2);margin-top:2px">$/kg al local</div>
+      <div style="font-size:10px;color:var(--gris-2);margin-top:2px">${_etiquetaT}</div>
       ${p.tienePrecioTransferencia ? '' : '<div style="font-size:10px;color:#B8540A;margin-top:2px">⚠ va al costo</div>'}
       ${(p.tipoProd==='elaborado' && p.precioTransfManual>0 && p._transfSugerido>0 && Math.round(p.precioTransfManual)!==Math.round(p._transfSugerido))
         ? `<div style="font-size:10px;color:#B8540A;margin-top:3px;max-width:120px">⚠ la receta hoy sugiere $${fmt(p._transfSugerido)}/kg
              <a href="#" onclick="usarPrecioRecetaCP('${escJs(p.id)}');return false" style="color:inherit;text-decoration:underline">usar ese</a></div>`
         : ''}`;
-    const costoProd = p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg` : '—';
-    const margen = p.costoXkg > 0
+    const costoProd = p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg`
+      : p.pesoFaltaParaKg ? `<span class="calc calc-err" title="Este producto se compra por unidad — cargá cuánto pesa una (el peso neto) en Mis Ingredientes o acá al lado, en 'g por unidad', para poder calcular el costo por kilo">⚠ falta el peso</span>`
+      : '—';
+    const margen = p.pesoFaltaParaKg
+      ? `<span class="calc calc-err" title="Sin el peso de la unidad, este margen no es real todavía">⚠ no calculable</span>`
+      : p.costoXkg > 0
       ? `<span style="color:${p.margenXkg>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(p.margenXkg))}/kg</span>`
       : '—';
     const costoDisplay = precioTransf;
