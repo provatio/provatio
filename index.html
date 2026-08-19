@@ -2417,39 +2417,45 @@ function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadRe
   const usaUnidades = (unidadReceta === 'unidades') || 
                       (medidaIng === 'unidades' && unidadReceta !== 'g');
   
-  let neto_g, precioXunidad;
-  
+  let precioXunidad;
+
   if(usaUnidades){
-    // neto = cantidad de unidades por porción
-    // OJO: acá NO se pone un peso por defecto (antes era 60g, el peso de un
-    // huevo — y ese número terminaba aplicándose a cualquier ingrediente por
-    // unidad que no tuviera el suyo propio cargado: brócoli, latas, lo que
-    // sea). Sin "peso por unidad" cargado en Mis Ingredientes, el costo en $
-    // sigue siendo correcto (no depende del peso), pero el kg_total (el que
-    // alimenta la lista de compras y el consumo teórico de stock) queda sin
-    // dato en vez de inventar uno — se marca con pesoUnitarioFalta para que
-    // quien mire pueda avisar en vez de mostrar un número que no es real.
+    // La columna "Neto (g)" del editor de receta SIEMPRE es gramos — para
+    // TODOS los ingredientes, incluso los que se compran por unidad (latas,
+    // cajones, docenas). Antes, acá el número cargado se leía como "cantidad
+    // de unidades" (125 se tomaba como 125 latas), no como gramos: por eso
+    // 125 g de espárragos en lata calculaban como si fueran 125 latas enteras
+    // (~1000x de más). Ahora, igual que con cualquier ingrediente por kg,
+    // convertimos el precio por unidad a un precio por kilo (usando el peso
+    // de una unidad) y seguimos el mismo cálculo de siempre en gramos.
     const pesoUnitario = ing.pesoUnitario || 0;
-    const pesoUnitarioFalta = !pesoUnitario;
-    neto_g = neto * pesoUnitario;
     precioXunidad = ing.precio / (ing.bulto || 1); // precio por unidad
+    if(!pesoUnitario){
+      // Sin "Peso por unidad (g)" cargado en Mis Ingredientes no hay forma
+      // de convertir el precio por unidad a precio por gramo — se marca en
+      // vez de inventar un número (antes, sin este dato, igual se mostraba
+      // un costo — pero ese costo daba por hecho la interpretación vieja
+      // y errónea de "cantidad de unidades").
+      return {error:`Falta "Peso por unidad (g)" en ${ing.nombre} (Mis Ingredientes) — sin ese dato no se puede pasar el precio por unidad a precio por gramo`, pesoUnitarioFalta:true};
+    }
+    const costoXkgEquiv = precioXunidad / (pesoUnitario / 1000);
 
-    const bruto_u = factor === 0 ? neto : neto / factor;
-    const desperdicio_u = bruto_u * desperdicio_pct / 100;
-    const bruto_con_desperdicio_u = bruto_u + desperdicio_u;
+    const bruto = factor === 0 ? neto : neto / factor;
+    const desperdicio_g = bruto * desperdicio_pct / 100;
+    const bruto_con_desperdicio = bruto + desperdicio_g;
 
-    const costo_porcion = bruto_con_desperdicio_u * precioXunidad;
-    const total_unidades = bruto_con_desperdicio_u * porciones;
-    const kg_total = pesoUnitarioFalta ? null : total_unidades * pesoUnitario / 1000;
+    const costo_porcion = (bruto_con_desperdicio / 1000) * costoXkgEquiv;
+    const kg_total = bruto_con_desperdicio * porciones / 1000;
     const costo_total = costo_porcion * porciones;
+    const total_unidades_equiv = kg_total * 1000 / pesoUnitario; // para lista de compras
 
     return {
-      bruto: bruto_u, bruto_con_desperdicio: bruto_con_desperdicio_u,
-      costo_porcion, costo_total, kg_total, pesoUnitarioFalta,
-      bultos: Math.ceil(total_unidades / (ing.bulto || 1)),
+      bruto, bruto_con_desperdicio, costo_porcion, costo_total, kg_total,
+      pesoUnitarioFalta: false,
+      bultos: Math.ceil(total_unidades_equiv / (ing.bulto || 1)),
       merma_pct, desperdicio_pct, subproducto, esMultifactorial,
-      precio: precioXunidad,
-      unidadDisplay: 'u',
+      precio: costoXkgEquiv,
+      unidadDisplay: 'g',
     };
   } else {
     // Modo gramos (default)
@@ -5419,23 +5425,22 @@ function renderIngredientes(){
       <button class="btn btn-secondary btn-sm" onclick="toggleTodosIngCat(false)">Colapsar todo</button>
       <button class="btn btn-secondary btn-sm" onclick="modalNuevaCategoria()">+ Categoría</button>
       ${demoData.ingredientes.some(i=>(i.unidadMedida||'kg')==='unidades')
-        ? `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" onclick="renderDiagnosticoUnidades()">⚠ Revisar recetas con ingredientes "por unidad"</button>`
+        ? `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" onclick="renderDiagnosticoUnidades()">⚠ Ver qué falta cargar (peso por unidad)</button>`
         : ''}
     </div>
     <div id="ing-lista">${acordeon}</div>
   `, `<button class="btn btn-primary btn-sm" onclick="modalNuevoIng()">+ Nuevo ingrediente</button>`);
 }
 
-// ── DIAGNÓSTICO (no cambia ningún cálculo) ──────────────────────────────────
-// Un ingrediente cargado como "unidades" (huevo, latas, etc.) tiene un peso
-// neto por unidad para poder usarse en recetas "en gramos". Pero hoy la
-// columna "Neto (g)" del editor de receta, para estos ingredientes, en
-// realidad interpreta lo cargado como CANTIDAD DE UNIDADES, no como gramos
-// — aunque el título de la columna diga "g". Antes de tocar esa lógica de
-// cálculo (que puede correr el costo de recetas ya cargadas), esta pantalla
-// muestra, para cada receta que usa uno de estos ingredientes, cómo se está
-// calculando HOY y cómo daría SI el número cargado fuera gramos — para
-// decidir con datos reales si hace falta un fix y de qué tipo.
+// ── FALTA CARGAR PESO POR UNIDAD ────────────────────────────────────────────
+// Los ingredientes "por unidad" (lata, docena, cajón) se usan en la receta
+// por gramos, igual que cualquier otro ingrediente — la columna "Neto (g)"
+// siempre es gramos. Para eso, el ingrediente necesita su "Peso por unidad
+// (g)" cargado en Mis Ingredientes: sin ese dato no hay forma de convertir
+// el precio por unidad a precio por gramo, y la receta no puede calcular el
+// costo (se marca "⚠ falta el peso" en vez de mostrar un número inventado).
+// Esta pantalla junta, en un solo lugar, todas las recetas a las que les
+// falta ese dato para poder cargarlo de una.
 function renderDiagnosticoUnidades(){
   const ingsUnidad = getIngredientesConCP().filter(i=>(i.unidadMedida||'kg')==='unidades');
   const idsUnidad = new Set(ingsUnidad.map(i=>i.id));
@@ -5446,26 +5451,11 @@ function renderDiagnosticoUnidades(){
       if(ri.productoCP !== undefined || ri.recetaId !== undefined) return; // no aplica a insumos CP ni sub-recetas
       if(!idsUnidad.has(ri.ingId)) return;
       const ing = getIngrediente(ri.ingId);
-      if(!ing) return;
-      const neto = +ri.neto || 0;
-      const c = calcIngrediente(ri.ingId, ri.tecnica, neto, r.porciones||1, false);
-      // Sin peso por defecto acá tampoco: si el ingrediente no tiene su
-      // "peso por unidad" cargado en Mis Ingredientes, no hay forma de saber
-      // qué daría "si fuera gramos" — se marca en vez de inventar un número.
-      const pesoUnitario = ing.pesoUnitario || 0;
-      const precioXunidad = (ing.precio||0) / (ing.bulto||1);
-      const precioXkgEquiv = pesoUnitario ? precioXunidad / (pesoUnitario/1000) : 0;
-      const mermaPct = (c && !c.error) ? (c.merma_pct||0) : 0;
-      const factor = 1 - mermaPct/100;
-      const brutoSiFueraGramos = factor>0 ? neto/factor : neto;
-      const costoSiFueraGramos = pesoUnitario ? (brutoSiFueraGramos/1000) * precioXkgEquiv : null;
-      filas.push({
-        receta: r.nombre, ingrediente: ing.nombre, neto,
-        costoActual: (c && !c.error) ? c.costo_porcion : null,
-        costoError: (c && c.error) ? c.error : null,
-        costoSiFueraGramos,
-        pesoUnitarioFalta: !pesoUnitario,
-      });
+      if(!ing || !ri.neto) return;
+      const c = calcIngrediente(ri.ingId, ri.tecnica, +ri.neto||0, r.porciones||1, false);
+      if(c && c.pesoUnitarioFalta){
+        filas.push({ receta: r.nombre, ingrediente: ing.nombre });
+      }
     });
   });
 
@@ -5473,29 +5463,25 @@ function renderDiagnosticoUnidades(){
     <tr>
       <td>${esc(f.receta)}</td>
       <td>${esc(f.ingrediente)}</td>
-      <td style="text-align:right">${fmtD(f.neto)} unidades</td>
-      <td style="text-align:right">${f.costoError ? `<span class="calc calc-err">${esc(f.costoError)}</span>` : `$${fmt(f.costoActual)}`}</td>
-      <td style="text-align:right">${f.pesoUnitarioFalta ? `<span class="calc calc-err" title="Sin 'peso por unidad' cargado en Mis Ingredientes">⚠ falta el peso</span>` : `$${fmt(f.costoSiFueraGramos)}`}</td>
+      <td style="text-align:right"><span class="calc calc-err">⚠ falta el peso</span></td>
     </tr>`).join('')
-    : `<tr><td colspan="5" style="text-align:center;color:var(--gris-3);padding:24px">No encontré recetas de esta operación que usen ingredientes cargados "por unidad".</td></tr>`;
+    : `<tr><td colspan="3" style="text-align:center;color:var(--gris-3);padding:24px">Ninguna — todos los ingredientes "por unidad" que usás en recetas ya tienen su peso cargado.</td></tr>`;
 
-  setContent('Diagnóstico: ingredientes "por unidad" en recetas', `
+  setContent('Falta cargar el peso por unidad', `
     <div class="alert alert-warn" style="margin-bottom:16px">
-      Esta pantalla es solo para mirar — no cambia ni guarda nada.
+      Estos ingredientes se compran por unidad (lata, docena, cajón) pero se usan en la receta por
+      gramos. Sin el peso de una unidad cargado en Mis Ingredientes, esa receta no puede calcular el
+      costo.
       <br><br>
-      Huevo, latas y otros ingredientes "por unidad": lo que cargaste en la receta se lee como
-      <strong>cantidad de unidades</strong> (0,5 = medio huevo), no como gramos, aunque la columna diga "g".
-      <br><br>
-      Mirá cada fila y preguntate solo esto: <strong>¿esa cantidad tiene sentido como unidades, para ese
-      ingrediente, en esa receta?</strong> Si sí, dejala como está. Si no — por ejemplo, si en realidad
-      habías cargado un peso en gramos — decime cuál es y la corregimos juntos.
+      Andá a <strong>Mis ingredientes</strong>, abrí cada uno de estos y cargá "Peso por unidad (g)"
+      (el peso neto de una lata, un huevo, una unidad del cajón, etc.) — al guardar, las recetas de
+      abajo se calculan solas.
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Receta</th><th>Ingrediente</th><th style="text-align:right">Cantidad cargada</th>
-        <th style="text-align:right">Costo así (unidades)</th><th style="text-align:right">Costo si en cambio fuera gramos</th></tr></thead>
+      <thead><tr><th>Receta</th><th>Ingrediente</th><th></th></tr></thead>
       <tbody>${filasHtml}</tbody>
     </table></div>
-  `, `<button class="btn btn-secondary btn-sm" onclick="navigate('ingredientes')">← Volver a Ingredientes</button>`);
+  `, `<button class="btn btn-secondary btn-sm" onclick="navigate('ingredientes')">← Ir a Mis Ingredientes</button>`);
 }
 
 
@@ -6821,7 +6807,7 @@ function renderEditorReceta(){
         </select>
       </td>
       <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
-      <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.merma_pct)}%</span>`:c&&c.error?`<span class="calc calc-err" title="${c.error}">⚠ Sin merma</span>`:''}</td>
+      <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.merma_pct)}%</span>`:c&&c.error?`<span class="calc calc-err" title="${c.error}">⚠ ${c.pesoUnitarioFalta?'falta el peso':'Sin merma'}</span>`:''}</td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.bruto_con_desperdicio||c.bruto)}g</span>`:''}</td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_total)}</span>`:''}</td>
