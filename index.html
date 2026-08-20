@@ -1192,6 +1192,65 @@ function mostrarProgreso(texto){
 }
 function ocultarProgreso(){ document.getElementById('prov-progreso')?.remove(); }
 
+// ── INDICADOR DE CONEXIÓN ───────────────────────────────────────────────
+// Antes, si alguien guardaba sin señal, veía el mismo "Todo guardado ✓" que
+// si estuviera online — y creía que ya estaba en la nube. Este cartel dice
+// la verdad todo el tiempo, no solo al guardar: cuándo se está trabajando
+// desde la copia local del teléfono, y cuándo eso terminó de subir.
+function _pintarEstadoConexion(estado){
+  // estado: 'offline' | 'sincronizando' | null (todo al día — no se muestra nada)
+  let box = document.getElementById('prov-conexion');
+  if(!estado){ box?.remove(); return; }
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'prov-conexion';
+    box.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9998;'
+      + 'padding:7px 16px;border-radius:20px;font-family:Inter,Arial,sans-serif;font-size:12.5px;'
+      + 'font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.18);text-align:center;color:#fff';
+    document.body.appendChild(box);
+  }
+  if(estado === 'offline'){
+    box.style.background = '#B8540A';
+    box.textContent = '● Sin conexión — se está guardando en el teléfono';
+  } else {
+    box.style.background = '#2D5016';
+    box.textContent = '↻ Conexión recuperada — sincronizando…';
+  }
+}
+
+// Se dispara al perder o recuperar señal, y una vez al cargar la página
+// (por si ya arrancó sin conexión). Al recuperar señal, espera a que
+// Firestore termine de subir lo que quedó en cola y recién ahí avisa que
+// está todo sincronizado — y si en el medio otra persona guardó la misma
+// operación, lo avisa en vez de resolverlo en silencio (eso no lo decide
+// el sistema solo, lo tienen que mirar juntos).
+async function _actualizarConexion(){
+  if(!navigator.onLine){ _pintarEstadoConexion('offline'); return; }
+  _pintarEstadoConexion('sincronizando');
+  try{
+    if(typeof db !== 'undefined' && db.waitForPendingWrites){
+      await db.waitForPendingWrites();
+    }
+  }catch(e){ /* seguimos igual: no bloqueamos el aviso por esto */ }
+  _pintarEstadoConexion(null);
+  if(currentUser && currentOpId){
+    try{
+      const conf = await _verificarConflicto(currentUser.uid);
+      if(!conf.ok && conf.rev > (window._revLocal||0)){
+        await pedirConfirmacionSimple(
+          'Mientras no tenías señal, ' + (conf.quien || 'otra persona') + ' también guardó cambios en esta operación.\n\n'
+          + 'Lo que guardaste offline ya se subió a la nube — puede haber pisado esos cambios, o al revés. Revisen juntos los datos antes de seguir cargando.'
+        );
+      }
+    }catch(e){ /* no bloquear el aviso de sincronización por esto */ }
+  }
+  showToast('Sincronizado con la nube ✓', 'success');
+}
+window.addEventListener('online', _actualizarConexion);
+window.addEventListener('offline', () => _pintarEstadoConexion('offline'));
+// Por si la página ya carga sin señal (recién abierta la app sin conexión)
+setTimeout(() => { if(!navigator.onLine) _pintarEstadoConexion('offline'); }, 1000);
+
 // Guarda una colección en tandas CHICAS (50) con reintentos, pausa y progreso
 async function guardarColeccion(uid, opId, subcol, items){
   if(!items || !items.length) return;
@@ -1600,7 +1659,14 @@ async function guardarEnFirestore(){
 
     ocultarProgreso();
     const recs = getRecetas();
-    showToast(`Todo guardado ✓ — ${recs.length} recetas, ${demoData.ingredientes.length} ingredientes, ${demoData.mermas.length} mermas`, 'success');
+    // Sin conexión, el .set() de arriba igual "termina" — pero contra la copia
+    // local, no contra la nube. Decirlo así evita que alguien crea que ya
+    // subió cuando en realidad quedó esperando en el teléfono.
+    if(typeof navigator !== 'undefined' && navigator.onLine === false){
+      showToast(`Guardado en el teléfono ✓ — sube solo apenas vuelva la señal (${recs.length} recetas, ${demoData.ingredientes.length} ingredientes)`, 'success');
+    } else {
+      showToast(`Todo guardado ✓ — ${recs.length} recetas, ${demoData.ingredientes.length} ingredientes, ${demoData.mermas.length} mermas`, 'success');
+    }
     return true;
   } catch(err){
     ocultarProgreso();
@@ -1827,6 +1893,27 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 // Nota: probamos experimentalForceLongPolling para redes móviles pero rompía
 // las escrituras en algunas conexiones. Dejamos que Firestore negocie solo.
+
+// ── MODO OFFLINE ──────────────────────────────────────────────────────────
+// Sin esto, un corte de señal en el medio de un cierre de servicio o una
+// carga de facturas dejaba a la persona sin poder ni ver lo que ya tenía
+// cargado, ni guardar lo que estaba tipeando. Con la persistencia local
+// activada, Firestore guarda una copia en el propio teléfono: lo que ya se
+// cargó se sigue viendo sin señal, y lo que se guarda queda en cola y sube
+// solo apenas vuelve la conexión — nada se pierde por quedarse sin señal
+// en la cocina. `synchronizeTabs` evita el único motivo común de que esto
+// falle (dos pestañas del mismo navegador abiertas a la vez).
+try{
+  db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+    if(err.code === 'failed-precondition'){
+      console.warn('[Provatio] modo offline: no se pudo activar en esta pestaña (conflicto con otra pestaña)');
+    } else if(err.code === 'unimplemented'){
+      console.warn('[Provatio] este navegador no soporta guardado local — sin señal, la app no va a poder cargar ni guardar');
+    } else {
+      console.warn('[Provatio] no se pudo activar el modo offline:', err);
+    }
+  });
+}catch(e){ console.warn('[Provatio] enablePersistence no disponible en este SDK:', e); }
 
 // ── ESTADO GLOBAL ──
 let currentUser = null;
