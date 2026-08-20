@@ -6758,7 +6758,10 @@ function filtrarRecetas(q){
 }
 
 function nuevaReceta(){
-  recetaEditando = {id:uid(),opId:currentOpId,nombre:'',tipoServicio:getOp().tiposServicio?.[0]||'Principal',tipoPlato:getOp().tiposPlato?.[0]||'Principal',porciones:1,ingredientes:[]};
+  // modoRendimiento arranca en 'porcion' (Directo) para recetas del CP — es el
+  // caso más simple (el peso de la porción ya se conoce, no hay que medir nada
+  // después de cocinar). Fuera del CP no se usa, se deja sin definir.
+  recetaEditando = {id:uid(),opId:currentOpId,nombre:'',tipoServicio:getOp().tiposServicio?.[0]||'Principal',tipoPlato:getOp().tiposPlato?.[0]||'Principal',porciones:1,ingredientes:[],modoRendimiento:esCentroProduccion()?'porcion':undefined};
   renderEditorReceta();
 }
 
@@ -6904,6 +6907,14 @@ function renderEditorReceta(){
   }).join('');
 
   const pct = recetaEditando.precioVenta > 0 ? merc/recetaEditando.precioVenta*100 : null;
+  const esCP = esCentroProduccion();
+  const modoPeso = esRecetaPorPeso(r);
+  // Fuera del CP no se toca nada de lo que ya había: el campo de rendimiento
+  // sigue siempre visible, y el aviso sigue dependiendo solo de tipoPlato.
+  const mostrarRendimiento = !esCP || modoPeso;
+  const necesitaAvisoRendimiento = esCP
+    ? (modoPeso && !(r.rendimientoG>0))
+    : (r.tipoPlato==='Elaborado' && !(r.rendimientoG>0));
 
   setContent(r.nombre||'Nueva receta', `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
@@ -6911,11 +6922,16 @@ function renderEditorReceta(){
       ${demoData.recetas.some(x=>x.id===r.id) ? `<button class="btn btn-secondary" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ver ficha</button>` : ''}
       <input type="text" id="rec-nombre" value="${esc(r.nombre)}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
-        <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCentroProduccion() ? "$ PRECIO TRANSFERENCIA" : "$ PRECIO VENTA"}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCP ? (modoPeso ? "$ PRECIO TRANSFERENCIA ($/kg)" : "$ PRECIO TRANSFERENCIA (por porción)") : "$ PRECIO VENTA"}</span>
         <input type="text" inputmode="decimal" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
           style="width:110px;border:none;background:transparent;font-size:14px;font-weight:700;color:var(--negro);text-align:right"
           onchange="recetaEditando.precioVenta=num(this.value);renderEditorReceta()">
       </div>`}
+      ${esCP ? `<select onchange="recetaEditando.modoRendimiento=this.value;renderEditorReceta()" style="width:195px"
+          title="Directo: se transfiere y se pide por porción, tal como está armada acá — el peso ya se conoce (suma de los ingredientes cargados), no hace falta medir nada. Elaborado: se produce en lote (salsas, pastas rellenas, panes) y el peso final solo se sabe pesando el resultado ya cocinado.">
+        <option value="porcion"${!modoPeso?' selected':''}>🍽️ Directo (por porción)</option>
+        <option value="peso"${modoPeso?' selected':''}>👨‍🍳 Elaborado (por peso)</option>
+      </select>` : ''}
       <select onchange="recetaEditando.tipoServicio=this.value" style="width:150px">
         ${(getOp().tiposServicio||['Almuerzo']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
       </select>
@@ -6931,14 +6947,14 @@ function renderEditorReceta(){
         <input type="text" inputmode="decimal" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
           onchange="recetaEditando.porciones=num(this.value);renderEditorReceta()">
       </div>
-      <div class="metric">
+      ${mostrarRendimiento ? `<div class="metric">
         <div class="metric-label">Rendimiento total (g / ml)</div>
         <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
-          title="Cuántos gramos o ml rinde esta preparación en total. Necesario para usarla como insumo en otras recetas."
+          title="Pesá o medí el resultado final de esta preparación, ya cocinada y lista, tal como la definiste (porciones de referencia) — no es la suma de los ingredientes crudos: al cocinar en conjunto se pierde o se gana peso, y eso no se puede saber de antemano."
           onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta()">
-      </div>
+      </div>` : ''}
       <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
-      <div class="metric"><div class="metric-label">${esCentroProduccion() ? "% sobre precio transferencia" : "% sobre precio venta"}</div>
+      <div class="metric"><div class="metric-label">${esCP ? "% sobre precio transferencia" : "% sobre precio venta"}</div>
         <div class="metric-value" style="color:${pct===null?'var(--gris-2)':pct>35?'var(--bordo)':pct>25?'#8B6914':'var(--oliva)'}">
           ${pct===null?'— Sin precio':fmtD(pct)+'%'}
         </div>
@@ -6946,9 +6962,13 @@ function renderEditorReceta(){
       <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
     </div>
 
-    ${((r.tipoPlato==='Elaborado' || esCentroProduccion()) && !(r.rendimientoG>0)) ? `
+    ${necesitaAvisoRendimiento ? `
     <div class="alert alert-warn" style="margin-bottom:16px">
-      ⚠ Sin "Rendimiento total" cargado, esta preparación no se puede usar como insumo en otras recetas${esCentroProduccion() ? ' ni transferir a las sucursales' : ''}. El precio que cargaste arriba (${esCentroProduccion() ? 'transferencia' : 'venta'}) no se convierte a $/kg en ningún lado hasta completar este dato — cargá cuántos gramos rinde <strong>en total</strong> esta preparación tal como está definida acá (no por porción, salvo que "porciones de referencia" sea 1 y quieras que coincidan).
+      ⚠ Sin "Rendimiento total" cargado, esta preparación no se puede usar como insumo en otras recetas${esCP ? ' ni transferir a las sucursales' : ''}. El precio que cargaste arriba (${esCP ? 'transferencia' : 'venta'}) no se convierte a $/kg en ningún lado hasta completar este dato — pesá o medí <strong>el resultado final ya cocinado</strong> de esta preparación tal como está definida acá (no es la suma de los ingredientes crudos).
+    </div>` : ''}
+    ${(esCP && !modoPeso) ? `
+    <div class="alert alert-info" style="margin-bottom:16px">
+      ${ico('bulb',14)} Modo <strong>Directo</strong>: se transfiere y se pide por porción — el costo sale solo de los ingredientes cargados abajo, no hace falta "Rendimiento total". Si más adelante otra receta necesita usar esto <em>por peso</em> (tantos gramos por plato), cambiá a "Elaborado" y cargá el rendimiento real medido después de cocinar.
     </div>` : ''}
 
     <div class="card">
@@ -8111,9 +8131,43 @@ function getLocalesCadena(){
   );
 }
 
+// Una receta del CP se transfiere de dos formas posibles, y no hay que
+// confundirlas (ver conversación del 20/8/2026 con Javier):
+//  - modoRendimiento:'porcion' ("Directo") — panaché, milanesas: la porción se
+//    arma con pesos netos conocidos de antemano, no hay cocción de conjunto
+//    que cambie el peso. El "rendimiento" de 1 porción es, literalmente, la
+//    suma de esos netos — no hace falta pedírselo a nadie.
+//  - modoRendimiento:'peso' ("Elaborado") — salsas, pastas rellenas, panes: se
+//    cocinan en lote y el peso final se pierde o se gana en conjunto (agua que
+//    se evapora, que se absorbe). Ese número NO se puede calcular, solo se
+//    puede medir después de cocinar — por eso sigue siendo un campo a mano.
+// Recetas viejas, guardadas antes de que existiera este campo, se infieren
+// como "peso" si ya tenían un rendimiento cargado (para no romper nada de lo
+// que ya andaba), o "porción" si no — pero conviene revisarlas una por una y
+// elegir el modo correcto a mano en cada una.
+function esRecetaPorPeso(r){
+  if(!r) return false;
+  if(r.modoRendimiento === 'peso') return true;
+  if(r.modoRendimiento === 'porcion') return false;
+  return !!(r.rendimientoG > 0);
+}
+
+// Peso (g) de "1 porción de referencia" tal como está armada la receta: suma
+// de los "Neto (g)" de los ingredientes cargados directamente. No suma
+// condimentos (no llevan un peso real, son un cargo fijo) ni sub-recetas o
+// insumos CP (esos ya resuelven su propio peso por otro lado) — solo lo que
+// realmente compone el gramaje físico de la porción.
+function pesoPorcionDirecto(receta){
+  return (receta.ingredientes||[]).reduce((s,item)=>{
+    if(item.esCondimento || item.recetaId || item.productoCP !== undefined) return s;
+    return s + (+item.neto||0);
+  }, 0);
+}
+
 // Obtener productos del CP para los locales.
-// Combina dos fuentes:
-//   1. Recetas del CP con rendimientoG — su precio de transferencia = precioVenta/rendimientoG
+// Combina tres fuentes:
+//   1. Recetas del CP — "Elaborado" usa rendimientoG (precioVenta/rendimientoG);
+//      "Directo" usa el peso de la porción, calculado solo (ver arriba).
 //   2. Productos manuales legacy (porcionados, redistribuidos)
 function getProductosCP(){
   // El catálogo que ven los locales. Tres orígenes:
@@ -8148,23 +8202,51 @@ function getProductosCP(){
     return pesoG ? costoBase / (pesoG/1000) : null;
   }
 
+  // Una receta del CP puede necesitar el rendimiento (g) o no, según cómo se
+  // vaya a transferir — ver esRecetaPorPeso() y pesoPorcionDirecto() más abajo.
+  //  - "Elaborado" (peso): salsas, pastas rellenas, panes — el rendimiento hay
+  //    que medirlo después de cocinar. Sin ese dato, la receta no aparece
+  //    todavía como producto (no se puede convertir a $/kg).
+  //  - "Directo" (porción): panaché, milanesas — el peso de 1 porción ya se
+  //    conoce (suma de los netos cargados), así que no hace falta pedir nada
+  //    aparte y la receta siempre aparece como producto.
   const desdeRecetas = recetasCP
-    .filter(r => r.rendimientoG > 0)
     .map(r => {
       const costoProd = calcularCostoRecetaCP(r, cp);
-      const costoXkg  = costoProd / r.rendimientoG * 1000;
+      if(esRecetaPorPeso(r)){
+        if(!(r.rendimientoG > 0)) return null;
+        const costoXkg = costoProd / r.rendimientoG * 1000;
+        return {
+          id: 'cp-rec-' + r.id,
+          nombre: r.nombre,
+          tipoProd: 'elaborado',
+          modoRendimiento: 'peso',
+          modoUso: 'directo',
+          recetaId: r.id,
+          _origenAuto: true,
+          costoProduccionXkg: costoXkg,
+          // Si la receta del CP tiene precio de venta cargado, ese es el precio
+          // al que se lo pasa al local (salvo que se pise a mano más abajo).
+          _transfSugerido: r.precioVenta > 0 ? r.precioVenta / r.rendimientoG * 1000 : 0,
+        };
+      }
+      const pesoPorcion = pesoPorcionDirecto(r);
+      const costoXkg = pesoPorcion > 0 ? costoProd / pesoPorcion * 1000 : 0;
       return {
         id: 'cp-rec-' + r.id,
         nombre: r.nombre,
         tipoProd: 'elaborado',
+        modoRendimiento: 'porcion',
         modoUso: 'directo',
         recetaId: r.id,
+        _origenAuto: true,
+        _pesoPorcionAuto: pesoPorcion,
         costoProduccionXkg: costoXkg,
-        // Si la receta del CP tiene precio de venta cargado, ese es el precio
-        // al que se lo pasa al local (salvo que se pise a mano más abajo).
-        _transfSugerido: r.precioVenta > 0 ? r.precioVenta / r.rendimientoG * 1000 : 0,
+        pesoFaltaParaKg: !(pesoPorcion > 0),
+        _transfSugerido: (r.precioVenta > 0 && pesoPorcion > 0) ? r.precioVenta / pesoPorcion * 1000 : 0,
       };
-    });
+    })
+    .filter(Boolean);
 
   // Productos manuales cargados desde la pantalla "Centro de Producción"
   const manuales = (cp._productos || []).map(p => {
@@ -8224,6 +8306,7 @@ function getProductosCP(){
         tipoProd: 'redistribuido',
         modoUso: 'granel',
         ingId: i.id,
+        _origenAuto: true,
         costoProduccionXkg: c || 0,   // lo que la compra el CP
         pesoFaltaParaKg: c === null,
         _transfSugerido: 0,
@@ -8255,9 +8338,16 @@ function getProductosCP(){
       // ahí en vez de forzar kilos — es el mismo dato, no hay que repetirlo.
       const ingVinculado = ((p.tipoProd==='porcionado' || p.tipoProd==='redistribuido') && p.ingId)
         ? ingsCP.find(i => i.id === p.ingId) : null;
+      // Una receta "Directo" (modoRendimiento:'porcion') se despacha por
+      // porción por defecto — es lo único que tiene sentido para algo que se
+      // arma y se pide por unidad servida, no por peso.
+      const esDirectoAuto = p.modoRendimiento === 'porcion';
       const unidad = d.unidad ? d.unidad
-        : (ingVinculado && ingVinculado.unidadMedida==='unidades') ? 'unidades' : 'kg';
-      const gramos = +d.gramos || (unidad==='unidades' && ingVinculado ? (ingVinculado.pesoUnitario||0) : 0);
+        : (ingVinculado && ingVinculado.unidadMedida==='unidades') ? 'unidades'
+        : esDirectoAuto ? 'porcion' : 'kg';
+      const gramos = +d.gramos
+        || (unidad==='unidades' && ingVinculado ? (ingVinculado.pesoUnitario||0) : 0)
+        || (esDirectoAuto && (unidad==='porcion'||unidad==='unidades') ? (p._pesoPorcionAuto||0) : 0);
 
       return {
         ...p,
@@ -8497,7 +8587,7 @@ function renderCP(){
              <a href="#" onclick="usarPrecioRecetaCP('${escJs(p.id)}');return false" style="color:inherit;text-decoration:underline">usar ese</a></div>`
         : ''}`;
     const costoProd = p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg`
-      : p.pesoFaltaParaKg ? `<span class="calc calc-err" title="Este producto se compra por unidad — cargá cuánto pesa una (el peso neto) en Mis Ingredientes o acá al lado, en 'g por unidad', para poder calcular el costo por kilo">⚠ falta el peso</span>`
+      : p.pesoFaltaParaKg ? `<span class="calc calc-err" title="${p.modoRendimiento==='porcion' ? 'Esta receta todavía no tiene ningún ingrediente con peso (Neto en g) cargado — el costo por kilo se calcula solo apenas cargues al menos uno' : 'Este producto se compra por unidad — cargá cuánto pesa una (el peso neto) en Mis Ingredientes o acá al lado, en \'g por unidad\', para poder calcular el costo por kilo'}">⚠ falta el peso</span>`
       : '—';
     const margen = p.pesoFaltaParaKg
       ? `<span class="calc calc-err" title="Sin el peso de la unidad, este margen no es real todavía">⚠ no calculable</span>`
@@ -8557,8 +8647,19 @@ function renderCP(){
       <option value="granel"${p.modoUso==='granel'?' selected':''}>📦 Granel (merma según local)</option>
       <option value="porcionado"${p.modoUso==='porcionado'?' selected':''}>🔪 Porcionado (costo fijo)</option>
     </select>`;
+    // Las filas que se arman solas (recetas del CP, ingredientes con el tilde
+    // "también lo vendo") NO son "modo antiguo" — eso es solo para lo que
+    // quedó cargado a mano en la pantalla vieja. Antes esta condición no las
+    // distinguía y les mostraba el aviso de migración igual, sin sentido.
     const tipoCell = p.tipoProd === 'porcionado'
       ? `<span class="badge badge-sc">🔪 Porcionado</span>${modoUsoSelect}`
+      : p._origenAuto
+      ? `${p.tipoProd==='elaborado'
+            ? (p.modoRendimiento==='porcion'
+                ? '<span class="badge badge-op">🍽️ Directo (por porción)</span>'
+                : '<span class="badge badge-op">👨‍🍳 Elaborado (por peso)</span>')
+            : tipoBadge}
+         ${modoUsoSelect}`
       : `${tipoBadge}
          <div style="font-size:10px;color:#B8540A;margin-top:4px;line-height:1.4;max-width:150px">
            ⚠ Modo antiguo: ${p.tipoProd==='elaborado'
