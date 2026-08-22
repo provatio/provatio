@@ -1473,11 +1473,22 @@ async function toggleSoporteProvatio(activar){
   }catch(err){ showToast('No se pudo cambiar: '+err.message,'error'); }
 }
 
-async function guardarEnFirestore(){
+// opts.silencioso: guardado de fondo (autoguardado del editor de recetas).
+// No muestra el cartel "Guardando…" ni el toast de éxito, y si detecta que otra
+// persona guardó la misma operación NO abre el cuadro de confirmación — un
+// cuadro que aparece solo, en el medio de una carga de ingredientes, sería
+// exactamente el tipo de interrupción que este proyecto viene sacando. En ese
+// caso el autoguardado se abstiene y avisa en el indicador de la pantalla; la
+// conversación de "otro guardó, mirálo con él" se sigue teniendo, pero cuando
+// la persona aprieta "Guardar" a propósito.
+async function guardarEnFirestore(opts){
+  const _silencioso = !!(opts && opts.silencioso);
+  const _progreso = (t) => { if(!_silencioso) mostrarProgreso(t); };
+  const _toastOk  = (t, k) => { if(!_silencioso) showToast(t, k); };
   if(!currentUser){ showToast('No hay sesión activa — no se pudo guardar','error'); return false; }
   // Sin operación abierta no hay nada que guardar (ej.: estando en el Panel general)
   if(!currentOpId){
-    showToast('Abrí una operación para poder guardar sus datos','info');
+    if(!_silencioso) showToast('Abrí una operación para poder guardar sus datos','info');
     return false;
   }
   const uid = currentUser.uid;
@@ -1500,11 +1511,11 @@ async function guardarEnFirestore(){
       (function esperar(){
         intentos++;
         if(!window._guardando || (Date.now() - (window._guardandoDesde||0) >= 20000)){
-          resolve(guardarEnFirestore());
+          resolve(guardarEnFirestore(opts));
           return;
         }
         if(intentos > 60){          // 30 segundos y sigue trabado
-          showToast('El guardado anterior quedó colgado. Probá el botón Guardar de arriba.','error');
+          if(!_silencioso) showToast('El guardado anterior quedó colgado. Probá el botón Guardar de arriba.','error');
           resolve(false);
           return;
         }
@@ -1519,10 +1530,18 @@ async function guardarEnFirestore(){
   window._guardandoDesde = AHORA;
 
   try {
-    mostrarProgreso('Guardando…');
+    _progreso('Guardando…');
 
     // ¿Alguien más guardó esta operación desde que la abrimos?
     const conf = await _verificarConflicto(uid);
+    if(!conf.ok && _silencioso){
+      // Autoguardado: no interrumpimos con un cuadro. Se abstiene de escribir
+      // (no queremos pisar en silencio lo que guardó la otra persona) y deja
+      // que la pantalla avise. Lo que se cargó sigue en memoria y en el
+      // borrador local — no se pierde.
+      window._guardando = false;
+      return false;
+    }
     if(!conf.ok){
       window._guardando = false;
       ocultarProgreso && ocultarProgreso();
@@ -1657,20 +1676,22 @@ async function guardarEnFirestore(){
     // El resumen va aparte: es lo único que Provatio ve sin abrir la cocina.
     actualizarResumenEmpresa();
 
-    ocultarProgreso();
+    if(!_silencioso) ocultarProgreso();
     const recs = getRecetas();
     // Sin conexión, el .set() de arriba igual "termina" — pero contra la copia
     // local, no contra la nube. Decirlo así evita que alguien crea que ya
     // subió cuando en realidad quedó esperando en el teléfono.
     if(typeof navigator !== 'undefined' && navigator.onLine === false){
-      showToast(`Guardado en el teléfono ✓ — sube solo apenas vuelva la señal (${recs.length} recetas, ${demoData.ingredientes.length} ingredientes)`, 'success');
+      _toastOk(`Guardado en el teléfono ✓ — sube solo apenas vuelva la señal (${recs.length} recetas, ${demoData.ingredientes.length} ingredientes)`, 'success');
     } else {
-      showToast(`Todo guardado ✓ — ${recs.length} recetas, ${demoData.ingredientes.length} ingredientes, ${demoData.mermas.length} mermas`, 'success');
+      _toastOk(`Todo guardado ✓ — ${recs.length} recetas, ${demoData.ingredientes.length} ingredientes, ${demoData.mermas.length} mermas`, 'success');
     }
     return true;
   } catch(err){
-    ocultarProgreso();
+    if(!_silencioso) ocultarProgreso();
     console.error('Error guardando:', err);
+    // Un error SÍ se avisa siempre, incluso en autoguardado: no se puede dejar
+    // creer que quedó guardado algo que no subió.
     showToast(`NO se guardó${err.code?' ['+err.code+']':''}: ${err.message}. Reintentá (los datos siguen en pantalla).`, 'error');
     return false;
   } finally {
@@ -6625,6 +6646,12 @@ function guardarNuevaMermaMulti(){
 
 // ── RECETAS ──
 let recetaEditando = null;
+// Mercadería por porción del último dibujado del editor. Antes este número
+// viajaba incrustado en el onchange del campo de % ("aplicarMargenReceta(this
+// .value, 5891.66, 2000)"), así que era una foto del momento en que se dibujó
+// la pantalla. Guardarlo acá deja que la calculadora use siempre el costo real
+// del momento en que se toca el campo.
+let _mercEditorActual = 0;
 
 // El borrador del editor sobrevive a cambios de pestaña / PDF abiertos
 function guardarBorradorEditor(){
@@ -6704,7 +6731,7 @@ async function _ejecutarAutoguardadoReceta(){
   if(idx>=0) demoData.recetas[idx] = {...recetaEditando};
   else demoData.recetas.push({...recetaEditando});
   try{
-    const ok = await guardarEnFirestore();
+    const ok = await guardarEnFirestore({silencioso:true});
     _autoguardadoEstado = ok ? 'ok' : 'error';
   }catch(e){
     console.warn('[Provatio] error no crítico en autoguardado de receta:', e);
@@ -7010,9 +7037,22 @@ function renderEditorReceta(){
     </tr>`;
   }).join('');
 
-  const pct = recetaEditando.precioVenta > 0 ? merc/recetaEditando.precioVenta*100 : null;
   const esCP = esCentroProduccion();
   const modoPeso = esRecetaPorPeso(r);
+  _mercEditorActual = merc;
+
+  // Calculadora de dos vías: acá se pone al día el lado que NO está anclado,
+  // con el costo recién calculado unas líneas más arriba. Por eso agregar,
+  // sacar o cambiar un ingrediente actualiza el precio (o el %) al instante,
+  // sin tener que volver a tipear nada.
+  const baseCosto = esCP ? _reconciliarPrecioMargen(r, merc) : merc;
+
+  // Food cost sobre el precio, para el semáforo. Tiene que compararse contra
+  // la MISMA base que el precio: en una receta "Elaborado" del CP el precio es
+  // $/kg, así que dividir la mercadería por porción sobre un precio por kilo
+  // daba un porcentaje que no significaba nada (misma clase de error de
+  // unidades que este proyecto ya corrigió en el costeo y en el CP).
+  const pct = (r.precioVenta > 0 && baseCosto > 0) ? baseCosto/r.precioVenta*100 : null;
   // Fuera del CP no se toca nada de lo que ya había: el campo de rendimiento
   // sigue siempre visible, y el aviso sigue dependiendo solo de tipoPlato.
   const mostrarRendimiento = !esCP || modoPeso;
@@ -7029,13 +7069,14 @@ function renderEditorReceta(){
         ${esCP ? `<input type="text" inputmode="decimal" step="1"
             value="${(r.margenPct !== undefined && r.margenPct !== null) ? r.margenPct : ''}"
             placeholder="%"
-            title="% de margen sobre la mercadería (food cost) de esta receta, sin contar mano de obra ni otros costos internos de producción — completa el precio de acá al lado, que después seguís pudiendo editar a mano"
-            onchange="aplicarMargenReceta(this.value, ${merc}, ${r.rendimientoG||0})"
-            style="width:40px;border:none;background:transparent;font-size:13px;font-weight:700;text-align:right;border-right:1.5px solid var(--dorado);padding-right:8px">` : ''}
+            title="% de margen sobre la mercadería (food cost) de esta receta, sin contar mano de obra ni otros costos internos de producción. Va de la mano con el precio de al lado: si cargás el %, se completa el precio; si cargás el precio a mano, se completa el %. El que escribas último manda, y el otro se actualiza solo cada vez que cambia un ingrediente."
+            onchange="aplicarMargenReceta(this.value)"
+            style="width:46px;border:none;background:transparent;font-size:13px;font-weight:700;text-align:right;border-right:1.5px solid var(--dorado);padding-right:8px">` : ''}
         <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCP ? (modoPeso ? "$ PRECIO TRANSFERENCIA ($/kg)" : "$ PRECIO TRANSFERENCIA (por porción)") : "$ PRECIO VENTA"}</span>
         <input type="text" inputmode="decimal" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
+          title="${esCP ? 'Podés escribirlo a mano: el % de al lado se recalcula solo para mostrarte qué margen implica ese precio sobre la mercadería.' : ''}"
           style="width:110px;border:none;background:transparent;font-size:14px;font-weight:700;color:var(--negro);text-align:right"
-          onchange="recetaEditando.precioVenta=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+          onchange="aplicarPrecioReceta(this.value)">
       </div>`}
       ${esCP ? `<select onchange="recetaEditando.modoRendimiento=this.value;renderEditorReceta();programarAutoguardadoReceta()" style="width:195px"
           title="Directo: se transfiere y se pide por porción, tal como está armada acá — el peso ya se conoce (suma de los ingredientes cargados), no hace falta medir nada. Elaborado: se produce en lote (salsas, pastas rellenas, panes) y el peso final solo se sabe pesando el resultado ya cocinado.">
@@ -7686,7 +7727,10 @@ function guardarReceta(){
   const nombreInput = document.getElementById('rec-nombre');
   const precioInput = document.getElementById('rec-precio');
   if(nombreInput) recetaEditando.nombre = nombreInput.value.trim();
-  if(precioInput) recetaEditando.precioVenta = parseFloat(precioInput.value)||0;
+  // num() y no parseFloat(): parseFloat("6775,42") devuelve 6775 y se comía los
+  // centavos — es la misma coma decimal que ya se había corregido en los otros
+  // 71 campos numéricos del sistema, y este había quedado afuera.
+  if(precioInput) recetaEditando.precioVenta = num(precioInput.value);
 
   if(!recetaEditando.ingredientes || recetaEditando.ingredientes.length === 0){
     showToast('⚠ La receta no tiene ingredientes — agregá al menos uno antes de guardar','error'); return;
@@ -8552,30 +8596,85 @@ function usarPrecioRecetaCP(prodId){
 //     cargado no hay $/kg posible, así que no se inventa un precio.
 // No guarda en Firestore de una — sigue la misma convención que el resto de
 // esta pantalla (el precio se confirma recién al tocar "Guardar").
-function aplicarMargenReceta(pctInput, mercadoriaPorcion, rendimientoG){
+// ── CALCULADORA DE DOS VÍAS: % de margen ⇄ precio ───────────────────────
+// El % y el precio no son dos datos independientes: son la misma cosa mirada
+// de dos formas, unidas por el costo de mercadería (food cost) de la receta.
+//   precio = costo × (1 + %/100)          % = (precio / costo − 1) × 100
+// Lo último que la persona escribió a mano es el "ancla" (recetaEditando
+// ._anclaPrecio); el otro lado se deriva solo, y se vuelve a derivar en CADA
+// dibujado de la pantalla. Eso es lo que hace que agregar un ingrediente
+// actualice el precio al toque: antes el precio quedaba congelado en el valor
+// que había dado al momento de tipear el %, y había que volver a escribir el %
+// una vez cargados todos los ingredientes para que se corrigiera.
+//
+// La base del cálculo es SIEMPRE mercadería, nunca mano de obra ni otros
+// costos internos de producción — así lo pidió Javier explícitamente.
+function _baseCostoReceta(r, merc){
+  if(!r) return 0;
+  const m = +merc || 0;
+  if(esRecetaPorPeso(r)){
+    // "Elaborado": el precio se maneja en $/kg — misma cuenta que getProductosCP()
+    const rend = +r.rendimientoG || 0;
+    return rend > 0 ? m / rend * 1000 : 0;
+  }
+  // "Directo": la porción de referencia ES la que se transfiere → $/porción
+  return m;
+}
+
+// Recalcula el lado NO anclado. Se llama desde renderEditorReceta() en cada
+// dibujado, así que el número en pantalla siempre está al día con el costo.
+function _reconciliarPrecioMargen(r, merc){
+  const base = _baseCostoReceta(r, merc);
+  if(!(base > 0)) return base;
+  if(r._anclaPrecio === 'margen' && r.margenPct !== undefined && r.margenPct !== null){
+    r.precioVenta = Math.round(base * (1 + num(r.margenPct)/100) * 100) / 100;
+  } else if(r.precioVenta > 0){
+    // Incluye las recetas viejas que ya tenían precio cargado y nunca vieron
+    // un %: ahora muestran el margen que ese precio implica de verdad.
+    r.margenPct = Math.round((r.precioVenta / base - 1) * 1000) / 10; // 1 decimal
+  }
+  return base;
+}
+
+function aplicarMargenReceta(pctInput){
   if(!recetaEditando) return;
   if(pctInput === '' || pctInput == null){
+    // Vaciar el % no borra el precio: con un precio y un costo cargados hay un
+    // margen real, y ocultarlo sería inventar un dato que no es cierto. Lo que
+    // hace es soltar el ancla — el % pasa a derivarse del precio. Para dejar
+    // los dos en blanco, se vacía el PRECIO.
     delete recetaEditando.margenPct;
+    delete recetaEditando._anclaPrecio;
     renderEditorReceta();
     programarAutoguardadoReceta();
     return;
   }
-  const pct = num(pctInput);
-  recetaEditando.margenPct = pct;
-  const modoPeso = esRecetaPorPeso(recetaEditando);
-  const merc = +mercadoriaPorcion || 0;
-  let base = null;
-  if(modoPeso){
-    const rend = +rendimientoG || 0;
-    if(rend > 0) base = merc / rend * 1000; // $/kg, mismo cálculo que getProductosCP()
-  } else {
-    base = merc; // $/porción — la porción de referencia ES la que se transfiere
+  recetaEditando.margenPct = num(pctInput);
+  recetaEditando._anclaPrecio = 'margen';
+  const base = _baseCostoReceta(recetaEditando, _mercEditorActual);
+  if(!(base > 0)){
+    showToast('Guardé el % — el precio se completa solo apenas haya costo cargado'
+      + (esRecetaPorPeso(recetaEditando) ? ' (falta el "Rendimiento total")' : ' (cargá ingredientes con neto)'), 'info');
   }
-  if(base !== null && base > 0){
-    recetaEditando.precioVenta = Math.round(base * (1 + pct/100) * 100) / 100;
-  } else {
-    showToast('Guardé el % pero todavía no hay costo suficiente para calcular el precio'
-      + (modoPeso ? ' (falta el "Rendimiento total")' : ' (cargá ingredientes con neto primero)'), 'error');
+  renderEditorReceta();
+  programarAutoguardadoReceta();
+}
+
+function aplicarPrecioReceta(precioInput){
+  if(!recetaEditando) return;
+  const precio = num(precioInput);
+  recetaEditando.precioVenta = precio;
+  if(esCentroProduccion()){
+    if(!(precio > 0)){
+      // Vaciar el precio sí deja los dos campos en blanco: sin precio no hay
+      // ningún margen que mostrar.
+      delete recetaEditando.margenPct;
+      delete recetaEditando._anclaPrecio;
+    } else {
+      // El precio pasa a mandar y el % se deriva de él (lo hace
+      // _reconciliarPrecioMargen en el dibujado, para no repetir la fórmula).
+      recetaEditando._anclaPrecio = 'precio';
+    }
   }
   renderEditorReceta();
   programarAutoguardadoReceta();
@@ -8830,6 +8929,16 @@ function renderCP(){
              onchange="updProductoCP('${p.id}','mermaPorcionado',num(this.value))">
            <span style="font-size:11px;color:var(--gris-2)">% se pierde al fraccionar</span>
          </div>`
+      : p._origenAuto
+      // Este producto "Redistribuido" se arma solo desde el tilde "también lo
+      // vendo a los locales" del ingrediente — por construcción, YA está
+      // vinculado a ese mismo ingrediente, siempre. El selector editable de
+      // abajo (pensado para las filas viejas cargadas a mano) no tiene ningún
+      // efecto acá: updProductoCP() solo busca en cp._productos, y esta fila
+      // no vive ahí — cambiar la selección no hacía nada, en silencio. Mismo
+      // defecto que el botón de borrar de Panaché/ravioles, encontrado al
+      // revisar esta pantalla por la misma duda de Javier.
+      ? `<div style="font-size:11px;color:var(--gris-2)">Vinculado a <strong>${esc(p.nombre)}</strong> — se arma solo desde el tilde "también lo vendo a los locales" en Mis Ingredientes. Para cambiar el costo o la unidad, editalo ahí.</div>`
       : `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Vinculado a (opcional, para tomar costo y unidad de "Mis ingredientes"):</div>
          <select onchange="updProductoCP('${p.id}','ingId',this.value)" style="font-size:12px;width:100%;margin-bottom:4px">
            <option value="">— sin vincular —</option>
