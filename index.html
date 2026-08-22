@@ -6922,6 +6922,12 @@ function renderEditorReceta(){
       ${demoData.recetas.some(x=>x.id===r.id) ? `<button class="btn btn-secondary" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ver ficha</button>` : ''}
       <input type="text" id="rec-nombre" value="${esc(r.nombre)}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
+        ${esCP ? `<input type="text" inputmode="decimal" step="1"
+            value="${(r.margenPct !== undefined && r.margenPct !== null) ? r.margenPct : ''}"
+            placeholder="%"
+            title="% de margen sobre la mercadería (food cost) de esta receta, sin contar mano de obra ni otros costos internos de producción — completa el precio de acá al lado, que después seguís pudiendo editar a mano"
+            onchange="aplicarMargenReceta(this.value, ${merc}, ${r.rendimientoG||0})"
+            style="width:40px;border:none;background:transparent;font-size:13px;font-weight:700;text-align:right;border-right:1.5px solid var(--dorado);padding-right:8px">` : ''}
         <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCP ? (modoPeso ? "$ PRECIO TRANSFERENCIA ($/kg)" : "$ PRECIO TRANSFERENCIA (por porción)") : "$ PRECIO VENTA"}</span>
         <input type="text" inputmode="decimal" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
           style="width:110px;border:none;background:transparent;font-size:14px;font-weight:700;color:var(--negro);text-align:right"
@@ -6978,7 +6984,7 @@ function renderEditorReceta(){
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
           <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" onclick="agregarRecetaEnReceta()">+ Receta elaborada</button>
-          <button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" onclick="agregarProductoCP()">🏭 + Insumo CP</button>
+          ${esCP ? '' : `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" onclick="agregarProductoCP()">🏭 + Insumo CP</button>`}
         </div>
       </div>
       <div class="table-wrap">
@@ -8419,6 +8425,46 @@ function usarPrecioRecetaCP(prodId){
 // 0 explícito — así se distingue "decidí transferir sin margen" (0 cargado)
 // de "todavía no lo decidí" (campo vacío), mismo criterio que ya se usa en
 // el panel de admin para no inventar ceros.
+// Misma calculadora que aplicarMargenCP, pero para el precio de la RECETA
+// (no del catálogo del CP) — es el lugar correcto para el margen de un
+// producto "Elaborado", porque ya se ve ahí el costo de mercadería de esa
+// receta puntual (22/8/2026, a pedido de Javier). Trabaja SOLO sobre food
+// cost (mercadería), sin meter mano de obra ni otros costos internos.
+//   - Modo Directo (por porción): la base es directamente "mercadoriaPorcion"
+//     ($ por la porción de referencia, ya calculado en pantalla).
+//   - Modo Elaborado (por peso, $/kg): la base es esa misma mercadería
+//     convertida a $/kg usando el Rendimiento total — el mismo cálculo que ya
+//     hace getProductosCP() para el costo de producción. Sin rendimiento
+//     cargado no hay $/kg posible, así que no se inventa un precio.
+// No guarda en Firestore de una — sigue la misma convención que el resto de
+// esta pantalla (el precio se confirma recién al tocar "Guardar").
+function aplicarMargenReceta(pctInput, mercadoriaPorcion, rendimientoG){
+  if(!recetaEditando) return;
+  if(pctInput === '' || pctInput == null){
+    delete recetaEditando.margenPct;
+    renderEditorReceta();
+    return;
+  }
+  const pct = num(pctInput);
+  recetaEditando.margenPct = pct;
+  const modoPeso = esRecetaPorPeso(recetaEditando);
+  const merc = +mercadoriaPorcion || 0;
+  let base = null;
+  if(modoPeso){
+    const rend = +rendimientoG || 0;
+    if(rend > 0) base = merc / rend * 1000; // $/kg, mismo cálculo que getProductosCP()
+  } else {
+    base = merc; // $/porción — la porción de referencia ES la que se transfiere
+  }
+  if(base !== null && base > 0){
+    recetaEditando.precioVenta = base * (1 + pct/100);
+  } else {
+    showToast('Guardé el % pero todavía no hay costo suficiente para calcular el precio'
+      + (modoPeso ? ' (falta el "Rendimiento total")' : ' (cargá ingredientes con neto primero)'), 'error');
+  }
+  renderEditorReceta();
+}
+
 function aplicarMargenCP(prodId, pctInput, costoProduccionXkg){
   const cp = getCentroProduccion();
   if(!cp) return;
@@ -8609,8 +8655,16 @@ function renderCP(){
     const _porUnidadT = (_dUnT === 'unidades' || _dUnT === 'porcion') && _gramosT > 0;
     const _etiquetaT = _dUnT==='unidades' ? '$/unidad al local' : _dUnT==='porcion' ? '$/porción al local' : '$/kg al local';
     const _aEsaUnidad = (xkg) => _porUnidadT ? Math.round(xkg * _gramosT/1000) : Math.round(xkg);
+    // El % de margen acá abajo es SOLO para productos que no vienen de una
+    // receta (Porcionado, Redistribuido) — son los únicos que no tienen otra
+    // pantalla donde vivir. Para "Elaborado" (siempre viene de una receta del
+    // CP), el % de margen se carga en el editor de esa receta, junto al costo
+    // de mercadería que ya se ve ahí — tener el mismo % en dos pantallas para
+    // el mismo producto es la misma duplicación que se viene evitando en todo
+    // el proyecto. Javier lo pidió así explícito (22/8): dos porcentajes
+    // distintos, cada uno en su lugar.
     const _margenPctT = (p.margenPct !== undefined && p.margenPct !== null) ? p.margenPct : '';
-    const margenInput = `
+    const margenInput = p.tipoProd === 'elaborado' ? '' : `
       <div style="margin-bottom:4px">
         <input type="text" inputmode="decimal" step="1"
           value="${_margenPctT}"
