@@ -8457,7 +8457,7 @@ function aplicarMargenReceta(pctInput, mercadoriaPorcion, rendimientoG){
     base = merc; // $/porción — la porción de referencia ES la que se transfiere
   }
   if(base !== null && base > 0){
-    recetaEditando.precioVenta = base * (1 + pct/100);
+    recetaEditando.precioVenta = Math.round(base * (1 + pct/100) * 100) / 100;
   } else {
     showToast('Guardé el % pero todavía no hay costo suficiente para calcular el precio'
       + (modoPeso ? ' (falta el "Rendimiento total")' : ' (cargá ingredientes con neto primero)'), 'error');
@@ -8480,7 +8480,7 @@ function aplicarMargenCP(prodId, pctInput, costoProduccionXkg){
   cp._despacho[prodId].margenPct = pct;
   const costo = +costoProduccionXkg || 0;
   if(costo > 0){
-    cp._despacho[prodId].precioTransf = costo * (1 + pct/100);
+    cp._despacho[prodId].precioTransf = Math.round(costo * (1 + pct/100) * 100) / 100;
   } else {
     showToast('Guardé el % pero todavía no hay costo de producción cargado para calcular el precio', 'error');
   }
