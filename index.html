@@ -2684,6 +2684,7 @@ function calcReceta(receta, porciones){
 function agregarRecetaEnReceta(){
   recetaEditando.ingredientes.push({recetaId:'', neto:0});
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 // Costo por kg real de un ingrediente del CP (precio es por bulto)
 function costoKgIngCP(ing){
@@ -2861,6 +2862,7 @@ function confirmarProductoCP(){
   });
   closeModal();
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 
 function semaforo(pct){
@@ -6645,6 +6647,100 @@ window.addEventListener('visibilitychange', ()=>{
   }
 });
 
+// ── AUTOGUARDADO DEL EDITOR DE RECETAS ──────────────────────────────────
+// Antes, todo lo que se tipeaba acá vivía solo en memoria (+ un borrador en
+// el teléfono) hasta apretar "Guardar" a mano. Si alguien cargaba precios de
+// varias recetas seguidas y se olvidaba de tocar "Guardar" antes de salir,
+// perdía todo el trabajo. Ahora cada cambio dispara dos cosas: (1) el
+// borrador local de siempre, instantáneo, y (2) un guardado real en la nube
+// con una demora dinámica — espera una pausa corta en la edición, pero
+// nunca deja pasar más de 2s sin subir si el usuario no para de tipear.
+const AUTOGUARDADO_ESPERA_CORTA = 800;   // ms de pausa que dispara el guardado
+const AUTOGUARDADO_ESPERA_MAX   = 2000;  // tope absoluto desde el primer cambio pendiente
+let _autoguardadoTimerCorto = null;
+let _autoguardadoTimerMax = null;
+let _autoguardadoEstado = 'idle'; // idle | pendiente | guardando | ok | error
+
+// Una receta NUEVA (todavía no existe en demoData.recetas) recién se sube a
+// la nube cuando ya tiene nombre y al menos un ingrediente — antes de eso,
+// autoguardarla la metería como una fila fantasma sin datos en el catálogo
+// del CP o en la lista de recetas. Una receta que YA existía se autoguarda
+// siempre: ya es un registro real que otras pantallas están leyendo.
+function _recetaListaParaAutoguardar(){
+  if(!recetaEditando) return false;
+  const yaExistia = demoData.recetas.some(x=>x.id===recetaEditando.id);
+  if(yaExistia) return true;
+  return !!(recetaEditando.nombre && recetaEditando.nombre.trim())
+    && !!(recetaEditando.ingredientes && recetaEditando.ingredientes.length > 0);
+}
+
+function programarAutoguardadoReceta(){
+  if(!recetaEditando) return;
+  guardarBorradorEditor(); // red local instantánea, no depende de la demora
+  _autoguardadoEstado = 'pendiente';
+  _pintarEstadoAutoguardado();
+  if(_autoguardadoTimerCorto) clearTimeout(_autoguardadoTimerCorto);
+  _autoguardadoTimerCorto = setTimeout(_ejecutarAutoguardadoReceta, AUTOGUARDADO_ESPERA_CORTA);
+  if(!_autoguardadoTimerMax){
+    _autoguardadoTimerMax = setTimeout(_ejecutarAutoguardadoReceta, AUTOGUARDADO_ESPERA_MAX);
+  }
+}
+
+async function _ejecutarAutoguardadoReceta(){
+  if(_autoguardadoTimerCorto){ clearTimeout(_autoguardadoTimerCorto); _autoguardadoTimerCorto = null; }
+  if(_autoguardadoTimerMax){ clearTimeout(_autoguardadoTimerMax); _autoguardadoTimerMax = null; }
+  if(!recetaEditando) return;
+  if(!_recetaListaParaAutoguardar()){
+    // Todavía sin nombre y/o sin ingredientes: seguimos solo con el borrador
+    // local hasta que cumpla el mínimo — no se sube nada a la nube todavía.
+    _autoguardadoEstado = 'idle';
+    _pintarEstadoAutoguardado();
+    return;
+  }
+  _autoguardadoEstado = 'guardando';
+  _pintarEstadoAutoguardado();
+  if(!recetaEditando.opId) recetaEditando.opId = currentOpId;
+  const idx = demoData.recetas.findIndex(x=>x.id===recetaEditando.id);
+  if(idx>=0) demoData.recetas[idx] = {...recetaEditando};
+  else demoData.recetas.push({...recetaEditando});
+  try{
+    const ok = await guardarEnFirestore();
+    _autoguardadoEstado = ok ? 'ok' : 'error';
+  }catch(e){
+    console.warn('[Provatio] error no crítico en autoguardado de receta:', e);
+    _autoguardadoEstado = 'error';
+  }
+  _pintarEstadoAutoguardado();
+}
+
+function _pintarEstadoAutoguardado(){
+  const el = document.getElementById('rec-autoguardado');
+  if(!el) return;
+  const textos = {
+    idle: '',
+    pendiente: '● cambios sin guardar…',
+    guardando: '⏳ guardando…',
+    ok: '✓ guardado en la nube',
+    error: '⚠ no se pudo guardar — reintentando'
+  };
+  const colores = {
+    idle: 'var(--gris-2)', pendiente: '#8B6914', guardando: '#8B6914',
+    ok: 'var(--oliva)', error: 'var(--bordo)'
+  };
+  el.textContent = textos[_autoguardadoEstado] || '';
+  el.style.color = colores[_autoguardadoEstado] || 'var(--gris-2)';
+}
+
+// Salir del editor: si queda algo sin subir todavía, lo sube antes de cerrar.
+async function salirEditorReceta(){
+  if(_autoguardadoTimerCorto || _autoguardadoTimerMax){
+    await _ejecutarAutoguardadoReceta();
+  }
+  recetaEditando = null;
+  limpiarBorradorEditor();
+  renderRecetas();
+}
+
 function renderRecetas(){
   const op = getOp();
   const ordenTipo = ['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
@@ -6757,15 +6853,23 @@ function filtrarRecetas(q){
   `;
 }
 
+function _reiniciarAutoguardadoReceta(){
+  if(_autoguardadoTimerCorto){ clearTimeout(_autoguardadoTimerCorto); _autoguardadoTimerCorto = null; }
+  if(_autoguardadoTimerMax){ clearTimeout(_autoguardadoTimerMax); _autoguardadoTimerMax = null; }
+  _autoguardadoEstado = 'idle';
+}
+
 function nuevaReceta(){
   // modoRendimiento arranca en 'porcion' (Directo) para recetas del CP — es el
   // caso más simple (el peso de la porción ya se conoce, no hay que medir nada
   // después de cocinar). Fuera del CP no se usa, se deja sin definir.
+  _reiniciarAutoguardadoReceta();
   recetaEditando = {id:uid(),opId:currentOpId,nombre:'',tipoServicio:getOp().tiposServicio?.[0]||'Principal',tipoPlato:getOp().tiposPlato?.[0]||'Principal',porciones:1,ingredientes:[],modoRendimiento:esCentroProduccion()?'porcion':undefined};
   renderEditorReceta();
 }
 
 function editarReceta(id){
+  _reiniciarAutoguardadoReceta();
   recetaEditando = JSON.parse(JSON.stringify(demoData.recetas.find(r=>r.id===id)));
   renderEditorReceta();
 }
@@ -6918,9 +7022,9 @@ function renderEditorReceta(){
 
   setContent(r.nombre||'Nueva receta', `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btn btn-secondary" onclick="recetaEditando=null;limpiarBorradorEditor();renderRecetas()">← Volver</button>
+      <button class="btn btn-secondary" onclick="salirEditorReceta()">← Volver</button>
       ${demoData.recetas.some(x=>x.id===r.id) ? `<button class="btn btn-secondary" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ver ficha</button>` : ''}
-      <input type="text" id="rec-nombre" value="${esc(r.nombre)}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value">
+      <input type="text" id="rec-nombre" value="${esc(r.nombre)}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value;programarAutoguardadoReceta()">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
         ${esCP ? `<input type="text" inputmode="decimal" step="1"
             value="${(r.margenPct !== undefined && r.margenPct !== null) ? r.margenPct : ''}"
@@ -6931,33 +7035,34 @@ function renderEditorReceta(){
         <span style="font-size:11px;font-weight:700;color:var(--gris-1)">${esCP ? (modoPeso ? "$ PRECIO TRANSFERENCIA ($/kg)" : "$ PRECIO TRANSFERENCIA (por porción)") : "$ PRECIO VENTA"}</span>
         <input type="text" inputmode="decimal" id="rec-precio" value="${r.precioVenta||''}" placeholder="0" min="0"
           style="width:110px;border:none;background:transparent;font-size:14px;font-weight:700;color:var(--negro);text-align:right"
-          onchange="recetaEditando.precioVenta=num(this.value);renderEditorReceta()">
+          onchange="recetaEditando.precioVenta=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
       </div>`}
-      ${esCP ? `<select onchange="recetaEditando.modoRendimiento=this.value;renderEditorReceta()" style="width:195px"
+      ${esCP ? `<select onchange="recetaEditando.modoRendimiento=this.value;renderEditorReceta();programarAutoguardadoReceta()" style="width:195px"
           title="Directo: se transfiere y se pide por porción, tal como está armada acá — el peso ya se conoce (suma de los ingredientes cargados), no hace falta medir nada. Elaborado: se produce en lote (salsas, pastas rellenas, panes) y el peso final solo se sabe pesando el resultado ya cocinado.">
         <option value="porcion"${!modoPeso?' selected':''}>🍽️ Directo (por porción)</option>
         <option value="peso"${modoPeso?' selected':''}>👨‍🍳 Elaborado (por peso)</option>
       </select>` : ''}
-      ${esCP ? '' : `<select onchange="recetaEditando.tipoServicio=this.value" style="width:150px">
+      ${esCP ? '' : `<select onchange="recetaEditando.tipoServicio=this.value;programarAutoguardadoReceta()" style="width:150px">
         ${(getOp().tiposServicio||['Almuerzo']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
       </select>
-      <select onchange="recetaEditando.tipoPlato=this.value" style="width:130px">
+      <select onchange="recetaEditando.tipoPlato=this.value;programarAutoguardadoReceta()" style="width:130px">
         ${(getOp().tiposPlato||['Principal']).map(s=>`<option${s===r.tipoPlato?' selected':''}>${s}</option>`).join('')}
       </select>`}
       <button class="btn btn-primary" onclick="guardarReceta()">${ico('save',13)} Guardar</button>
+      <span id="rec-autoguardado" style="font-size:11px;font-weight:600;white-space:nowrap"></span>
     </div>
 
     <div class="metric-grid">
       <div class="metric">
         <div class="metric-label">Porciones de referencia</div>
         <input type="text" inputmode="decimal" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
-          onchange="recetaEditando.porciones=num(this.value);renderEditorReceta()">
+          onchange="recetaEditando.porciones=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
       </div>
       ${mostrarRendimiento ? `<div class="metric">
         <div class="metric-label">Rendimiento total (g / ml)</div>
         <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
           title="Pesá o medí el resultado final de esta preparación, ya cocinada y lista, tal como la definiste (porciones de referencia) — no es la suma de los ingredientes crudos: al cocinar en conjunto se pierde o se gana peso, y eso no se puede saber de antemano."
-          onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta()">
+          onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
       </div>` : ''}
       <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
       <div class="metric"><div class="metric-label">${esCP ? "% sobre precio transferencia" : "% sobre precio venta"}</div>
@@ -7498,14 +7603,16 @@ function updIngReceta(idx,field,val){
     }
   }
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 
-async function quitarIngReceta(idx){ 
+async function quitarIngReceta(idx){
   if(!await pedirConfirmacionSimple('¿Quitar este ingrediente de la receta?')) return;
-  recetaEditando.ingredientes.splice(idx,1); 
-  renderEditorReceta(); 
+  recetaEditando.ingredientes.splice(idx,1);
+  renderEditorReceta();
+  programarAutoguardadoReceta();
 }
-function agregarIngReceta(){ recetaEditando.ingredientes.push({ingId:'',tecnica:'',neto:0}); renderEditorReceta(); }
+function agregarIngReceta(){ recetaEditando.ingredientes.push({ingId:'',tecnica:'',neto:0}); renderEditorReceta(); programarAutoguardadoReceta(); }
 
 function onChangeIngrediente(idx, ingId){
   const ing = recetaEditando.ingredientes[idx];
@@ -7528,25 +7635,29 @@ function onChangeIngrediente(idx, ingId){
     ing._modoUso = modoUso;
   }
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
-function agregarCondReceta(){ recetaEditando.ingredientes.push({esCondimento:true}); renderEditorReceta(); }
+function agregarCondReceta(){ recetaEditando.ingredientes.push({esCondimento:true}); renderEditorReceta(); programarAutoguardadoReceta(); }
 
 // ── VARIANTE DELIVERY: handlers ──
 function toggleVarianteDelivery(activa){
   if(!recetaEditando.delivery) recetaEditando.delivery = {};
   recetaEditando.delivery.activa = activa;
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 function updDelivery(campo, val){
   if(!recetaEditando.delivery) recetaEditando.delivery = {activa:true};
   recetaEditando.delivery[campo] = val;
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 function agregarIngDelivery(){
   if(!recetaEditando.delivery) recetaEditando.delivery = {activa:true};
   if(!recetaEditando.delivery.ingredientes) recetaEditando.delivery.ingredientes = [];
   recetaEditando.delivery.ingredientes.push({ingId:'',tecnica:'',neto:0});
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 function updIngDelivery(idx, campo, val){
   const ing = recetaEditando.delivery.ingredientes[idx];
@@ -7560,10 +7671,12 @@ function updIngDelivery(idx, campo, val){
     }
   }
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 function quitarIngDelivery(idx){
   recetaEditando.delivery.ingredientes.splice(idx,1);
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 
 function guardarReceta(){
@@ -7583,6 +7696,7 @@ function guardarReceta(){
     showToast('⚠ Hay ingredientes sin seleccionar — completá todos los campos','error'); return;
   }
   if(!recetaEditando.opId) recetaEditando.opId = currentOpId;
+  _reiniciarAutoguardadoReceta(); // cancela cualquier autoguardado pendiente: este Guardar ya cubre todo
   const idx = demoData.recetas.findIndex(r=>r.id===recetaEditando.id);
   if(idx>=0) demoData.recetas[idx] = {...recetaEditando};
   else demoData.recetas.push({...recetaEditando});
@@ -8443,6 +8557,7 @@ function aplicarMargenReceta(pctInput, mercadoriaPorcion, rendimientoG){
   if(pctInput === '' || pctInput == null){
     delete recetaEditando.margenPct;
     renderEditorReceta();
+    programarAutoguardadoReceta();
     return;
   }
   const pct = num(pctInput);
@@ -8463,6 +8578,7 @@ function aplicarMargenReceta(pctInput, mercadoriaPorcion, rendimientoG){
       + (modoPeso ? ' (falta el "Rendimiento total")' : ' (cargá ingredientes con neto primero)'), 'error');
   }
   renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 
 function aplicarMargenCP(prodId, pctInput, costoProduccionXkg){
@@ -8770,6 +8886,26 @@ function renderCP(){
          </div>
          ${modoUsoSelect}`;
 
+    // "Borrar" acá solo tiene sentido para filas manuales de verdad, guardadas
+    // en cp._productos (Porcionado siempre, o Elaborado/Redistribuido legacy
+    // sin migrar) — delProductoCP() filtra ese array por id, así que llamarlo
+    // con el id de una fila que se arma sola (_origenAuto, id tipo 'cp-rec-…'
+    // o 'cp-ing-…') no encuentra nada que borrar y no hace nada, sin avisar.
+    // Javier lo detectó probando con Panaché y ravioles (22/8): el botón
+    // estaba ahí pero no borraba nada, y sin ningún error visible — el mismo
+    // patrón de "no dejar un botón que parece hacer algo y no hace nada" que
+    // ya se corrigió en otros lados del sistema. Acá cada tipo de fila auto
+    // tiene su acción real: una receta se borra borrando la receta (mismo
+    // camino que "Mis recetas"), un ingrediente vendible se saca destildando
+    // "también lo vendo a los locales" en Mis Ingredientes — no hay un botón
+    // de catálogo que pueda hacer eso por afuera sin duplicar esa lógica.
+    const accionBorrar = !p._origenAuto
+      ? `<button class="btn btn-danger btn-sm" onclick="delProductoCP('${escJs(p.id)}')">${ico('trash',13)}</button>`
+      : (p.tipoProd === 'elaborado' && p.recetaId)
+      ? `<button class="btn btn-danger btn-sm" title="Esto borra la receta completa en Mis recetas, no solo esta fila" onclick="delReceta('${escJs(p.recetaId)}')">${ico('trash',13)}</button>
+         <div style="font-size:9px;color:var(--gris-2);margin-top:2px;max-width:90px">borra la receta</div>`
+      : `<span style="font-size:10px;color:var(--gris-2)" title="Este producto se arma solo desde el tilde &quot;también lo vendo a los locales&quot; en Mis Ingredientes — destildalo ahí para sacarlo de acá">— se arma solo</span>`;
+
     return `<tr>
       <td><input type="text" value="${esc(p.nombre)}" placeholder="Nombre del producto"
         style="border:none;background:transparent;font-weight:600;width:100%"
@@ -8780,7 +8916,7 @@ function renderCP(){
       <td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}</td>
       <td style="text-align:right;font-weight:700;color:var(--negro)">${precioTransf}</td>
       <td style="text-align:right">${margen}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="delProductoCP('${escJs(p.id)}')">${ico('trash',13)}</button></td>
+      <td>${accionBorrar}</td>
     </tr>`;
   }).join('');
 
