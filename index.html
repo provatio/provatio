@@ -6932,12 +6932,12 @@ function renderEditorReceta(){
         <option value="porcion"${!modoPeso?' selected':''}>🍽️ Directo (por porción)</option>
         <option value="peso"${modoPeso?' selected':''}>👨‍🍳 Elaborado (por peso)</option>
       </select>` : ''}
-      <select onchange="recetaEditando.tipoServicio=this.value" style="width:150px">
+      ${esCP ? '' : `<select onchange="recetaEditando.tipoServicio=this.value" style="width:150px">
         ${(getOp().tiposServicio||['Almuerzo']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
       </select>
       <select onchange="recetaEditando.tipoPlato=this.value" style="width:130px">
         ${(getOp().tiposPlato||['Principal']).map(s=>`<option${s===r.tipoPlato?' selected':''}>${s}</option>`).join('')}
-      </select>
+      </select>`}
       <button class="btn btn-primary" onclick="guardarReceta()">${ico('save',13)} Guardar</button>
     </div>
 
@@ -8353,6 +8353,7 @@ function getProductosCP(){
         ...p,
         costoXkg: transf,                       // lo único que ve el local
         precioTransfManual: transfManual,
+        margenPct: d.margenPct,
         tienePrecioTransferencia: definido,
         margenXkg: transf - costoProd,
         despachoUnidad: unidad,
@@ -8405,6 +8406,40 @@ function usarPrecioRecetaCP(prodId){
   guardarEnFirestore();
   renderCP();
   showToast('Ahora sigue el precio de la receta','success');
+}
+
+// Calculadora de margen, producto por producto — no hay un % por defecto
+// para todo el CP porque cada producto puede tener una ganancia distinta (y
+// en algunos, a propósito, se transfiere al costo). El CP tipea un % sobre
+// el costo de producción (costoProduccionXkg, siempre en $/kg) y esto
+// completa el precio de transferencia sugerido — pero el precio sigue
+// siendo 100% editable después: tocarlo a mano no lo vuelve a pisar el %,
+// y viceversa, tocar el % no borra un precio ya cargado si no hay costo con
+// qué calcular. El % elegido se guarda aparte de precioTransf, incluido el
+// 0 explícito — así se distingue "decidí transferir sin margen" (0 cargado)
+// de "todavía no lo decidí" (campo vacío), mismo criterio que ya se usa en
+// el panel de admin para no inventar ceros.
+function aplicarMargenCP(prodId, pctInput, costoProduccionXkg){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  if(!cp._despacho) cp._despacho = {};
+  if(!cp._despacho[prodId]) cp._despacho[prodId] = { gramos:0 };
+  if(pctInput === '' || pctInput == null){
+    delete cp._despacho[prodId].margenPct;
+    guardarEnFirestore();
+    renderCP();
+    return;
+  }
+  const pct = num(pctInput);
+  cp._despacho[prodId].margenPct = pct;
+  const costo = +costoProduccionXkg || 0;
+  if(costo > 0){
+    cp._despacho[prodId].precioTransf = costo * (1 + pct/100);
+  } else {
+    showToast('Guardé el % pero todavía no hay costo de producción cargado para calcular el precio', 'error');
+  }
+  guardarEnFirestore();
+  renderCP();
 }
 
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
@@ -8574,7 +8609,19 @@ function renderCP(){
     const _porUnidadT = (_dUnT === 'unidades' || _dUnT === 'porcion') && _gramosT > 0;
     const _etiquetaT = _dUnT==='unidades' ? '$/unidad al local' : _dUnT==='porcion' ? '$/porción al local' : '$/kg al local';
     const _aEsaUnidad = (xkg) => _porUnidadT ? Math.round(xkg * _gramosT/1000) : Math.round(xkg);
+    const _margenPctT = (p.margenPct !== undefined && p.margenPct !== null) ? p.margenPct : '';
+    const margenInput = `
+      <div style="margin-bottom:4px">
+        <input type="text" inputmode="decimal" step="1"
+          value="${_margenPctT}"
+          placeholder="%"
+          title="% de margen sobre el costo de producción — completa el precio de acá abajo, que después podés seguir editando a mano"
+          onchange="aplicarMargenCP('${escJs(p.id)}', this.value, ${p.costoProduccionXkg||0})"
+          style="font-size:12px;width:46px;text-align:right">
+        <span style="font-size:10px;color:var(--gris-2)">% margen s/costo</span>
+      </div>`;
     const precioTransf = `
+      ${margenInput}
       <input type="text" inputmode="decimal" min="0" step="10"
         value="${p.precioTransfManual > 0 ? _aEsaUnidad(p.precioTransfManual) : (p.tienePrecioTransferencia ? _aEsaUnidad(p.costoXkg) : '')}"
         placeholder="${_aEsaUnidad(p.costoProduccionXkg||0) || 'precio'}"
