@@ -8395,6 +8395,17 @@ function getProductosCP(){
     return pesoG ? costoBase / (pesoG/1000) : null;
   }
 
+  // Lo que cuesta UNA unidad de compra (un huevo, una lata). Es exacto y no
+  // depende de ningún peso: sale del precio del maple dividido las unidades
+  // que trae. Para estos productos, el $/kg es el número aproximado (depende
+  // del peso estimado de la unidad) y el $/unidad es el número firme — al
+  // revés de como estaba planteado hasta ahora.
+  function _costoUnidadDeIng(ing){
+    if(!ing || ing.unidadMedida !== 'unidades') return null;
+    const c = (ing.precio||0) / (ing.bulto||1);
+    return c > 0 ? c : null;
+  }
+
   // Una receta del CP puede necesitar el rendimiento (g) o no, según cómo se
   // vaya a transferir — ver esRecetaPorPeso() y pesoPorcionDirecto() más abajo.
   //  - "Elaborado" (peso): salsas, pastas rellenas, panes — el rendimiento hay
@@ -8443,7 +8454,7 @@ function getProductosCP(){
 
   // Productos manuales cargados desde la pantalla "Centro de Producción"
   const manuales = (cp._productos || []).map(p => {
-    let costoXkg = 0, transfSugerido = 0, pesoFaltaParaKg = false;
+    let costoXkg = 0, transfSugerido = 0, pesoFaltaParaKg = false, costoUnidad = null;
     if(p.tipoProd === 'porcionado'){
       const ing = ingsCP.find(i => i.id === p.ingId);
       if(ing && ing.precio > 0){
@@ -8461,7 +8472,10 @@ function getProductosCP(){
         if(ing && ing.precio > 0){
           const c = _costoXkgDesdeUnidad(ing, p.id);
           costoXkg = c || 0;
-          if(c === null) pesoFaltaParaKg = true;
+          costoUnidad = _costoUnidadDeIng(ing);
+          // Si se compra por unidad, el costo por unidad ya se sabe exacto:
+          // que falte el peso no impide costear, solo impide pasarlo a $/kg.
+          if(c === null && costoUnidad === null) pesoFaltaParaKg = true;
         }
       }
     } else if(p.tipoProd === 'elaborado' && p.recetaId){
@@ -8479,6 +8493,7 @@ function getProductosCP(){
     return {
       ...p,
       costoProduccionXkg: costoXkg,
+      costoProduccionUnidad: costoUnidad,
       _transfSugerido: transfSugerido,
       pesoFaltaParaKg,
       modoUso: p.modoUso || (p.tipoProd === 'porcionado' ? 'porcionado' : 'directo'),
@@ -8493,6 +8508,7 @@ function getProductosCP(){
     .map(i => {
       const idProd = 'cp-ing-' + i.id;
       const c = (i.precio > 0) ? _costoXkgDesdeUnidad(i, idProd) : 0;
+      const cUnidad = _costoUnidadDeIng(i);
       return {
         id: idProd,
         nombre: i.nombre,
@@ -8501,7 +8517,10 @@ function getProductosCP(){
         ingId: i.id,
         _origenAuto: true,
         costoProduccionXkg: c || 0,   // lo que la compra el CP
-        pesoFaltaParaKg: c === null,
+        costoProduccionUnidad: cUnidad,
+        // Sin peso no hay $/kg, pero si se compra por unidad el costo por
+        // unidad igual se sabe exacto — eso no es un dato faltante.
+        pesoFaltaParaKg: (c === null && cUnidad === null),
         _transfSugerido: 0,
       };
     });
@@ -8517,15 +8536,12 @@ function getProductosCP(){
       // PRECIO DE TRANSFERENCIA. Orden: lo que el CP cargó a mano manda sobre
       // todo; después el precio de venta de la receta; y si no hay ninguno,
       // se transfiere AL COSTO (margen cero) y la pantalla del CP lo avisa.
-      const transfManual = +d.precioTransf || 0;
       const costoProd = p.costoProduccionXkg || 0;
-      const transf = transfManual > 0 ? transfManual
-                   : (p._transfSugerido > 0 ? p._transfSugerido : costoProd);
-      const definido = transfManual > 0 || p._transfSugerido > 0;
 
       // Cómo se despacha: por kilo, por porción, o por unidad entera (huevo,
-      // lata, botella — no tiene sentido pedirlos "en gramos"). El precio de
-      // transferencia SIEMPRE se carga por kilo; porción/unidad se derivan.
+      // lata, botella — no tiene sentido pedirlos "en gramos"). Esto se
+      // resuelve ANTES que el precio, porque la unidad de despacho es la que
+      // define en qué unidad está guardado el precio.
       // Si todavía no se eligió nada a mano, y el producto está vinculado a un
       // ingrediente que en "Mis ingredientes" ya es "por unidad", arrancamos
       // ahí en vez de forzar kilos — es el mismo dato, no hay que repetirlo.
@@ -8541,6 +8557,39 @@ function getProductosCP(){
       const gramos = +d.gramos
         || (unidad==='unidades' && ingVinculado ? (ingVinculado.pesoUnitario||0) : 0)
         || (esDirectoAuto && (unidad==='porcion'||unidad==='unidades') ? (p._pesoPorcionAuto||0) : 0);
+      const porUnidad = (unidad === 'porcion' || unidad === 'unidades');
+
+      // PRECIO DE TRANSFERENCIA. Orden: lo que el CP cargó a mano manda sobre
+      // todo; después el precio de venta de la receta; y si no hay ninguno,
+      // se transfiere AL COSTO (margen cero) y la pantalla del CP lo avisa.
+      //
+      // El valor guardado está en la unidad en la que se despacha el producto
+      // (ver setPrecioTransfCP). Para un huevo, el dato firme es "$141 el
+      // huevo" y el $/kg se deriva de ahí usando el peso aproximado — no al
+      // revés. Así, corregir el peso estimado ya no mueve un precio comercial
+      // que en la realidad está fijo.
+      const _guardadoEn  = d.precioTransfUnidad || 'kg';
+      const _valGuardado = +d.precioTransf || 0;
+      const transfManual = _valGuardado <= 0 ? 0
+        : (_guardadoEn === 'kg' ? _valGuardado
+           : (gramos > 0 ? _valGuardado / (gramos/1000) : 0));
+      const transfManualUnidad = _valGuardado <= 0 ? 0
+        : (_guardadoEn !== 'kg' ? _valGuardado
+           : (gramos > 0 ? _valGuardado * gramos/1000 : 0));
+
+      const transf = transfManual > 0 ? transfManual
+                   : (p._transfSugerido > 0 ? p._transfSugerido : costoProd);
+      const definido = _valGuardado > 0 || p._transfSugerido > 0;
+
+      // Costo en la unidad de despacho. Para lo que se compra por unidad es
+      // exacto (precio del maple ÷ unidades) y no necesita ningún peso.
+      const costoUnidad = (p.costoProduccionUnidad > 0) ? p.costoProduccionUnidad
+                        : (porUnidad && gramos > 0) ? costoProd * gramos/1000
+                        : null;
+      const precioUnidad = !porUnidad ? null
+        : (transfManualUnidad > 0 ? transfManualUnidad
+           : (gramos > 0 ? transf * gramos/1000
+              : (costoUnidad != null ? costoUnidad : null)));
 
       return {
         ...p,
@@ -8551,8 +8600,15 @@ function getProductosCP(){
         margenXkg: transf - costoProd,
         despachoUnidad: unidad,
         gramosPorcion: gramos,
-        // Mismo cálculo para "porción" y "unidad" — ambas parten de gramos c/u.
-        precioPorcion: ((unidad === 'porcion' || unidad === 'unidades') && gramos > 0) ? transf * gramos / 1000 : null,
+        modoUso: d.modoUso || p.modoUso || 'directo',
+        // Valores en la unidad de despacho: son los que se muestran y se
+        // editan en pantalla, y para lo que se vende por unidad son además
+        // los exactos.
+        costoUnidad,
+        precioUnidad,
+        margenUnidad: (precioUnidad != null && costoUnidad != null) ? (precioUnidad - costoUnidad) : null,
+        // Alias histórico, lo usa la pantalla de pedidos de los locales.
+        precioPorcion: precioUnidad,
       };
     })
     .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es'));
@@ -8583,11 +8639,43 @@ function updDespachoCP(prodId, campo, val){
 // esa conversión, para que nadie tenga que hacerla de cabeza: escribir "el
 // precio de la lata" en un campo pensado para "$/kg" fue justo el error que
 // costeó Espárragos 30 veces mal.
-function setPrecioTransfCP(prodId, valorInput, gramos){
-  const val = num(valorInput);
-  const g = +gramos || 0;
-  const precioXkg = (g > 0 && val) ? val / (g/1000) : val;
-  updDespachoCP(prodId, 'precioTransf', precioXkg);
+function setPrecioTransfCP(prodId, valorInput, gramos, unidadDespacho){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  if(!cp._despacho) cp._despacho = {};
+  if(!cp._despacho[prodId]) cp._despacho[prodId] = { gramos:0 };
+  // El precio se guarda EN LA UNIDAD EN LA QUE SE DESPACHA, no siempre en $/kg.
+  //
+  // Antes se convertía a $/kg al tipearlo y se volvía a convertir a la unidad
+  // para mostrarlo. Con algo que se compra y se vende por unidad (huevos,
+  // latas) eso hacía que el precio dependiera del "g por unidad" — y ese
+  // número, como marcó Javier, es apenas indicativo: un huevo más grande pesa
+  // más, pero el maple sale lo mismo y el precio por huevo no cambia. Con la
+  // conversión vieja, corregir el peso de 55 a 60 g movía solo un precio
+  // comercial que en la realidad estaba fijo. Ahora el precio por unidad es el
+  // dato firme y el $/kg se deriva de él (para las recetas que miden por peso),
+  // no al revés.
+  cp._despacho[prodId].precioTransf = num(valorInput);
+  cp._despacho[prodId].precioTransfUnidad = unidadDespacho || 'kg';
+  guardarEnFirestore();
+  renderCP();
+}
+
+// El modo de uso también vive en cp._despacho y no en cp._productos: si no,
+// no se puede cambiar en las filas que se arman solas (una receta del CP o un
+// ingrediente con el tilde "también lo vendo"), porque updProductoCP() solo
+// busca en cp._productos y esas filas no viven ahí. Ese era el motivo de que
+// elegir "Directo" en Aceite de oliva o en Huevos volviera siempre a "Granel":
+// la elección no se guardaba en ningún lado y al redibujar volvía el valor por
+// defecto. Es el quinto control muerto encontrado en esta pantalla.
+function setModoUsoCP(prodId, valor){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  if(!cp._despacho) cp._despacho = {};
+  if(!cp._despacho[prodId]) cp._despacho[prodId] = { gramos:0 };
+  cp._despacho[prodId].modoUso = valor;
+  guardarEnFirestore();
+  renderCP();
 }
 
 // Borra el precio cargado a mano para que un producto "Elaborado" vuelva a
@@ -8596,6 +8684,7 @@ function usarPrecioRecetaCP(prodId){
   const cp = getCentroProduccion();
   if(!cp || !cp._despacho || !cp._despacho[prodId]) return;
   cp._despacho[prodId].precioTransf = 0;
+  delete cp._despacho[prodId].precioTransfUnidad;
   guardarEnFirestore();
   renderCP();
   showToast('Ahora sigue el precio de la receta','success');
@@ -8709,7 +8798,11 @@ function aplicarPrecioReceta(precioInput){
   programarAutoguardadoReceta();
 }
 
-function aplicarMargenCP(prodId, pctInput, costoProduccionXkg){
+// costoReferencia y unidadDespacho vienen en la MISMA unidad en la que se
+// despacha el producto (por kilo, por porción o por unidad), así el % y el
+// precio hablan del mismo número. Para un huevo, el % corre sobre lo que
+// cuesta el huevo — no sobre un $/kg estimado a partir de cuánto pesa.
+function aplicarMargenCP(prodId, pctInput, costoReferencia, unidadDespacho){
   const cp = getCentroProduccion();
   if(!cp) return;
   if(!cp._despacho) cp._despacho = {};
@@ -8722,9 +8815,10 @@ function aplicarMargenCP(prodId, pctInput, costoProduccionXkg){
   }
   const pct = num(pctInput);
   cp._despacho[prodId].margenPct = pct;
-  const costo = +costoProduccionXkg || 0;
+  const costo = +costoReferencia || 0;
   if(costo > 0){
     cp._despacho[prodId].precioTransf = Math.round(costo * (1 + pct/100) * 100) / 100;
+    cp._despacho[prodId].precioTransfUnidad = unidadDespacho || 'kg';
   } else {
     showToast('Guardé el % pero todavía no hay costo de producción cargado para calcular el precio', 'error');
   }
@@ -8986,9 +9080,12 @@ function renderCP(){
     // unidad — la conversión a $/kg la hace el sistema, no la persona.
     const _dUnT = p.despachoUnidad || 'kg';
     const _gramosT = p.gramosPorcion || 0;
-    const _porUnidadT = (_dUnT === 'unidades' || _dUnT === 'porcion') && _gramosT > 0;
+    // Un producto que se despacha por unidad o por porción se cotiza en esa
+    // unidad SIEMPRE — ya no hace falta que tenga un peso cargado para poder
+    // ponerle precio. Un huevo vale lo que vale el huevo, pese 55 o 60 gramos.
+    const _porUnidadT = (_dUnT === 'unidades' || _dUnT === 'porcion');
     const _etiquetaT = _dUnT==='unidades' ? '$/unidad al local' : _dUnT==='porcion' ? '$/porción al local' : '$/kg al local';
-    const _aEsaUnidad = (xkg) => _porUnidadT ? Math.round(xkg * _gramosT/1000) : Math.round(xkg);
+    const _nombreUnidadT = _dUnT==='unidades' ? 'unidad' : _dUnT==='porcion' ? 'porción' : 'kg';
     // El % de margen acá abajo es SOLO para productos que no vienen de una
     // receta (Porcionado, Redistribuido) — son los únicos que no tienen otra
     // pantalla donde vivir. Para "Elaborado" (siempre viene de una receta del
@@ -8997,6 +9094,12 @@ function renderCP(){
     // el mismo producto es la misma duplicación que se viene evitando en todo
     // el proyecto. Javier lo pidió así explícito (22/8): dos porcentajes
     // distintos, cada uno en su lugar.
+    // Costo de referencia sobre el que corre el %: en la unidad en la que se
+    // despacha, para que el % y el precio hablen del mismo número.
+    const _costoRefT = _porUnidadT ? (p.costoUnidad != null ? p.costoUnidad : 0) : (p.costoProduccionXkg||0);
+    const _precioMostrarT = _porUnidadT
+      ? (p.tienePrecioTransferencia && p.precioUnidad != null ? Math.round(p.precioUnidad) : '')
+      : (p.tienePrecioTransferencia ? Math.round(p.costoXkg) : '');
     const _margenPctT = (p.margenPct !== undefined && p.margenPct !== null) ? p.margenPct : '';
     const margenInput = p.tipoProd === 'elaborado' ? '' : `
       <div style="margin-bottom:4px">
@@ -9004,16 +9107,16 @@ function renderCP(){
           value="${_margenPctT}"
           placeholder="%"
           title="% de margen sobre el costo de producción — completa el precio de acá abajo, que después podés seguir editando a mano"
-          onchange="aplicarMargenCP('${escJs(p.id)}', this.value, ${p.costoProduccionXkg||0})"
+          onchange="aplicarMargenCP('${escJs(p.id)}', this.value, ${_costoRefT}, '${escJs(_dUnT)}')"
           style="font-size:12px;width:46px;text-align:right">
         <span style="font-size:10px;color:var(--gris-2)">% margen s/costo</span>
       </div>`;
     const precioTransf = `
       ${margenInput}
       <input type="text" inputmode="decimal" min="0" step="10"
-        value="${p.precioTransfManual > 0 ? _aEsaUnidad(p.precioTransfManual) : (p.tienePrecioTransferencia ? _aEsaUnidad(p.costoXkg) : '')}"
-        placeholder="${_aEsaUnidad(p.costoProduccionXkg||0) || 'precio'}"
-        onchange="setPrecioTransfCP('${escJs(p.id)}', this.value, ${_gramosT})"
+        value="${_precioMostrarT}"
+        placeholder="${Math.round(_costoRefT) || 'precio'}"
+        onchange="setPrecioTransfCP('${escJs(p.id)}', this.value, ${_gramosT}, '${escJs(_dUnT)}')"
         style="font-size:13px;width:100px;text-align:right;font-weight:700${p.tienePrecioTransferencia?'':';border-color:#B8540A'}">
       <div style="font-size:10px;color:var(--gris-2);margin-top:2px">${_etiquetaT}</div>
       ${p.tienePrecioTransferencia ? '' : '<div style="font-size:10px;color:#B8540A;margin-top:2px">⚠ va al costo</div>'}
@@ -9021,10 +9124,19 @@ function renderCP(){
         ? `<div style="font-size:10px;color:#B8540A;margin-top:3px;max-width:120px">⚠ la receta hoy sugiere $${fmt(p._transfSugerido)}/kg
              <a href="#" onclick="usarPrecioRecetaCP('${escJs(p.id)}');return false" style="color:inherit;text-decoration:underline">usar ese</a></div>`
         : ''}`;
-    const costoProd = p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg`
+    // El costo se muestra primero en la unidad en la que se despacha (que para
+    // lo que se compra por unidad es además el número exacto), y el $/kg queda
+    // abajo como referencia aproximada — depende del peso estimado.
+    const costoProd = (_porUnidadT && p.costoUnidad != null)
+      ? `<div style="font-weight:600;color:var(--negro)">$${fmt(p.costoUnidad)} <span style="font-weight:400;font-size:11px">la ${_nombreUnidadT}</span></div>
+         ${p.costoProduccionXkg > 0 ? `<div style="font-size:10px;color:var(--gris-3)" title="Aproximado: depende del peso estimado de la unidad">≈ $${fmt(p.costoProduccionXkg)}/kg</div>` : ''}`
+      : p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg`
       : p.pesoFaltaParaKg ? `<span class="calc calc-err" title="${p.modoRendimiento==='porcion' ? 'Esta receta todavía no tiene ningún ingrediente con peso (Neto en g) cargado — el costo por kilo se calcula solo apenas cargues al menos uno' : 'Este producto se compra por unidad — cargá cuánto pesa una (el peso neto) en Mis Ingredientes o acá al lado, en \'g por unidad\', para poder calcular el costo por kilo'}">⚠ falta el peso</span>`
       : '—';
-    const margen = p.pesoFaltaParaKg
+    const margen = (_porUnidadT && p.margenUnidad != null)
+      ? `<div style="font-weight:600;color:${p.margenUnidad>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(p.margenUnidad))} <span style="font-weight:400;font-size:11px">la ${_nombreUnidadT}</span></div>
+         ${p.costoXkg > 0 && _gramosT > 0 ? `<div style="font-size:10px;color:var(--gris-3)">≈ $${fmt(Math.abs(p.margenXkg))}/kg</div>` : ''}`
+      : p.pesoFaltaParaKg
       ? `<span class="calc calc-err" title="Sin el peso de la unidad, este margen no es real todavía">⚠ no calculable</span>`
       : p.costoXkg > 0
       ? `<span style="color:${p.margenXkg>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(p.margenXkg))}/kg</span>`
@@ -9087,16 +9199,20 @@ function renderCP(){
         <option value="unidades"${_dUn==='unidades'?' selected':''}>🔢 Por unidades</option>
       </select>
       ${(_dUn==='porcion' || _dUn==='unidades') ? `
-        <input type="text" inputmode="decimal" min="1" step="10" value="${p.gramosPorcion||''}" placeholder="gramos"
+        <input type="text" inputmode="decimal" min="1" step="10" value="${p.gramosPorcion||''}" placeholder="aprox."
+          title="Peso aproximado de una ${_dUnEtiqueta}. NO afecta el precio — el precio de este producto es por ${_dUnEtiqueta} y punto. Este peso sirve para las recetas que miden por gramos (un bizcochuelo que lleva 180 g de huevo) y para traducir un pedido en kilos a unidades."
           onchange="updDespachoCP('${escJs(p.id)}','gramos',num(this.value))"
           style="font-size:12px;width:78px">
-        <span style="font-size:11px;color:var(--gris-2)">g por ${_dUnEtiqueta}</span>
-        ${p.precioPorcion
-          ? `<div style="font-size:11px;color:var(--oliva);font-weight:700;margin-top:3px">$${fmt(p.precioPorcion)} la ${_dUnEtiqueta}</div>`
-          : `<div style="font-size:11px;color:#B8540A;margin-top:3px">⚠ falta el gramaje</div>`}
+        <span style="font-size:11px;color:var(--gris-2)">g por ${_dUnEtiqueta} (aprox.)</span>
+        ${p.precioUnidad != null && p.tienePrecioTransferencia
+          ? `<div style="font-size:11px;color:var(--oliva);font-weight:700;margin-top:3px">$${fmt(p.precioUnidad)} la ${_dUnEtiqueta}</div>`
+          : ''}
+        ${!(p.gramosPorcion > 0)
+          ? `<div style="font-size:10px;color:var(--gris-2);margin-top:3px">Sin el peso, este producto no se puede usar en recetas que midan por gramos.</div>`
+          : ''}
       ` : ''}`;
 
-    const modoUsoSelect = `<select onchange="updProductoCP('${p.id}','modoUso',this.value)" style="font-size:11px;display:block;margin-top:4px" title="Modo de uso en los locales">
+    const modoUsoSelect = `<select onchange="setModoUsoCP('${escJs(p.id)}',this.value)" style="font-size:11px;display:block;margin-top:4px" title="Modo de uso en los locales">
       <option value="directo"${(p.modoUso||'directo')==='directo'?' selected':''}>✅ Directo (sin merma local)</option>
       <option value="granel"${p.modoUso==='granel'?' selected':''}>📦 Granel (merma según local)</option>
       <option value="porcionado"${p.modoUso==='porcionado'?' selected':''}>🔪 Porcionado (costo fijo)</option>
@@ -9195,7 +9311,7 @@ function renderCP(){
     despacho: '<th style="width:150px">Cómo se despacha</th>',
     costo:    '<th style="text-align:right;width:120px">Costo prod.</th>',
     precio:   '<th style="text-align:right;width:130px">Precio transf.</th>',
-    margen:   '<th style="text-align:right;width:100px">Margen/kg</th>',
+    margen:   '<th style="text-align:right;width:110px">Margen</th>',
     accion:   '<th style="width:50px"></th>',
   };
 
