@@ -9152,6 +9152,54 @@ function expandirTodoCP(abrir){
   renderCP();
 }
 
+// Poner un % de margen de arranque a todos los productos que TODAVÍA no tienen
+// precio de transferencia. No pisa ninguna decisión ya tomada: el que ya tiene
+// precio —aunque sea 0% a propósito— queda intacto. Es un punto de partida para
+// después ajustar producto por producto, que es como Javier quiere trabajarlo;
+// no un porcentaje por defecto que el sistema aplique solo.
+//
+// Nace de cargar Lavalle: 120 redistribuidos entrando de una desde Mis
+// Ingredientes, y ponerles el precio de a uno son 120 campos a mano.
+async function margenEnLoteCP(){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  const productos = getProductosCP();
+  const sinPrecio = productos.filter(p => !p.tienePrecioTransferencia && (p.costoUnidad > 0 || p.costoProduccionXkg > 0));
+  const yaTienen = productos.length - sinPrecio.length;
+  if(!sinPrecio.length){
+    showToast('Todos los productos con costo ya tienen precio de transferencia', 'info');
+    return;
+  }
+  const txt = await pedirTexto(
+    'Margen de arranque para ' + sinPrecio.length + ' producto' + (sinPrecio.length>1?'s':''),
+    '25',
+    'Se lo aplica SOLO a los que todavía no tienen precio de transferencia'
+    + (yaTienen ? ' — los ' + yaTienen + ' que ya tienen uno cargado no se tocan.' : '.')
+    + ' Después podés cambiar cualquiera a mano, uno por uno.');
+  if(txt === null) return;
+  const pct = num(txt);
+  if(!(pct >= 0)){ showToast('Poné un porcentaje válido', 'error'); return; }
+
+  if(!cp._despacho) cp._despacho = {};
+  let n = 0;
+  sinPrecio.forEach(p => {
+    if(!cp._despacho[p.id]) cp._despacho[p.id] = { gramos: 0 };
+    // El % corre sobre el costo en la unidad en la que se despacha el producto,
+    // igual que cuando se carga a mano — para un huevo, sobre lo que sale el huevo.
+    const porUnidad = (p.despachoUnidad === 'unidades' || p.despachoUnidad === 'porcion');
+    const costo = porUnidad && p.costoUnidad > 0 ? p.costoUnidad : p.costoProduccionXkg;
+    if(!(costo > 0)) return;
+    cp._despacho[p.id].margenPct = pct;
+    cp._despacho[p.id].precioTransf = Math.round(costo * (1 + pct/100) * 100) / 100;
+    cp._despacho[p.id].precioTransfUnidad = porUnidad && p.costoUnidad > 0 ? p.despachoUnidad : 'kg';
+    n++;
+  });
+  guardarEnFirestore();
+  renderCP();
+  showToast(n + ' producto' + (n>1?'s':'') + ' con ' + pct + '% de margen ✓ — ajustá los que necesiten otro',
+            'success');
+}
+
 // La subcategoría se guarda en el mismo lugar que el resto de la configuración
 // de despacho del producto (cp._despacho[id]), así funciona igual para los tres
 // tipos — incluso para las filas que se arman solas y no viven en cp._productos.
@@ -9542,6 +9590,10 @@ function renderCP(){
       <span style="font-weight:700;font-size:14px">${esMadre?'🏠':'🏭'} ${esc(cp.nombre || tituloCP)}</span>
       <span style="font-size:12px;color:var(--gris-2)">${productos.length} producto${productos.length!==1?'s':''} en el catálogo</span>
       <span style="flex:1"></span>
+      ${productos.some(p => !p.tienePrecioTransferencia && (p.costoUnidad > 0 || p.costoProduccionXkg > 0))
+        ? `<button class="btn btn-primary btn-sm" onclick="margenEnLoteCP()"
+             title="Le pone un % de arranque a los que todavía se transfieren al costo. No toca los que ya tienen precio.">
+             % de arranque a los que faltan</button>` : ''}
       <button class="btn btn-secondary btn-sm" onclick="expandirTodoCP(true)">Expandir todo</button>
       <button class="btn btn-secondary btn-sm" onclick="expandirTodoCP(false)">Contraer todo</button>
       <button class="btn btn-secondary btn-sm" onclick="limpiarProductosVacios()" title="Elimina las filas de producto que quedaron sin nombre ni receta">🧹 Limpiar vacíos</button>
