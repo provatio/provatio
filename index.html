@@ -560,6 +560,22 @@ body {
   max-width: 1040px;
 }
 
+/* La ficha de plato se lee de una sola mirada, sin scrollear: usa el ancho
+   real de la pantalla en vez de quedarse en la columna de 1040px, que en un
+   monitor grande deja media pantalla vacía y parte la receta en dos pantallazos. */
+.content:has(.ficha-plato) { max-width: 1560px; }
+.ficha-plato-cols {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.ficha-plato .card { margin-bottom: 0; }
+.ficha-plato-cols > div { display: flex; flex-direction: column; gap: 16px; }
+@media (max-width: 1100px) {
+  .ficha-plato-cols { grid-template-columns: 1fr; }
+}
+
 /* ── CARDS ── */
 .card {
   background: var(--blanco);
@@ -7650,99 +7666,144 @@ function renderFichaPlato(id){
   const porciones = receta.porciones || 1;
   const {merc, incompletos, validos} = _fichaDesglose(receta, porciones);
   const verPlata = !esNivelCocina();
-  const pct = receta.precioVenta > 0 ? merc/receta.precioVenta*100 : null;
-  const margenPesos = receta.precioVenta > 0 ? receta.precioVenta - merc : null;
   const slug = (receta.nombre||'plato').replace(/[^a-z0-9]/gi,'-').toLowerCase();
 
+  // ── LOTE, NO PORCIÓN — igual que en el editor ────────────────────────
+  // Esta pantalla comparaba el costo del LOTE contra un precio POR KILO y de
+  // ahí salía un "food cost 278% · Alto" que no significaba nada: los
+  // bocadillos de acelga mostraban $11.459 de costo (el lote de 3,2 kg) contra
+  // $4.118 de precio (el kilo). Mismo error de unidades que ya se corrigió en
+  // el editor de recetas — esta ficha se había quedado afuera del arreglo.
+  const _esCPFicha  = esCentroProduccion();
+  const esLoteCP    = _esCPFicha && esRecetaPorPeso(receta);
+  const unidadesLote     = +receta.unidadesLote || 0;
+  const costoXkgLote     = (esLoteCP && receta.rendimientoG > 0) ? merc / receta.rendimientoG * 1000 : 0;
+  const costoUnidadLote  = (esLoteCP && unidadesLote > 0) ? merc / unidadesLote : 0;
+  const pesoUnidadLote   = (esLoteCP && unidadesLote > 0 && receta.rendimientoG > 0) ? receta.rendimientoG / unidadesLote : 0;
+  const precioUnidadLote = (pesoUnidadLote > 0 && receta.precioVenta > 0) ? receta.precioVenta * pesoUnidadLote / 1000 : 0;
+  // El margen del CP se mide sobre el COSTO (lo que le carga al local), no
+  // como food cost sobre el precio: son dos cosas distintas.
+  const margenLotePct = (costoXkgLote > 0 && receta.precioVenta > 0)
+    ? (receta.precioVenta / costoXkgLote - 1) * 100 : null;
+
+  // Comparación honesta: en un lote, el costo por kilo contra el precio por kilo.
+  const _baseCostoFicha = esLoteCP ? costoXkgLote : merc;
+  const pct = receta.precioVenta > 0 && _baseCostoFicha > 0 ? _baseCostoFicha/receta.precioVenta*100 : null;
+  const margenPesos = receta.precioVenta > 0 ? receta.precioVenta - _baseCostoFicha : null;
+
   setContent(receta.nombre || 'Ficha de plato', `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-      <button class="btn btn-secondary" onclick="navigate('recetas')">← Volver</button>
+    <div class="ficha-plato">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="navigate('recetas')">← Volver</button>
+      ${esLoteCP ? '' : badgeLinea(receta.tipoServicio)}
+      ${(receta.tipoPlato && !esLoteCP) ? `<span class="badge badge-gray">${esc(receta.tipoPlato)}</span>` : ''}
+      <span style="font-size:12px;color:var(--gris-2)">${esLoteCP
+        ? 'Un lote de producción'
+        : porciones + (porciones!==1?' porciones':' porción') + ' de referencia'}</span>
       <div style="flex:1"></div>
       <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(receta.id)}')">${ico('edit',13)} Editar receta</button>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center">
-      ${badgeLinea(receta.tipoServicio)}
-      ${receta.tipoPlato ? `<span class="badge badge-gray">${esc(receta.tipoPlato)}</span>` : ''}
-      <span style="font-size:12px;color:var(--gris-2)">${porciones} ${porciones!==1?'porciones':'porción'} de referencia</span>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><span class="card-title">Foto del plato</span></div>
-      <div class="card-body">
-        ${receta.fotoData ? `
-          <img src="${receta.fotoData}" alt="Foto de ${esc(receta.nombre)}" style="width:100%;max-width:420px;border-radius:10px;display:block;margin-bottom:12px;object-fit:cover;cursor:zoom-in" onclick="zoomFotoFicha('${escJs(receta.id)}')">
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
-              ${ico('upload',13)} Cambiar foto
-              <input type="file" accept="image/*" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
-            </label>
-            <button class="btn btn-danger btn-sm" onclick="quitarFotoFicha('${escJs(receta.id)}')">${ico('trash',13)} Sacar foto</button>
-          </div>
-        ` : `
-          <div style="font-size:12px;color:var(--gris-2);margin-bottom:10px">Para que el plato se emplate siempre igual. Sacala con el celu, ahí mismo en la cocina.</div>
-          <label class="btn btn-primary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;width:fit-content">
-            ${ico('upload',13)} Subir foto
-            <input type="file" accept="image/*" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
-          </label>
-        `}
-      </div>
-    </div>
 
     ${incompletos.length ? `
-    <div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:14px 16px;margin-bottom:20px">
-      <div style="font-weight:700;font-size:13px;margin-bottom:6px">⚠ Este costo está incompleto</div>
-      <div style="font-size:13px">Falta esto, y no se reemplaza por cero para que el número no engañe:</div>
-      <ul style="margin:8px 0 0 18px;padding:0;font-size:13px">
-        ${incompletos.map(d=>`<li>${esc(d.nombre)} — ${esc(d.falta)}</li>`).join('')}
-      </ul>
+    <div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:12px 16px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">⚠ Este costo está incompleto</div>
+      <div style="font-size:12.5px">Falta esto, y no se reemplaza por cero para que el número no engañe:
+        ${incompletos.map(d=>esc(d.nombre)+' ('+esc(d.falta)+')').join(' · ')}</div>
     </div>` : ''}
 
-    <div class="metric-grid">
+    <div class="metric-grid" style="margin-bottom:16px">
       <div class="metric">
-        <div class="metric-label">Costo por porción</div>
+        <div class="metric-label">${esLoteCP ? 'Costo del lote' : 'Costo por porción'}</div>
         <div class="metric-value">$${fmt(merc)}</div>
+        ${esLoteCP ? `<div class="metric-sub">${costoXkgLote?'$'+fmt(costoXkgLote)+'/kg':'falta el peso del lote'}${costoUnidadLote?' · $'+fmt(costoUnidadLote)+' cada una':''}</div>` : ''}
       </div>
       ${verPlata ? `
       <div class="metric">
-        <div class="metric-label">Precio de venta</div>
+        <div class="metric-label">${esLoteCP ? 'Precio de transferencia' : 'Precio de venta'}</div>
         ${receta.precioVenta>0
-          ? `<div class="metric-value">$${fmt(receta.precioVenta)}</div>`
+          ? `<div class="metric-value">$${fmt(receta.precioVenta)}</div>
+             ${esLoteCP ? `<div class="metric-sub">por kilo${precioUnidadLote?' · $'+fmt(precioUnidadLote)+' cada una':''}</div>` : ''}`
           : `<div class="metric-value" style="font-size:14px;color:var(--bordo)">Falta cargar</div>`}
       </div>
-      <div class="metric">
-        <div class="metric-label">Margen de contribución</div>
-        ${margenPesos!==null
-          ? `<div class="metric-value">$${fmt(margenPesos)}</div><div class="metric-sub">${fmtD(100-pct)}% del precio</div>`
-          : `<div class="metric-value" style="font-size:14px;color:var(--gris-2)">— Sin precio</div>`}
-      </div>
-      <div class="metric"><div class="metric-label">Food cost</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
+      ${esLoteCP ? `
+        <div class="metric">
+          <div class="metric-label">Margen sobre el costo</div>
+          <div class="metric-value" style="color:${margenLotePct===null?'var(--gris-2)':margenLotePct>=0?'var(--oliva)':'var(--bordo)'}">
+            ${margenLotePct===null ? '— sin precio' : fmtD(margenLotePct)+'%'}
+          </div>
+          <div class="metric-sub">${(costoXkgLote>0&&receta.precioVenta>0)?'$'+fmt(receta.precioVenta-costoXkgLote)+' por kilo':'lo que le carga al local'}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Rinde</div>
+          <div class="metric-value">${receta.rendimientoG?fmtD(receta.rendimientoG/1000,2)+' kg':'—'}</div>
+          <div class="metric-sub">${unidadesLote?unidadesLote+' unidades de '+fmtD(pesoUnidadLote,0)+' g':'a granel, por peso'}</div>
+        </div>
+      ` : `
+        <div class="metric">
+          <div class="metric-label">Margen de contribución</div>
+          ${margenPesos!==null
+            ? `<div class="metric-value">$${fmt(margenPesos)}</div><div class="metric-sub">${fmtD(100-pct)}% del precio</div>`
+            : `<div class="metric-value" style="font-size:14px;color:var(--gris-2)">— Sin precio</div>`}
+        </div>
+        <div class="metric"><div class="metric-label">Food cost</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
+      `}
       ` : ''}
     </div>
 
-    <div class="card">
-      <div class="card-header"><span class="card-title">Procedimiento</span></div>
-      <div class="card-body">
-        <div style="font-size:12px;color:var(--gris-2);margin-bottom:8px">Los cuatro o cinco pasos que hacen que este plato salga igual siempre. No es un recetario.</div>
-        <textarea rows="4" placeholder="Ej: 1) Sellar el lomo en plancha bien caliente, 2 min por lado. 2) Reposar 3 min..."
-          style="width:100%;font-size:14px;padding:10px;border:1.5px solid var(--crema-2);border-radius:8px;font-family:inherit;resize:vertical"
-          onchange="actualizarProcedimientoFicha('${escJs(receta.id)}', this.value)">${esc(receta.procedimiento||'')}</textarea>
-      </div>
-    </div>
+    <div class="ficha-plato-cols">
+      <div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Foto del plato</span></div>
+          <div class="card-body">
+            ${receta.fotoData ? `
+              <img src="${receta.fotoData}" alt="Foto de ${esc(receta.nombre)}" style="width:100%;border-radius:10px;display:block;margin-bottom:10px;object-fit:cover;cursor:zoom-in" onclick="zoomFotoFicha('${escJs(receta.id)}')">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+                  ${ico('upload',13)} Cambiar foto
+                  <input type="file" accept="image/*" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
+                </label>
+                <button class="btn btn-danger btn-sm" onclick="quitarFotoFicha('${escJs(receta.id)}')">${ico('trash',13)} Sacar foto</button>
+              </div>
+            ` : `
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <label class="btn btn-primary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap">
+                  ${ico('upload',13)} Subir foto
+                  <input type="file" accept="image/*" style="display:none" onchange="actualizarFotoFicha(this,'${escJs(receta.id)}')">
+                </label>
+                <span style="font-size:12px;color:var(--gris-2);flex:1;min-width:160px">Para que salga siempre igual. Sacala con el celu, ahí mismo en la cocina.</span>
+              </div>
+            `}
+          </div>
+        </div>
 
-    ${validos.length ? `
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">De dónde se va la plata de este plato</span>
-        <button class="btn btn-secondary btn-sm" onclick="descargarGrafico('chart-torta','costo-${slug}')">${ico('download',13)} Descargar</button>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Procedimiento</span></div>
+          <div class="card-body">
+            <textarea rows="${receta.fotoData?4:7}" placeholder="Los cuatro o cinco pasos que hacen que salga igual siempre. Ej: 1) Sellar el lomo en plancha bien caliente, 2 min por lado. 2) Reposar 3 min..."
+              style="width:100%;font-size:13.5px;padding:10px;border:1.5px solid var(--crema-2);border-radius:8px;font-family:inherit;resize:vertical"
+              onchange="actualizarProcedimientoFicha('${escJs(receta.id)}', this.value)">${esc(receta.procedimiento||'')}</textarea>
+          </div>
+        </div>
       </div>
-      <div class="card-body" id="chart-torta" style="overflow-x:auto">
-        ${chartTortaCosto(validos)}
-      </div>
-      <div class="card-body" style="border-top:1px solid var(--crema-2);font-size:12px;color:var(--gris-1)">
-        ${ico('bulb',14)} Para bajar el costo, moveé el ingrediente de arriba de la lista — mover los de abajo casi no cambia el número.
+
+      <div>
+        ${validos.length ? `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">De dónde se va la plata de este plato</span>
+            <button class="btn btn-secondary btn-sm" onclick="descargarGrafico('chart-torta','costo-${slug}')">${ico('download',13)} Descargar</button>
+          </div>
+          <div class="card-body" id="chart-torta" style="overflow-x:auto">
+            ${chartTortaCosto(validos)}
+          </div>
+          <div class="card-body" style="border-top:1px solid var(--crema-2);font-size:12px;color:var(--gris-1);padding-top:10px;padding-bottom:10px">
+            ${ico('bulb',14)} Para bajar el costo, moveé el ingrediente de arriba de la lista — mover los de abajo casi no cambia el número.
+          </div>
+        </div>
+        ` : `<div style="font-size:13px;color:var(--gris-2);background:var(--crema);border-radius:10px;padding:14px 16px">Todavía no hay costo cargado para mostrar de dónde se va la plata. Completá lo que falta arriba.</div>`}
       </div>
     </div>
-    ` : `<div style="font-size:13px;color:var(--gris-2);background:var(--crema);border-radius:10px;padding:14px 16px">Todavía no hay costo cargado para mostrar de dónde se va la plata. Completá lo que falta arriba.</div>`}
+    </div>
   `);
 }
 
