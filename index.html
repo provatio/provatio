@@ -1673,6 +1673,11 @@ async function guardarEnFirestore(opts){
     }
 
     window._revLocal = opData._rev;   // nuestra revisión ya es la vigente
+    // La copia en memoria de la operación también se pone al día. Sin esto,
+    // op._datos quedaba con la foto del momento en que se abrió la operación,
+    // y las pantallas que la leen (el catálogo del CP, entre otras) seguían
+    // mostrando datos viejos hasta recargar la página — aun después de guardar.
+    if(demoData.operaciones[currentOpId]) demoData.operaciones[currentOpId]._datos = opData._datos;
     // El resumen va aparte: es lo único que Provatio ve sin abrir la cocina.
     actualizarResumenEmpresa();
 
@@ -8333,6 +8338,29 @@ function pesoPorcionDirecto(receta){
 //   1. Recetas del CP — "Elaborado" usa rendimientoG (precioVenta/rendimientoG);
 //      "Directo" usa el peso de la porción, calculado solo (ver arriba).
 //   2. Productos manuales legacy (porcionados, redistribuidos)
+// Recetas / ingredientes / mermas del CP, leyendo SIEMPRE la versión vigente.
+//
+// Al abrir una operación, sus datos guardados (op._datos) se copian a
+// demoData.* y a partir de ahí se trabaja sobre esa copia viva. Pero op._datos
+// queda como la foto del momento en que se abrió y NO se actualiza al guardar.
+// Como esta pantalla leía la foto, estando parado EN el CP mostraba el estado
+// anterior: el Panaché con precio $5.000 recién cargado seguía apareciendo en
+// el catálogo a $3.322, que era su precio viejo. Ni guardando se corregía —
+// solo recargando la página. Parados en un local sí corresponde leer _datos
+// (es la única copia del CP que tenemos en memoria).
+function _datosCP(cp){
+  const opActual = currentOpId ? demoData.operaciones[currentOpId] : null;
+  if(cp && opActual === cp){
+    return {
+      recetas:      (demoData.recetas || []).filter(r => r.opId === currentOpId),
+      ingredientes: demoData.ingredientes || [],
+      mermas:       demoData.mermas || [],
+    };
+  }
+  const d = (cp && cp._datos) || {};
+  return { recetas: d.recetas || [], ingredientes: d.ingredientes || [], mermas: d.mermas || [] };
+}
+
 function getProductosCP(){
   // El catálogo que ven los locales. Tres orígenes:
   //  a) recetas elaboradas del CP con rendimiento cargado
@@ -8345,8 +8373,9 @@ function getProductosCP(){
   // Todo lo que se le muestra al local sale de costoXkg.
   const cp = getCentroProduccion();
   if(!cp) return [];
-  const recetasCP = (cp._datos && cp._datos.recetas) || [];
-  const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
+  const _dCP = _datosCP(cp);
+  const recetasCP = _dCP.recetas;
+  const ingsCP    = _dCP.ingredientes;
   const _desp = cp._despacho || {};
 
   // Convierte un precio "por unidad de compra" (ej: $/lata, $/huevo) a un
@@ -8704,20 +8733,42 @@ function aplicarMargenCP(prodId, pctInput, costoProduccionXkg){
 }
 
 // Calcular costo de una receta en el contexto del CP (sin cambiar currentOpId)
+// El costo de una receta del CP sale del MISMO motor que usa el editor de
+// recetas (calcReceta), no de una cuenta aparte.
+//
+// Antes acá había una segunda fórmula, más chica y escrita por separado, y
+// tenía tres agujeros que inflaban el costo sin avisar:
+//   1. No dividía por el bulto: si el aceite se compra en bidón de 5 L a
+//      $35.000, tomaba $35.000 como si fuera el precio del kilo.
+//   2. Buscaba la merma por número interno (m.id === item.tecnica) cuando en
+//      la receta la técnica está guardada por NOMBRE — así que no encontraba
+//      ninguna y las mermas no entraban nunca en la cuenta.
+//   3. Ignoraba los condimentos, las sub-recetas y los insumos del CP: solo
+//      sumaba ingredientes sueltos.
+// Resultado: el Panaché mostraba $12.561/kg de costo cuando su propia receta
+// decía $1.351/kg, y el margen aparecía en rojo como si el CP perdiera plata
+// en cada kilo. Es la misma clase de error de unidades que este proyecto ya
+// cerró tres veces — y la causa de fondo era tener dos motores para lo mismo.
+// Ahora hay uno solo, el que Javier verificó a mano contra cuatro platos.
+//
+// Funciona igual parado en el CP (getIngrediente lee los ingredientes vivos)
+// que parado en un local (getIngrediente y getMermasDisponibles ya caen solos
+// a los datos del CP cuando el ingrediente no es propio).
+const _cpCalcEnCurso = new Set();
 function calcularCostoRecetaCP(receta, cp){
-  const ings = (cp._datos && cp._datos.ingredientes) || [];
-  const mermas = (cp._datos && cp._datos.mermas) || [];
-  let total = 0;
-  (receta.ingredientes||[]).forEach(item => {
-    const ing = ings.find(i => i.id === item.ingId);
-    if(!ing || !ing.precio) return;
-    const merma = mermas.find(m => m.id === item.tecnica);
-    const mermaPct = merma ? (merma.pct||0) : 0;
-    const neto = item.neto || 0;
-    const bruto = neto / (1 - mermaPct/100);
-    total += (bruto/1000) * ing.precio;
-  });
-  return total;
+  if(!receta) return 0;
+  // Corta un ciclo: una receta del CP que usa como insumo un producto del CP
+  // que sale de esa misma receta. Sin esto, el cálculo se llamaría a sí mismo.
+  if(_cpCalcEnCurso.has(receta.id)) return 0;
+  _cpCalcEnCurso.add(receta.id);
+  try {
+    return calcReceta(receta, 1).merc || 0;
+  } catch(e){
+    console.warn('[Provatio] no pude costear la receta del CP:', receta && receta.nombre, e);
+    return 0;
+  } finally {
+    _cpCalcEnCurso.delete(receta.id);
+  }
 }
 
 // ── CRUD de productos del CP ─────────────────────────────────────────────────
@@ -8836,6 +8887,52 @@ async function migrarProductoCPRedistribuido(id){
 
 // ── RENDER CENTRO DE PRODUCCIÓN ──────────────────────────────────────────────
 
+// ── ACORDEONES DEL CATÁLOGO DEL CP ───────────────────────────────────────
+// Con 100 ingredientes, 50 porcionados y 50 elaborados en una sola tabla la
+// pantalla es un caos. El catálogo se ordena en tres categorías —lo que el CP
+// reparte, lo que elabora y lo que porciona— y adentro de cada una, en
+// subcategorías de oficio (Verduras, Carnes, Pastas, Panificados…). Nada queda
+// suelto: lo que no tiene subcategoría cae en "Sin categoría", que es una
+// invitación visible a clasificarlo, no un rincón donde se pierde.
+//
+// El estado de abierto/cerrado vive acá y no en el DOM porque esta pantalla se
+// vuelve a dibujar entera ante cualquier cambio — si viviera en el HTML, todo
+// se cerraría solo cada vez que se toca un precio.
+const _cpAcordeon = { cats:{}, subs:{} };
+
+function toggleCatCP(key){
+  _cpAcordeon.cats[key] = !_catCPAbierta(key);
+  renderCP();
+}
+function _catCPAbierta(key){
+  return _cpAcordeon.cats[key] !== false;   // las categorías arrancan abiertas
+}
+function toggleSubCP(key){
+  _cpAcordeon.subs[key] = !_cpAcordeon.subs[key];
+  renderCP();
+}
+function expandirTodoCP(abrir){
+  Object.keys(_cpAcordeon.cats).forEach(k => delete _cpAcordeon.cats[k]);
+  Object.keys(_cpAcordeon.subs).forEach(k => delete _cpAcordeon.subs[k]);
+  _cpAcordeon._forzar = abrir ? 'abrir' : 'cerrar';
+  renderCP();
+}
+
+// La subcategoría se guarda en el mismo lugar que el resto de la configuración
+// de despacho del producto (cp._despacho[id]), así funciona igual para los tres
+// tipos — incluso para las filas que se arman solas y no viven en cp._productos.
+function setSubcatCP(prodId, valor){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  if(!cp._despacho) cp._despacho = {};
+  if(!cp._despacho[prodId]) cp._despacho[prodId] = { gramos:0 };
+  const v = (valor||'').trim();
+  if(v) cp._despacho[prodId].subcat = v;
+  else delete cp._despacho[prodId].subcat;
+  guardarEnFirestore();
+  renderCP();
+}
+
 function renderCP(){
   const cp = getCentroProduccion();
   if(!cp){
@@ -8849,10 +8946,32 @@ function renderCP(){
   }
 
   const productos = getProductosCP();
-  const recetasCP = (cp._datos && cp._datos.recetas) || [];
-  const ingsCP    = (cp._datos && cp._datos.ingredientes) || [];
+  const _dCP = _datosCP(cp);
+  const recetasCP = _dCP.recetas;
+  const ingsCP    = _dCP.ingredientes;
+  const _despCP   = cp._despacho || {};
 
-  const filas = productos.map(p => {
+  // Subcategoría del producto: la que se cargó a mano manda; si no hay, se
+  // hereda de la categoría que el ingrediente ya tiene en Mis Ingredientes
+  // (Verduras, Carnes…) — no se le pide dos veces el mismo dato a la persona.
+  const subcatDe = (p) => {
+    const manual = (_despCP[p.id] && _despCP[p.id].subcat) || '';
+    if(manual) return manual;
+    if(p.ingId){
+      const ing = ingsCP.find(i => i.id === p.ingId);
+      if(ing && ing.cat) return ing.cat;
+    }
+    return 'Sin categoría';
+  };
+  // Sugerencias del desplegable: todo lo que ya se usa + las categorías de
+  // Mis Ingredientes. Es abierto — se puede tipear cualquier cosa (por ej.
+  // "Placas", para lo que se produce en placa y se vende porcionado).
+  const _sugerenciasSubcat = [...new Set([
+    ...productos.map(subcatDe),
+    ...ingsCP.map(i => i.cat).filter(Boolean),
+  ])].filter(s => s && s !== 'Sin categoría').sort((a,b)=>a.localeCompare(b,'es'));
+
+  const _celdas = (p) => {
     const tipoBadge = p.tipoProd==='elaborado'   ? '<span class="badge badge-op">Elaborado</span>'
                     : p.tipoProd==='porcionado'  ? '<span class="badge badge-sc">Porcionado</span>'
                     : '<span style="background:#E8F4F8;color:#1A5276;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">Redistribuido</span>';
@@ -8912,7 +9031,16 @@ function renderCP(){
       : '—';
     const costoDisplay = precioTransf;
 
-    const selector = p.tipoProd==='elaborado'
+    const selector = (p._origenAuto && p.tipoProd==='elaborado')
+      // Esta fila nace de una receta del CP: la receta que la produce YA es
+      // esa, siempre. El desplegable editable de acá abajo (pensado para las
+      // filas viejas cargadas a mano) no tenía ningún efecto — updProductoCP()
+      // solo busca en cp._productos y esta fila no vive ahí. Mismo control
+      // muerto que el de los Redistribuido y el botón de borrar.
+      ? `<div style="font-size:11px;color:var(--gris-2)">Sale de la receta
+           <a href="#" onclick="editarReceta('${escJs(p.recetaId)}');return false" style="color:var(--azul);font-weight:600">${esc(p.nombre)} →</a>
+           <br>El costo y el precio se cargan ahí.</div>`
+      : p.tipoProd==='elaborado'
       ? `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Receta que lo produce:</div>
          <select onchange="updProductoCP('${p.id}','recetaId',this.value)" style="font-size:12px;width:100%">
            <option value="">— elegí la receta —</option>
@@ -8938,7 +9066,7 @@ function renderCP(){
       // no vive ahí — cambiar la selección no hacía nada, en silencio. Mismo
       // defecto que el botón de borrar de Panaché/ravioles, encontrado al
       // revisar esta pantalla por la misma duda de Javier.
-      ? `<div style="font-size:11px;color:var(--gris-2)">Vinculado a <strong>${esc(p.nombre)}</strong> — se arma solo desde el tilde "también lo vendo a los locales" en Mis Ingredientes. Para cambiar el costo o la unidad, editalo ahí.</div>`
+      ? `<div style="font-size:11px;color:var(--gris-2)">Se arma solo desde el tilde "también lo vendo a los locales", en Mis Ingredientes. El costo de compra y la unidad se editan ahí.</div>`
       : `<div style="font-size:11px;color:var(--gris-2);margin-bottom:2px">Vinculado a (opcional, para tomar costo y unidad de "Mis ingredientes"):</div>
          <select onchange="updProductoCP('${p.id}','ingId',this.value)" style="font-size:12px;width:100%;margin-bottom:4px">
            <option value="">— sin vincular —</option>
@@ -9015,18 +9143,129 @@ function renderCP(){
          <div style="font-size:9px;color:var(--gris-2);margin-top:2px;max-width:90px">borra la receta</div>`
       : `<span style="font-size:10px;color:var(--gris-2)" title="Este producto se arma solo desde el tilde &quot;también lo vendo a los locales&quot; en Mis Ingredientes — destildalo ahí para sacarlo de acá">— se arma solo</span>`;
 
-    return `<tr>
-      <td><input type="text" value="${esc(p.nombre)}" placeholder="Nombre del producto"
-        style="border:none;background:transparent;font-weight:600;width:100%"
-        onchange="updProductoCP('${p.id}','nombre',this.value)"></td>
-      <td>${tipoCell}</td>
-      <td>${selector}</td>
-      <td>${despachoCell}</td>
-      <td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}</td>
-      <td style="text-align:right;font-weight:700;color:var(--negro)">${precioTransf}</td>
-      <td style="text-align:right">${margen}</td>
-      <td>${accionBorrar}</td>
-    </tr>`;
+    // El nombre solo se edita en las filas cargadas a mano. En las que se arman
+    // solas el nombre es el de la receta o el del ingrediente: dejar un campo
+    // editable ahí era otro control muerto (updProductoCP no encuentra la fila),
+    // y peor todavía, sugería que se podía renombrar el producto sin renombrar
+    // lo que le da origen.
+    const nombreCell = p._origenAuto
+      ? `<strong style="font-size:13px">${esc(p.nombre)}</strong>`
+      : `<input type="text" value="${esc(p.nombre)}" placeholder="Nombre del producto"
+           style="border:none;background:transparent;font-weight:600;width:100%"
+           onchange="updProductoCP('${escJs(p.id)}','nombre',this.value)">`;
+
+    const subcatCell = `
+      <input type="text" list="cp-subcats" value="${esc(subcatDe(p)==='Sin categoría' ? '' : subcatDe(p))}"
+        placeholder="+ categoría"
+        title="Agrupa este producto dentro de su bloque (Verduras, Carnes, Pastas, Panificados, Placas…). Podés escribir la que quieras, no hay lista fija."
+        onchange="setSubcatCP('${escJs(p.id)}', this.value)"
+        style="border:none;background:transparent;font-size:11px;color:var(--gris-2);width:100%;margin-top:2px">`;
+
+    return {
+      nombre:   `<td>${nombreCell}${subcatCell}</td>`,
+      tipo:     `<td>${tipoCell}</td>`,
+      arma:     `<td>${selector}</td>`,
+      despacho: `<td>${despachoCell}</td>`,
+      costo:    `<td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}</td>`,
+      precio:   `<td style="text-align:right;font-weight:700;color:var(--negro)">${precioTransf}</td>`,
+      margen:   `<td style="text-align:right">${margen}</td>`,
+      accion:   `<td>${accionBorrar}</td>`,
+    };
+  };
+
+  // ── Los tres bloques del catálogo ──────────────────────────────────────
+  // Cada uno con las columnas que le sirven: en Redistribuidos no hay columna
+  // "cómo se arma su costo" porque no se arma acá — ya viene decidido desde
+  // Mis Ingredientes, y repetir esa aclaración en cada fila era puro ruido.
+  const CATS = [
+    { key:'redistribuido', titulo:'📦 Redistribuidos',
+      ayuda:'Lo que el CP compra y le reparte a los locales tal cual, sin transformarlo (aceite, latas, harina). Entran solos con el tilde "también lo vendo a los locales" en Mis Ingredientes. Acá se decide a cuánto se los pasás.',
+      cols:['nombre','tipo','despacho','costo','precio','margen','accion'] },
+    { key:'elaborado', titulo:'👨‍🍳 Elaborados',
+      ayuda:'Lo que el CP cocina y manda listo (salsas, pastas, panificados). Entran solos desde las recetas del CP; el costo y el precio se cargan en cada receta.',
+      cols:['nombre','tipo','arma','despacho','costo','precio','margen','accion'] },
+    { key:'porcionado', titulo:'🔪 Porcionados',
+      ayuda:'Piezas enteras que el CP compra, fracciona y manda en porciones (un vacío en bifes, un salmón en postas). Es el único tipo que se carga a mano, porque la merma al fraccionar es propia de cada pieza.',
+      cols:['nombre','tipo','arma','despacho','costo','precio','margen','accion'] },
+  ];
+  const ENCABEZADOS = {
+    nombre:   '<th>Producto / categoría</th>',
+    tipo:     '<th style="width:130px">Tipo</th>',
+    arma:     '<th>Cómo se arma su costo</th>',
+    despacho: '<th style="width:150px">Cómo se despacha</th>',
+    costo:    '<th style="text-align:right;width:120px">Costo prod.</th>',
+    precio:   '<th style="text-align:right;width:130px">Precio transf.</th>',
+    margen:   '<th style="text-align:right;width:100px">Margen/kg</th>',
+    accion:   '<th style="width:50px"></th>',
+  };
+
+  // "Expandir / contraer todo" se resuelve escribiendo el estado real de cada
+  // bloque en este dibujado y borrando la orden — si quedara pegada, los
+  // acordeones no se podrían volver a tocar de a uno.
+  const _forzar = _cpAcordeon._forzar;
+  delete _cpAcordeon._forzar;
+
+  const bloques = CATS.map(cat => {
+    const delTipo = productos.filter(p => (p.tipoProd||'redistribuido') === cat.key);
+    if(_forzar) _cpAcordeon.cats[cat.key] = (_forzar === 'abrir');
+    const abierta = _catCPAbierta(cat.key);
+
+    // Agrupar por subcategoría, con "Sin categoría" siempre al final: es lo que
+    // falta clasificar, no una categoría más.
+    const grupos = {};
+    delTipo.forEach(p => { const s = subcatDe(p); (grupos[s] = grupos[s] || []).push(p); });
+    const nombresSub = Object.keys(grupos).sort((a,b) => {
+      if(a === 'Sin categoría') return 1;
+      if(b === 'Sin categoría') return -1;
+      return a.localeCompare(b,'es');
+    });
+
+    // Con pocos productos no tiene sentido esconder nada; a partir de 8 en la
+    // categoría, las subcategorías arrancan cerradas y lo primero que se ve es
+    // el índice ("Verduras (12), Carnes (8)…") en vez de una pared de filas.
+    const subCerradasPorDefecto = delTipo.length > 8;
+
+    const cuerpo = nombresSub.map(sub => {
+      const claveSub = cat.key + '::' + sub;
+      if(_forzar) _cpAcordeon.subs[claveSub] = (_forzar === 'abrir');
+      const estado = _cpAcordeon.subs[claveSub];
+      const abiertaFinal = (estado === undefined) ? !subCerradasPorDefecto : estado;
+      const banda = `<tr class="cp-sub" onclick="toggleSubCP('${escJs(claveSub)}')" style="cursor:pointer">
+        <td colspan="${cat.cols.length}" style="background:var(--crema);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:${sub==='Sin categoría'?'#B8540A':'var(--gris-1)'};padding:8px 12px;user-select:none">
+          ${abiertaFinal ? '▾' : '▸'} ${esc(sub)}
+          <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">· ${grupos[sub].length} producto${grupos[sub].length!==1?'s':''}</span>
+          ${sub==='Sin categoría' ? '<span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:#B8540A"> — poneles una categoría en el campo de abajo del nombre</span>' : ''}
+        </td>
+      </tr>`;
+      if(!abiertaFinal) return banda;
+      const filasSub = grupos[sub].map(p => {
+        const c = _celdas(p);
+        return `<tr>${cat.cols.map(k => c[k]).join('')}</tr>`;
+      }).join('');
+      return banda + filasSub;
+    }).join('');
+
+    return `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-header" onclick="toggleCatCP('${cat.key}')" style="cursor:pointer;user-select:none">
+        <span class="card-title">${abierta ? '▾' : '▸'} ${cat.titulo}
+          <span style="font-weight:400;color:var(--gris-2);font-size:13px">· ${delTipo.length}</span>
+        </span>
+        ${cat.key==='porcionado' ? `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();addProductoCP()">+ Producto porcionado</button>` : ''}
+      </div>
+      ${abierta ? (delTipo.length ? `
+        <div style="font-size:11.5px;color:var(--gris-2);padding:10px 14px 0;line-height:1.5">${cat.ayuda}</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>${cat.cols.map(k => ENCABEZADOS[k]).join('')}</tr></thead>
+            <tbody>${cuerpo}</tbody>
+          </table>
+        </div>` : `
+        <div class="card-body" style="color:var(--gris-3);font-size:13px;line-height:1.5">
+          ${cat.ayuda}
+          ${cat.key==='porcionado' ? '<br><br><button class="btn btn-primary btn-sm" onclick="addProductoCP()">+ Primer producto porcionado</button>' : ''}
+        </div>`) : ''}
+    </div>`;
   }).join('');
 
   // ¿Cabecera formal (CP) o casa madre (local que produce para el grupo)?
@@ -9039,41 +9278,20 @@ function renderCP(){
       en los locales del grupo. El costo se calcula solo y se propaga a todas las recetas que lo usen.
     </div>
 
-    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#3A3A32;background:var(--blanco);border:1px solid var(--crema-2);border-radius:10px;padding:12px 14px;margin-bottom:20px;line-height:1.5">
-      <span>👨‍🍳 <strong>Elaborado</strong> (salsas, pastas): se arma solo con el rendimiento (g) cargado en la receta del CP. No hace falta agregarlo acá.</span>
-      <span>📦 <strong>Redistribuido</strong> (aceite, latas): se arma solo con el tilde "también lo vendo a los locales" en la ficha del ingrediente, en Mis Ingredientes. No hace falta agregarlo acá.</span>
-      <span>🔪 <strong>Porcionado</strong> (vacío → porciones): es el único caso que se sigue cargando a mano, acá abajo — la fracción que se pierde al fraccionar es propia de cada pieza.</span>
+    <datalist id="cp-subcats">
+      ${_sugerenciasSubcat.map(s=>`<option value="${esc(s)}">`).join('')}
+    </datalist>
+
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <span style="font-weight:700;font-size:14px">${esMadre?'🏠':'🏭'} ${esc(cp.nombre || tituloCP)}</span>
+      <span style="font-size:12px;color:var(--gris-2)">${productos.length} producto${productos.length!==1?'s':''} en el catálogo</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary btn-sm" onclick="expandirTodoCP(true)">Expandir todo</button>
+      <button class="btn btn-secondary btn-sm" onclick="expandirTodoCP(false)">Contraer todo</button>
+      <button class="btn btn-secondary btn-sm" onclick="limpiarProductosVacios()" title="Elimina las filas de producto que quedaron sin nombre ni receta">🧹 Limpiar vacíos</button>
     </div>
 
-    <div class="card" style="margin-bottom:20px">
-      <div class="card-header">
-        <span class="card-title">${esMadre?'🏠':'🏭'} ${cp.nombre || tituloCP}</span>
-        <button class="btn btn-primary btn-sm" onclick="addProductoCP()">+ Producto porcionado</button>
-          <button class="btn btn-secondary btn-sm" onclick="limpiarProductosVacios()" title="Elimina las filas de producto que quedaron sin nombre ni receta">🧹 Limpiar vacíos</button>
-      </div>
-      ${productos.length ? `
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Producto</th>
-            <th style="width:130px">Tipo</th>
-            <th>Cómo se arma su costo</th>
-            <th style="width:150px">Cómo se despacha</th>
-            <th style="text-align:right;width:120px">Costo prod.</th>
-            <th style="text-align:right;width:130px">Precio transf.</th>
-            <th style="text-align:right;width:100px">Margen/kg</th>
-            <th style="width:50px"></th>
-          </tr></thead>
-          <tbody>${filas}</tbody>
-        </table>
-      </div>` : `
-      <div class="card-body" style="text-align:center;color:var(--gris-3)">
-        Agregá los productos porcionados que el Centro de Producción provee a los locales.
-        Los elaborados (con receta) y los redistribuidos (con el tilde en Mis Ingredientes) van a aparecer solos acá arriba.
-        <br><br>
-        <button class="btn btn-primary" onclick="addProductoCP()">+ Primer producto porcionado</button>
-      </div>`}
-    </div>
+    ${bloques}
 
     ${getLocalesCadena().length ? `
     <div class="card">
