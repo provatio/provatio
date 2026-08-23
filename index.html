@@ -4243,15 +4243,21 @@ function buildSidebar(rol){
     {icon:'users', label:'Comida de personal', vista:'personal'},
     ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
     ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
-    {section:'Planificación'},
-    {icon:'calendar', label:'Semana actual', vista:'semanal'},
-    ...(tieneModalidad('cubiertoContratado') ? [
-      {icon:'target', label:'Presupuesto evento', vista:'evento'},
-    ] : []),
-    ...(tieneModalidad('cubiertoContinuo') ? [
-      {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
-      {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
-      {icon:'calendar', label:'Calendario de servicio', vista:'calendarioOp'},
+    // Planificación es de un local que da servicio: semana, buffet, cierre,
+    // calendario. Un Centro de Producción no planifica un menú semanal — produce
+    // contra los pedidos de los locales. En el menú de admin ya estaba bloqueada
+    // para el CP, pero acá, en el del dueño, se había quedado sin el filtro.
+    ...(!isCP ? [
+      {section:'Planificación'},
+      {icon:'calendar', label:'Semana actual', vista:'semanal'},
+      ...(tieneModalidad('cubiertoContratado') ? [
+        {icon:'target', label:'Presupuesto evento', vista:'evento'},
+      ] : []),
+      ...(tieneModalidad('cubiertoContinuo') ? [
+        {icon:'grid', label:'🍽 Buffet', vista:'buffet'},
+        {icon:'clipboard', label:'Cierre de servicio', vista:'cierreServicio'},
+        {icon:'calendar', label:'Calendario de servicio', vista:'calendarioOp'},
+      ] : []),
     ] : []),
     // ANÁLISIS — lo que se mira para decidir. Lista de compras y Pedido
     // sugerido van juntos: son un solo circuito.
@@ -7180,6 +7186,28 @@ function renderEditorReceta(){
   const modoPeso = esRecetaPorPeso(r);
   _mercEditorActual = merc;
 
+  // ── LOTE, NO PORCIÓN ─────────────────────────────────────────────────
+  // Un Centro de Producción no cocina porciones: produce lotes y después
+  // porciona. Una receta de pan de pebete es "un lote del que salen 50
+  // pebetes", no "una porción que lleva 2,4 kg de harina". La pantalla decía
+  // "porción" en todos lados y era ilegible: Javier lo encontró viendo los
+  // chips, donde "1 porción de referencia" llevaba 1,6 kg de harina y costaba
+  // $5.435. Los números estaban bien; las palabras, no.
+  //
+  // Se fuerza porciones = 1 porque toda la matemática del sistema toma el
+  // rendimiento como el de UNA porción de referencia. Con el lote entero como
+  // esa única porción, la cuenta es exacta y las etiquetas dicen la verdad.
+  // (Ese doble sentido de "Rendimiento total" es una trampa: si alguien pone
+  // porciones=10 y ahí carga el peso del lote de 10, el $/kg da 10 veces menos.
+  // En modo lote deja de existir, porque el campo de porciones no se muestra.)
+  const esLoteCP = esCP && modoPeso;
+  if(esLoteCP && r.porciones !== 1) r.porciones = 1;
+  const unidadesLote     = +r.unidadesLote || 0;
+  const costoXkgLote     = (esLoteCP && r.rendimientoG > 0) ? merc / r.rendimientoG * 1000 : 0;
+  const costoUnidadLote  = (esLoteCP && unidadesLote > 0)   ? merc / unidadesLote : 0;
+  const pesoUnidadLote   = (esLoteCP && unidadesLote > 0 && r.rendimientoG > 0) ? r.rendimientoG / unidadesLote : 0;
+  const precioUnidadLote = (pesoUnidadLote > 0 && r.precioVenta > 0) ? r.precioVenta * pesoUnidadLote / 1000 : 0;
+
   // Calculadora de dos vías: acá se pone al día el lado que NO está anclado,
   // con el costo recién calculado unas líneas más arriba. Por eso agregar,
   // sacar o cambiar un ingrediente actualiza el precio (o el %) al instante,
@@ -7192,12 +7220,29 @@ function renderEditorReceta(){
   // daba un porcentaje que no significaba nada (misma clase de error de
   // unidades que este proyecto ya corrigió en el costeo y en el CP).
   const pct = (r.precioVenta > 0 && baseCosto > 0) ? baseCosto/r.precioVenta*100 : null;
-  // Fuera del CP no se toca nada de lo que ya había: el campo de rendimiento
-  // sigue siempre visible, y el aviso sigue dependiendo solo de tipoPlato.
-  const mostrarRendimiento = !esCP || modoPeso;
+  // ── EL RENDIMIENTO SOLO APARECE CUANDO HACE FALTA ────────────────────
+  // En un local, una receta se define por sus porciones de referencia: si
+  // querés 100, cambiás el número y listo. Pedirle el "Rendimiento total" a
+  // una milanesa con fritas —que nadie va a pesar terminada— es un campo de
+  // ruido en las 245 recetas de la carta. Javier lo planteó así y tiene razón.
+  //
+  // Pero hay UN caso donde el dato es imprescindible, y es el que más se usa
+  // en una cadena: cuando esta receta se usa ADENTRO de otra medida en gramos.
+  // Para poder decir "este plato lleva 30 g de chimichurri", el sistema
+  // necesita saber cuánto rinde la receta de chimichurri (ver calcReceta, rama
+  // de sub-receta). Sin ese dato, la única alternativa sería copiar los
+  // ingredientes del chimichurri adentro de cada plato que lo lleva.
+  //
+  // Así que el campo no se saca: se muestra exactamente cuando alguna otra
+  // receta usa a esta como insumo, y se esconde el resto del tiempo. No hay
+  // nada que decidir ni tildar — aparece solo el día que empieza a hacer falta.
+  const _recetasQueLaUsan = esCP ? [] : getRecetas().filter(x =>
+    x.id !== r.id && (x.ingredientes||[]).some(i => i.recetaId === r.id));
+  const usadaComoInsumo = _recetasQueLaUsan.length > 0;
+  const mostrarRendimiento = esCP ? modoPeso : (usadaComoInsumo || r.rendimientoG > 0);
   const necesitaAvisoRendimiento = esCP
     ? (modoPeso && !(r.rendimientoG>0))
-    : (r.tipoPlato==='Elaborado' && !(r.rendimientoG>0));
+    : (usadaComoInsumo && !(r.rendimientoG>0));
 
   setContent(r.nombre||'Nueva receta', `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
@@ -7234,28 +7279,66 @@ function renderEditorReceta(){
 
     <div class="metric-grid">
       <div class="metric">
-        <div class="metric-label">Porciones de referencia</div>
-        <input type="text" inputmode="decimal" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
-          onchange="recetaEditando.porciones=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
-      </div>
-      ${mostrarRendimiento ? `<div class="metric">
-        <div class="metric-label">Rendimiento total (g / ml)</div>
-        <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
-          title="Pesá o medí el resultado final de esta preparación, ya cocinada y lista, tal como la definiste (porciones de referencia) — no es la suma de los ingredientes crudos: al cocinar en conjunto se pierde o se gana peso, y eso no se puede saber de antemano."
-          onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
-      </div>` : ''}
-      <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
-      <div class="metric"><div class="metric-label">${esCP ? "% sobre precio transferencia" : "% sobre precio venta"}</div>
-        <div class="metric-value" style="color:${pct===null?'var(--gris-2)':pct>35?'var(--bordo)':pct>25?'#8B6914':'var(--oliva)'}">
-          ${pct===null?'— Sin precio':fmtD(pct)+'%'}
+      ${esLoteCP ? `
+        <div class="metric">
+          <div class="metric-label">Cuánto pesa el lote terminado (g)</div>
+          <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2400"
+            style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+            title="Pesá el resultado final ya cocinado del lote entero. No es la suma de los ingredientes crudos: al cocinar se pierde o se gana peso, y eso solo se sabe pesando."
+            onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
         </div>
-      </div>
-      <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
+        <div class="metric">
+          <div class="metric-label">Unidades que salen del lote</div>
+          <input type="text" inputmode="decimal" value="${r.unidadesLote||''}" placeholder="opcional"
+            style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+            title="Cuántas piezas salen de este lote: 50 pebetes, 80 chips, 100 medialunas. Sirve para saber cuánto cuesta cada una y para despachárselas al local por unidad en vez de por kilo."
+            onchange="recetaEditando.unidadesLote=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+          <div class="metric-sub">${pesoUnidadLote ? fmtD(pesoUnidadLote,0)+' g cada una' : 'cuántas piezas salen'}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Costo del lote</div>
+          <div class="metric-value">$${fmt(merc)}</div>
+          <div class="metric-sub">${costoXkgLote ? '$'+fmt(costoXkgLote)+'/kg' : 'falta el peso del lote'}${costoUnidadLote ? ' · $'+fmt(costoUnidadLote)+' cada una' : ''}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Margen sobre el costo</div>
+          <div class="metric-value" style="color:${(r.margenPct!==undefined&&r.margenPct!==null)?'var(--oliva)':'var(--gris-2)'}">
+            ${(r.margenPct!==undefined&&r.margenPct!==null) ? fmtD(r.margenPct)+'%' : '— sin definir'}
+          </div>
+          <div class="metric-sub">${r.precioVenta>0
+            ? '$'+fmt(r.precioVenta)+'/kg al local'+(precioUnidadLote?' · $'+fmt(precioUnidadLote)+' cada una':'')
+            : 'todavía se transfiere al costo'}</div>
+        </div>
+      ` : `
+        <div class="metric">
+          <div class="metric-label">Porciones de referencia</div>
+          <input type="text" inputmode="decimal" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+            onchange="recetaEditando.porciones=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+        </div>
+        ${mostrarRendimiento ? `<div class="metric">
+          <div class="metric-label">Cuánto rinde (g / ml)</div>
+          <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+            title="Pesá o medí el resultado final de esta preparación, ya lista, tal como la definiste arriba (porciones de referencia) — no es la suma de los ingredientes crudos: al cocinar se pierde o se gana peso, y eso solo se sabe pesando."
+            onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+          <div class="metric-sub">${usadaComoInsumo
+            ? _recetasQueLaUsan.length + ' receta' + (_recetasQueLaUsan.length>1?'s la usan':' la usa') + ' por gramos'
+            : 'para poder usarla dentro de otra receta'}</div>
+        </div>` : ''}
+        <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
+        <div class="metric"><div class="metric-label">${esCP ? "% sobre precio transferencia" : "% sobre precio venta"}</div>
+          <div class="metric-value" style="color:${pct===null?'var(--gris-2)':pct>35?'var(--bordo)':pct>25?'#8B6914':'var(--oliva)'}">
+            ${pct===null?'— Sin precio':fmtD(pct)+'%'}
+          </div>
+        </div>
+        <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
+      `}
     </div>
 
     ${necesitaAvisoRendimiento ? `
     <div class="alert alert-warn" style="margin-bottom:16px">
-      ⚠ Sin "Rendimiento total" cargado, esta preparación no se puede usar como insumo en otras recetas${esCP ? ' ni transferir a las sucursales' : ''}. El precio que cargaste arriba (${esCP ? 'transferencia' : 'venta'}) no se convierte a $/kg en ningún lado hasta completar este dato — pesá o medí <strong>el resultado final ya cocinado</strong> de esta preparación tal como está definida acá (no es la suma de los ingredientes crudos).
+      ${esCP
+        ? `⚠ Sin el peso del lote terminado, esta preparación no se puede transferir a las sucursales ni usar como insumo en otras recetas. El precio de transferencia que cargaste arriba no se convierte a $/kg hasta completar este dato — pesá <strong>el resultado final ya cocinado</strong> del lote entero (no es la suma de los ingredientes crudos).`
+        : `⚠ <strong>${_recetasQueLaUsan.length} receta${_recetasQueLaUsan.length>1?'s usan':' usa'} esta preparación por gramos</strong> (${_recetasQueLaUsan.slice(0,3).map(x=>esc(x.nombre)).join(', ')}${_recetasQueLaUsan.length>3?` y ${_recetasQueLaUsan.length-3} más`:''}), y sin saber cuánto rinde no se puede calcular lo que le cuesta a cada una. Pesá <strong>el resultado final ya listo</strong> de esta receta tal como está definida acá arriba — no es la suma de los ingredientes crudos.`}
     </div>` : ''}
     ${(esCP && !modoPeso) ? `
     <div class="alert alert-info" style="margin-bottom:16px">
@@ -8568,6 +8651,11 @@ function _getProductosCPInterno(cp){
           modoUso: 'directo',
           recetaId: r.id,
           _origenAuto: true,
+          // Cuántas piezas salen del lote y cuánto pesa cada una. Si la receta
+          // lo declara, el CP puede despachar por unidad (50 pebetes, 80 chips)
+          // sin volver a cargar el gramaje acá — es el mismo dato.
+          _unidadesLote: r.unidadesLote || 0,
+          _pesoUnidadAuto: (r.unidadesLote > 0) ? r.rendimientoG / r.unidadesLote : 0,
           costoProduccionXkg: costoXkg,
           // Si la receta del CP tiene precio de venta cargado, ese es el precio
           // al que se lo pasa al local (salvo que se pise a mano más abajo).
@@ -8696,7 +8784,10 @@ function _getProductosCPInterno(cp){
         : esDirectoAuto ? 'porcion' : 'kg';
       const gramos = +d.gramos
         || (unidad==='unidades' && ingVinculado ? (ingVinculado.pesoUnitario||0) : 0)
-        || (esDirectoAuto && (unidad==='porcion'||unidad==='unidades') ? (p._pesoPorcionAuto||0) : 0);
+        || (esDirectoAuto && (unidad==='porcion'||unidad==='unidades') ? (p._pesoPorcionAuto||0) : 0)
+        // Un elaborado por lote que declaró cuántas piezas salen ya sabe cuánto
+        // pesa cada una: no hace falta volver a cargarlo al despacharlo por unidad.
+        || ((unidad==='porcion'||unidad==='unidades') ? (p._pesoUnidadAuto||0) : 0);
       const porUnidad = (unidad === 'porcion' || unidad === 'unidades');
 
       // PRECIO DE TRANSFERENCIA. Orden: lo que el CP cargó a mano manda sobre
