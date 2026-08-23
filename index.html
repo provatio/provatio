@@ -2201,10 +2201,18 @@ function getIngredientesConCP(){
     .filter(i => !nombresProxios.has(i.nombre.toLowerCase()))
     .map(i => ({...i, _esCP: true, _precioCP: i.precio}));
   
-  // Para los ingredientes que existen en ambos, usar precio del CP
+  // Los que el CP también tiene se MARCAN, pero no se les pisa el precio.
+  //
+  // Antes acá se le metía el precio de COMPRA del CP a cualquier ingrediente
+  // del local que coincidiera de nombre. Dos cosas mal: se decidía por
+  // coincidencia de nombre que ese insumo venía del CP (nadie lo había
+  // declarado), y se usaba lo que al CP le cuesta comprarlo en vez de lo que
+  // el CP le cobra al local. Quién provee cada insumo ahora se declara en la
+  // ficha del ingrediente (ing.proveedor) y el precio sale de ahí — ver
+  // getIngrediente().
   const combinados = propios.map(ing => {
     const enCP = ingsCP.find(i => i.nombre.toLowerCase() === ing.nombre.toLowerCase());
-    if(enCP) return {...ing, precio: enCP.precio, _precioCP: enCP.precio, _sincronizadoCP: true};
+    if(enCP) return {...ing, _precioCP: enCP.precio, _sincronizadoCP: true};
     return ing;
   });
   
@@ -2426,30 +2434,75 @@ function getMermasDisponibles(){
   return [...propias, ...soloCP];
 }
 
-function getIngrediente(id){ 
-  const propio = demoData.ingredientes.find(i=>i.id===id);
-  
-  // Si hay CP vinculado, verificar si tiene el mismo ingrediente — su precio tiene prioridad
-  const cp = getCentroProduccion();
-  if(cp && !esCentroProduccion()){
-    const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
-    // Buscar por ID exacto primero
-    const porId = ingsCP.find(i=>i.id===id);
-    if(porId) return {...porId, _esCP:true};
-    // Buscar por nombre si el local tiene el ingrediente pero el CP también
-    if(propio){
-      const porNombre = ingsCP.find(i=>i.nombre.toLowerCase()===propio.nombre.toLowerCase());
-      if(porNombre) return {...propio, precio: porNombre.precio, _sincronizadoCP:true, _precioCP: porNombre.precio};
-    }
+// ── DE DÓNDE VIENE CADA INSUMO ──────────────────────────────────────────
+// El origen de un insumo es una propiedad del INGREDIENTE del local, no de
+// cada línea de receta. El campo ya existía (ing.proveedor: 'cp' | 'externo',
+// se elige en la ficha del ingrediente) pero solo servía para decidir en qué
+// bloque del pedido aparecía. Ahora además define el PRECIO, que es lo que
+// realmente cambia según quién te lo provea.
+//
+// Producto del catálogo del CP que corresponde a un ingrediente del local.
+// Primero por el id elegido a mano en la ficha (explícito, sin adivinar);
+// si no se eligió ninguno, por nombre, que es como se venían emparejando.
+let _enGetProductosCP = false;
+function _productoCPdeIngrediente(ing){
+  if(!ing) return null;
+  // getProductosCP() cuesta y, sobre todo, para costear las recetas del CP
+  // vuelve a pasar por acá. Si ya estamos adentro, cortamos el círculo.
+  if(_enGetProductosCP) return null;
+  const prods = getProductosCP();
+  if(ing.cpProductoId){
+    const porId = prods.find(p => p.id === ing.cpProductoId);
+    if(porId) return porId;
   }
-  
-  // Fallback — precio propio del local
+  const n = (ing.nombre||'').toLowerCase().trim();
+  return prods.find(p => (p.nombre||'').toLowerCase().trim() === n) || null;
+}
+
+function getIngrediente(id){
+  const propio = demoData.ingredientes.find(i=>i.id===id);
+  const cp = getCentroProduccion();
+  const enCadena = !!cp && !esCentroProduccion();
+
+  // Lo que el local declaró que le provee el CP se costea al PRECIO DE
+  // TRANSFERENCIA — lo que el CP le cobra.
+  //
+  // Antes acá había un bug de fondo: si el ingrediente del local coincidía por
+  // NOMBRE con uno del CP, se le aplicaba el precio de COMPRA del CP. O sea,
+  // el local costeaba sin el margen que el CP le carga, y todos los platos
+  // daban más baratos de lo que son — en silencio, con números plausibles.
+  // En una cadena donde el 80% de los insumos viene del CP, eso es una carta
+  // entera con food cost mentiroso. Además se adivinaba: nadie había declarado
+  // que ese ingrediente viniera del CP, lo decidía la coincidencia de nombre.
+  if(propio && enCadena && propio.proveedor === 'cp'){
+    const prod = _productoCPdeIngrediente(propio);
+    if(prod && prod.costoXkg > 0){
+      // El precio de transferencia ya viene en $/kg: se expresa como un
+      // ingrediente "por kilo" para que el resto del cálculo sea el de siempre.
+      return { ...propio, precio: prod.costoXkg, bulto: 1, unidadMedida: 'kg',
+               _origenCP: true, _cpProducto: prod.id, _cpNombre: prod.nombre };
+    }
+    // Marcado como del CP pero el CP todavía no lo publica o no le puso
+    // precio: no se inventa nada, se avisa en la receta.
+    return { ...propio, _origenCP: true, _cpSinPrecio: true };
+  }
+
+  // Propio del local (o sin definir todavía): su precio es el suyo.
   if(propio) return propio;
-  
-  // Buscar en CP si no está en el local
+
+  // No está en la lista del local. Puede ser un ingrediente del CP elegido
+  // directo desde el desplegable: si el CP lo publica con precio de
+  // transferencia, ese es el que corresponde; si no, su precio de compra.
   if(cp){
-    const ingCP = ((cp._datos&&cp._datos.ingredientes)||[]).find(i=>i.id===id);
-    if(ingCP) return {...ingCP, _esCP:true};
+    const ingCP = (_datosCP(cp).ingredientes || []).find(i=>i.id===id);
+    if(ingCP){
+      const prod = enCadena ? _productoCPdeIngrediente(ingCP) : null;
+      if(prod && prod.costoXkg > 0){
+        return { ...ingCP, precio: prod.costoXkg, bulto: 1, unidadMedida: 'kg',
+                 _esCP: true, _origenCP: true, _cpProducto: prod.id };
+      }
+      return {...ingCP, _esCP:true};
+    }
   }
   return null;
 }
@@ -2515,6 +2568,11 @@ function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadRe
   }
   const ing = getIngrediente(ingId);
   if(!ing||!neto) return null;
+  // Declarado como provisto por el CP, pero el CP todavía no lo publica con
+  // precio de transferencia. No se inventa un costo: se dice qué falta.
+  if(ing._cpSinPrecio){
+    return {error:`"${ing.nombre}" figura como provisto por el Centro de Producción, pero el CP todavía no le puso precio de transferencia (o no está en su catálogo)`, cpSinPrecio:true};
+  }
   const mermaObj = getMerma(ing.nombre, tecnica, ing.estado, ing.proceso);
   if(mermaObj===null) return {error:`Sin merma: ${ing.nombre} / ${tecnica}`};
   
@@ -5441,6 +5499,48 @@ async function niCrearCategoriaNueva(){
   showToast('Categoría "'+limpio+'" creada','success');
 }
 
+function _niToggleProductoCP(){
+  const sel = document.getElementById('ni-proveedor');
+  const wrap = document.getElementById('ni-cp-prod-wrap');
+  if(sel && wrap) wrap.style.display = (sel.value === 'cp') ? 'block' : 'none';
+}
+
+// Ingredientes del local que coinciden por nombre con un producto del catálogo
+// del CP pero todavía figuran como de proveedor externo. En una cadena esto es
+// la norma al importar una carta: el PDF no dice quién provee cada cosa, así
+// que todo entra como propio. Esto los junta para resolverlos de una.
+function _ingredientesSinClasificar(){
+  const cp = getCentroProduccion();
+  if(!cp || esCentroProduccion()) return [];
+  const prods = getProductosCP();
+  if(!prods.length) return [];
+  const porNombre = new Map(prods.map(p => [(p.nombre||'').toLowerCase().trim(), p]));
+  return (demoData.ingredientes||[])
+    .filter(i => i.proveedor !== 'cp')
+    .map(i => ({ ing: i, prod: porNombre.get((i.nombre||'').toLowerCase().trim()) }))
+    .filter(x => !!x.prod);
+}
+
+async function clasificarIngredientesDesdeCP(){
+  const pendientes = _ingredientesSinClasificar();
+  if(!pendientes.length){ showToast('No hay ingredientes para reclasificar','info'); return; }
+  const muestra = pendientes.slice(0,8).map(x=>'· '+x.ing.nombre).join('\n');
+  const ok = await pedirConfirmacion(
+    'Marcar como provistos por el Centro de Producción',
+    `${pendientes.length} ingrediente${pendientes.length>1?'s':''} de tu lista coinciden con productos del catálogo del CP:\n\n`
+    + muestra + (pendientes.length>8 ? `\n… y ${pendientes.length-8} más` : '')
+    + '\n\nSi los marcás, su costo va a pasar a salir del precio de transferencia que el CP te cobra, '
+    + 'en vez del precio de compra que tenés cargado. Podés revertirlo uno por uno desde la ficha de cada ingrediente.',
+    'Marcarlos como del CP',
+    'Cancelar'
+  );
+  if(!ok) return;
+  pendientes.forEach(x => { x.ing.proveedor = 'cp'; x.ing.cpProductoId = x.prod.id; });
+  guardarEnFirestore();
+  renderIngredientes();
+  showToast(`${pendientes.length} ingrediente${pendientes.length>1?'s':''} ahora se costean al precio de transferencia del CP ✓`,'success');
+}
+
 function renderIngredientes(){
   const grouped = {};
   const cats = [...getCategorias()];
@@ -5491,7 +5591,8 @@ function renderIngredientes(){
               </tr></thead>
               <tbody>
                 ${items.map(item=>`<tr>
-                  <td><strong>${esc(item.nombre)}</strong>${item._estimado ? ` <span title="Precio propuesto por la IA al leer la carta. Confirmalo contra una factura tuya." style="font-size:10px;background:#FFF3E6;color:#B8540A;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">estimado</span>` : ''}</td>
+                  <td><strong>${esc(item.nombre)}</strong>${item._estimado ? ` <span title="Precio propuesto por la IA al leer la carta. Confirmalo contra una factura tuya." style="font-size:10px;background:#FFF3E6;color:#B8540A;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">estimado</span>` : ''}
+                    ${item.proveedor==='cp' ? `<div style="font-size:10px;color:#1A5276;margin-top:2px" title="Su costo sale del precio de transferencia que te cobra el CP, no del precio de compra de esta fila">🏭 lo provee el Centro de Producción</div>` : ''}</td>
                   <td>${item.unidadTipo||item.unidad||'kg'}</td>
                   <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
                   <td style="text-align:right"><input type="text" inputmode="decimal" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',num(this.value))"></td>
@@ -5543,6 +5644,20 @@ function renderIngredientes(){
         ? `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" onclick="renderDiagnosticoUnidades()">⚠ Ver qué falta cargar (peso por unidad)</button>`
         : ''}
     </div>
+    ${(() => {
+      const pend = _ingredientesSinClasificar();
+      if(!pend.length) return '';
+      return `<div class="alert alert-warn" style="margin-bottom:16px">
+        <strong>${pend.length} ingrediente${pend.length>1?'s':''} figuran como comprados a un proveedor externo, pero el Centro de Producción los tiene en su catálogo.</strong>
+        <div style="margin-top:6px;font-size:12.5px;line-height:1.5">
+          Mientras estén así, sus recetas se costean con el precio de compra de esta pantalla y no con el precio de
+          transferencia que el CP te cobra — que es lo que realmente pagás. Si te los provee el CP, marcalos de una:
+        </div>
+        <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="clasificarIngredientesDesdeCP()">
+          Revisar y marcar los ${pend.length} como del CP
+        </button>
+      </div>`;
+    })()}
     <div id="ing-lista">${acordeon}</div>
   `, `<button class="btn btn-primary btn-sm" onclick="modalNuevoIng()">+ Nuevo ingrediente</button>`);
 }
@@ -5956,12 +6071,25 @@ function modalNuevoIng(ingExistente){
       ${_cpVinc ? `
       <div class="form-group">
         <label>Quién te lo provee</label>
-        <select id="ni-proveedor">
+        <select id="ni-proveedor" onchange="_niToggleProductoCP()">
           <option value="externo"${_provActual!=='cp'?' selected':''}>🛒 Proveedor externo</option>
           <option value="cp"${_provActual==='cp'?' selected':''}>🏭 ${esc(_cpVinc.nombre||'Centro de Producción')}</option>
         </select>
         <div style="font-size:11px;color:var(--gris-2);margin-top:5px">
-          Define en qué parte del pedido aparece: en el bloque del CP o en el de proveedores externos.
+          No es solo dónde aparece en el pedido: si te lo provee el Centro de Producción,
+          el costo de este insumo sale del <strong>precio de transferencia</strong> que el CP te cobra,
+          y no del precio de compra de acá abajo.
+        </div>
+        <div id="ni-cp-prod-wrap" style="margin-top:10px;display:${_provActual==='cp'?'block':'none'}">
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--gris-1);margin-bottom:6px">¿Cuál del catálogo del CP?</label>
+          <select id="ni-cp-prod" style="width:100%">
+            <option value="">— el que coincida por nombre —</option>
+            ${getProductosCP().map(p=>`<option value="${esc(p.id)}"${p.id===ing.cpProductoId?' selected':''}>${esc(p.nombre)}${p.costoXkg>0?' · $'+fmt(p.costoXkg)+'/kg':' ⚠ sin precio'}</option>`).join('')}
+          </select>
+          <div style="font-size:11px;color:var(--gris-2);margin-top:5px">
+            Elegilo a mano si el nombre no es idéntico al del catálogo. Si el CP todavía no lo publica,
+            la receta te lo va a marcar en vez de inventar un costo.
+          </div>
         </div>
       </div>` : ''}
 
@@ -6238,6 +6366,12 @@ async function guardarNuevoIng(idExistente){
   };
   // El selector solo existe si el local está vinculado a un CP.
   if(_selProv) nuevo.proveedor = _selProv.value;
+  const _selCPProd = document.getElementById('ni-cp-prod');
+  if(_selProv && _selProv.value === 'cp' && _selCPProd && _selCPProd.value){
+    nuevo.cpProductoId = _selCPProd.value;
+  } else {
+    delete nuevo.cpProductoId;
+  }
   // Si alguien abrió la ficha y la guardó, el precio ya no es una estimación
   // de la IA: lo revisó una persona. Se le saca la marca.
   delete nuevo._estimado;
@@ -8373,6 +8507,12 @@ function getProductosCP(){
   // Todo lo que se le muestra al local sale de costoXkg.
   const cp = getCentroProduccion();
   if(!cp) return [];
+  _enGetProductosCP = true;
+  try { return _getProductosCPInterno(cp); }
+  finally { _enGetProductosCP = false; }
+}
+
+function _getProductosCPInterno(cp){
   const _dCP = _datosCP(cp);
   const recetasCP = _dCP.recetas;
   const ingsCP    = _dCP.ingredientes;
