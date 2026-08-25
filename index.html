@@ -564,6 +564,14 @@ body {
    real de la pantalla en vez de quedarse en la columna de 1040px, que en un
    monitor grande deja media pantalla vacía y parte la receta en dos pantallazos. */
 .content:has(.ficha-plato) { max-width: 1560px; }
+/* El editor de receta tiene una tabla de 9 columnas: con 1040px de ancho hay
+   que scrollear de costado para ver el costo de un ingrediente, que es
+   justamente el número por el que se abre esta pantalla. */
+.content:has(.editor-receta) { max-width: 1560px; }
+/* Las métricas son una franja de arriba, no una columna al costado. Sin este
+   tope, con pocas métricas cada una se estira media pantalla. */
+.editor-receta .metric-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 240px)); }
+.editor-receta .table-wrap table { width: 100%; }
 .ficha-plato-cols {
   display: grid;
   grid-template-columns: minmax(320px, 420px) 1fr;
@@ -2211,61 +2219,34 @@ function getIngredientesConCP(){
   
   const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
 
-  // ── EL LOCAL VE EL CATÁLOGO DEL CP, NO SU DESPENSA ─────────────────────
-  // Antes acá se volcaban TODOS los ingredientes del CP en el desplegable del
-  // local: los 127 de la despensa, incluidos los que el CP nunca vende. Por
-  // eso a Javier le aparecía "Ojo de bife (pieza entera)" —la pieza que el CP
-  // compra para porcionar— en vez del porcionado que el CP sí publica. Peor
-  // todavía: esa fila traía el precio de COMPRA del CP, sin su margen.
+  // ── UNA RECETA DEL LOCAL USA INGREDIENTES DEL LOCAL. PUNTO. ────────────
   //
-  // El CP publica un catálogo (getProductosCP): sus elaborados, sus
-  // porcionados y los ingredientes que tildó como "también lo vendo a los
-  // locales". Eso —y solo eso— es lo que el local puede pedir y usar. Es la
-  // decisión #5 de la arquitectura de cadenas: el local elige de lo que el CP
-  // publica; si falta algo, lo agrega el CP.
+  // Acá vivió, en dos versiones distintas, el mismo error de fondo: meter en
+  // el desplegable de una receta cosas que no son ingredientes de este local.
+  // Primero fueron los 127 ingredientes de la despensa del CP (por eso
+  // aparecía "Ojo de bife (pieza entera)", que el CP compra para porcionar y
+  // no vende). Después fue el catálogo entero del CP, 145 productos — el
+  // desplegable quedó inservible igual, y por el mismo motivo.
   //
-  // Además resuelve de raíz un choque de ids: los ids del catálogo ya vienen
-  // con prefijo ('cp-rec-…', 'cp-ing-…'), así que no pueden chocar con los del
-  // local. Ver el comentario de _idsUnicos() acá abajo.
-  const nombresProxios = new Set(propios.map(i => (i.nombre||'').toLowerCase().trim()));
-  let soloCP = [];
-  try{
-    soloCP = (getProductosCP() || [])
-      .filter(p => p && p.nombre && !nombresProxios.has(p.nombre.toLowerCase().trim()))
-      .map(p => ({
-        id: p.id,
-        nombre: p.nombre,
-        cat: p.tipoProd === 'elaborado' ? 'Elaborados del CP'
-           : p.tipoProd === 'porcionado' ? 'Porcionados del CP'
-           : 'Del CP',
-        // El precio que ve el local es el de TRANSFERENCIA, ya en $/kg.
-        precio: +p.costoXkg || 0,
-        bulto: 1,
-        unidadMedida: 'kg',
-        unidadTipo: 'kg',
-        _esCP: true,
-        _cpProducto: p.id,
-        _tipoProd: p.tipoProd,
-        _sinPrecioCP: !(p.costoXkg > 0),
-      }));
-  }catch(e){ console.warn('catálogo del CP no disponible', e); }
-
-  // Los que el CP también tiene se MARCAN, pero no se les pisa el precio.
+  // La regla correcta ya estaba decidida (decisión #1 de la arquitectura de
+  // cadenas): el origen de un insumo es una propiedad del INGREDIENTE del
+  // local, no de cada línea de receta. Entonces una receta elige entre los
+  // ingredientes que ESTE local usa, y cada uno de ellos sabe si lo compra
+  // afuera o se lo pide al CP. Lo que el CP publica se trae a la lista con un
+  // clic ("Traer del CP") y desde ahí es un ingrediente más.
   //
-  // Antes acá se le metía el precio de COMPRA del CP a cualquier ingrediente
-  // del local que coincidiera de nombre. Dos cosas mal: se decidía por
-  // coincidencia de nombre que ese insumo venía del CP (nadie lo había
-  // declarado), y se usaba lo que al CP le cuesta comprarlo en vez de lo que
-  // el CP le cobra al local. Quién provee cada insumo ahora se declara en la
-  // ficha del ingrediente (ing.proveedor) y el precio sale de ahí — ver
-  // getIngrediente().
-  const combinados = propios.map(ing => {
-    const enCP = ingsCP.find(i => (i.nombre||'').toLowerCase() === (ing.nombre||'').toLowerCase());
+  // Beneficio que no es menor: el desplegable no puede volver a mezclar ids de
+  // dos operaciones, que es lo que hacía que elegir "Ojo de bife" pusiera
+  // "queso azul".
+  const cpNombres = new Map(
+    ingsCP.map(i => [(i.nombre||'').toLowerCase().trim(), i])
+  );
+  return _idsUnicos(propios.map(ing => {
+    const enCP = cpNombres.get((ing.nombre||'').toLowerCase().trim());
+    if(ing.proveedor === 'cp') return {...ing, _origenCP: true};
     if(enCP) return {...ing, _precioCP: enCP.precio, _sincronizadoCP: true};
     return ing;
-  });
-
-  return _idsUnicos([...combinados, ...soloCP]);
+  }));
 }
 
 // ── DOS COSAS NO PUEDEN LLAMARSE IGUAL ────────────────────────────────────
@@ -2307,6 +2288,24 @@ function _opcionesIngrediente(selId){
       + html;
   }
   return `<option value="">— elegí —</option>` + html;
+}
+
+// Las técnicas que se le pueden aplicar a un ingrediente. "Sin merma" está
+// SIEMPRE, para todos, sin depender de que alguien haya cargado una fila que
+// diga que no se pierde nada (ver getMerma). Un insumo que llega elaborado del
+// CP no lleva ninguna otra: el panaché ya viene cocido, su merma se aplicó
+// adentro de la receta del CP y volver a aplicarla acá sería cobrarla dos veces.
+function _opcionesTecnica(ingObj, sel){
+  if(!ingObj) return '<option value="">Elegí el ingrediente primero</option>';
+  const propias = [...new Set(getMermasDisponibles()
+    .filter(m => m.ingrediente === ingObj.nombre)
+    .map(m => m.tecnica))].filter(t => t && t !== SIN_MERMA);
+  const lista = (ingObj.proveedor === 'cp' || ingObj._origenCP || ingObj._esCP)
+    ? [SIN_MERMA, ...propias]     // el CP ya lo entregó listo
+    : [SIN_MERMA, ...propias];
+  return lista.map(t =>
+    `<option value="${esc(t)}"${t === sel ? ' selected' : ''}>${esc(t)}</option>`
+  ).join('');
 }
 
 function _idsUnicos(lista){
@@ -2653,7 +2652,22 @@ function getRecetas(){
 }
 function getMermasOp(){ return demoData.mermas; } // mermas son globales (referencia)
 function getIngredientesOp(){ return demoData.ingredientes; } // ingredientes globales
+// "Sin merma" NO es un dato que haya que cargar: es la AUSENCIA de merma.
+//
+// Hasta acá el sistema lo guardaba como un registro más, uno por ingrediente:
+// en la carga de Lavalle hay 127 filas que dicen "acá no se pierde nada". Y si
+// la fila no existía, elegir "Sin merma" daba error — que es lo que le pasó a
+// Javier con el Panaché de verduras: es una receta del CP, no un ingrediente,
+// así que nunca iba a tener una fila de merma propia, y el costo se rompía.
+//
+// El error de fondo es pedir que se declare la nada. Un cocinero no carga una
+// merma de 0%: elige "sin merma" porque no hay pérdida, y eso es todo. Ahora
+// "Sin merma" vale 0 siempre, exista o no la fila. Las 127 filas viejas
+// siguen ahí sin molestar (dan lo mismo: 0%), y ningún ingrediente nuevo
+// necesita que alguien le cargue una.
+const SIN_MERMA = 'Sin merma';
 function getMerma(nombre, tecnica, estado, proceso){
+  if(tecnica === SIN_MERMA) return 0;
   // OJO: antes esto buscaba solo en demoData.mermas (las del local activo), que
   // deja afuera las mermas cargadas en el Centro de Producción. Un local puede
   // usar un ingrediente que le llega del CP (ej: espárragos en lata) sin tener
@@ -2697,7 +2711,14 @@ function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadRe
     return {error:`"${ing.nombre}" figura como provisto por el Centro de Producción, pero el CP todavía no le puso precio de transferencia (o no está en su catálogo)`, cpSinPrecio:true};
   }
   const mermaObj = getMerma(ing.nombre, tecnica, ing.estado, ing.proceso);
-  if(mermaObj===null) return {error:`Sin merma: ${ing.nombre} / ${tecnica}`};
+  if(mermaObj===null){
+    // No es lo mismo "todavía no elegiste la técnica" que "esa técnica no
+    // tiene merma cargada para este ingrediente". Decir lo primero cuando pasa
+    // lo segundo manda a la persona a mirar el campo equivocado.
+    return tecnica
+      ? {error:`Falta la merma de "${ing.nombre}" con la técnica "${tecnica}" — cargala en Mermas, o elegí "Sin merma" si no se pierde nada`, faltaMerma:true}
+      : {error:`Elegí la técnica de "${ing.nombre}" — si no se pierde nada, poné "Sin merma"`, faltaTecnica:true};
+  }
   
   const merma_pct = typeof mermaObj === 'object' ? mermaObj.pct : mermaObj;
   const desperdicio_pct = typeof mermaObj === 'object' ? (mermaObj.desperdicio_pct||0) : 0;
@@ -2963,58 +2984,143 @@ function filtrarInsumosCP(q){
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// TRAER UN INSUMO DEL CP — un solo camino, no dos
+// ═══════════════════════════════════════════════════════════════════════════
+// Había DOS formas de que un insumo del CP entrara en una receta del local:
+// como línea de tipo `productoCP` (este botón) y como ingrediente propio con
+// origen CP. Dos caminos para lo mismo es justo lo que este proyecto ya
+// aprendió a no tolerar: tarde o temprano uno de los dos queda mal y nadie se
+// entera — pasó con el motor de costeo del CP, que estaba escrito dos veces.
+//
+// Ahora hay uno solo: traer el producto del catálogo del CP lo agrega a "Mis
+// ingredientes" con su origen declarado, y desde ahí es un ingrediente más —
+// se elige en el desplegable de siempre, se pide al CP desde Pedido sugerido y
+// se costea al precio de transferencia. Las líneas viejas de tipo `productoCP`
+// se convierten solas (ver migrarInsumosCPaIngredientes).
+
+// Trae un producto del catálogo del CP a la lista de ingredientes del local.
+// Si ya está, devuelve el que está: traerlo dos veces no crea un duplicado.
+function _adoptarProductoCP(prodId){
+  const prod = (getProductosCP()||[]).find(p=>p.id===prodId);
+  if(!prod) return null;
+  const nombre = (prod.nombre||'').trim();
+  const clave = nombre.toLowerCase();
+
+  const yaPorOrigen = demoData.ingredientes.find(i => i.cpProductoId === prodId);
+  if(yaPorOrigen) return yaPorOrigen;
+  const yaPorNombre = demoData.ingredientes.find(i => (i.nombre||'').toLowerCase().trim() === clave);
+  if(yaPorNombre){
+    // Ya estaba cargado a mano: se le declara el origen en vez de duplicarlo.
+    yaPorNombre.proveedor = 'cp';
+    yaPorNombre.cpProductoId = prodId;
+    return yaPorNombre;
+  }
+
+  const cats = getCategorias();
+  const CAT_CP = 'Insumos del CP';
+  if(!cats.includes(CAT_CP)) cats.push(CAT_CP);
+
+  const nuevo = {
+    id: proximoId('i','i',demoData.ingredientes),
+    nombre,
+    cat: CAT_CP,
+    unidadTipo: 'kg', unidadMedida: 'kg', unidad: 'kg',
+    bulto: 1,
+    // El precio real sale del catálogo del CP en cada cálculo (getIngrediente):
+    // esto es solo el valor de referencia del momento en que se trajo.
+    precio: prod.costoXkg || 0,
+    proveedor: 'cp',
+    cpProductoId: prodId,
+  };
+  demoData.ingredientes.push(nuevo);
+  return nuevo;
+}
+
+// ── CONVERTIR LO QUE YA ESTABA CARGADO ────────────────────────────────────
+// Las recetas que ya existen pueden referirse a un insumo del CP de dos formas
+// viejas: como línea `productoCP`, o apuntando directo a un id del catálogo
+// del CP. Las dos se convierten a una línea normal contra un ingrediente del
+// local, que es la única forma que queda.
+//
+// Es una conversión mecánica y sin pérdida: mismo producto, mismo precio de
+// transferencia, misma cantidad. No se toca nada más, y si un producto ya no
+// está en el catálogo la línea se deja como está para que se vea que falta —
+// nunca se borra una línea en silencio.
+function migrarInsumosCPaIngredientes(){
+  const op = getOp();
+  if(!op || !op.grupoId || esCentroProduccion()) return 0;
+  let cambios = 0;
+  (demoData.recetas||[]).filter(r=>r.opId===currentOpId).forEach(r=>{
+    (r.ingredientes||[]).forEach(l=>{
+      if(!l || l.esCondimento || l.recetaId) return;
+      let prodId = null;
+      if(l.productoCP !== undefined && l.productoCP !== null && l.productoCP !== ''){
+        prodId = l.productoCP;
+      } else if(l.ingId && !demoData.ingredientes.some(i=>i.id===l.ingId)){
+        // Apunta a algo que no es un ingrediente de este local: ¿será del catálogo?
+        if((getProductosCP()||[]).some(p=>p.id===l.ingId)) prodId = l.ingId;
+      }
+      if(!prodId) return;
+      const ing = _adoptarProductoCP(prodId);
+      if(!ing) return;                       // el CP dejó de publicarlo: se deja a la vista
+      l.ingId = ing.id;
+      if(!l.tecnica) l.tecnica = SIN_MERMA;
+      delete l.productoCP;
+      delete l.modoUso;
+      delete l._esCP;
+      delete l._modoUso;
+      cambios++;
+    });
+  });
+  return cambios;
+}
+
+// Se corre al entrar a un local, una sola vez por operación abierta, y avisa
+// qué hizo. No se corre en silencio: si tocó datos, la persona se entera.
+async function _migrarInsumosCPsiHaceFalta(){
+  try{
+    if(!getOp() || !getOp().grupoId || esCentroProduccion()) return;
+    if(window._migradoCPen === currentOpId) return;
+    window._migradoCPen = currentOpId;
+    const n = migrarInsumosCPaIngredientes();
+    if(n > 0){
+      showToast(`Se pasaron ${n} insumo(s) del CP a tu lista de ingredientes — mismo producto y mismo precio, ahora en un solo lugar`,'success');
+      await guardarEnFirestore({silencioso:true});
+    }
+  }catch(e){ console.warn('migración de insumos CP', e); }
+}
+
 function agregarProductoCP(){
-  const productos = getProductosCP();
+  const productos = (getProductosCP()||[]).filter(p=>p && p.nombre);
   if(!productos.length){
-    showToast('El CP no tiene productos cargados todavía','error');
+    showToast('El CP todavía no publica ningún producto','error');
     return;
   }
-  // Abrir modal selector de producto CP
-  // Combinar recetas elaboradas + ingredientes del CP para el selector
-  const cp = getCentroProduccion();
-  const ingsCP = (cp && cp._datos && cp._datos.ingredientes) || [];
-
-  // Ingredientes del CP como insumos con modoUso según categoría
-  const ingsCPComoInsumos = ingsCP.map(ing => {
-    let modoUso = 'granel';
-    const cat = (ing.cat||'').toLowerCase();
-    if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')){
-      modoUso = 'directo';
-    }
-    return { id:'cp-ing-'+ing.id, ingId:ing.id, nombre:ing.nombre, modoUso, costoXkg:costoKgIngCP(ing), tipoProd:'ingrediente' };
-  });
-
-  // Combinar y ordenar
-  const todosInsumos = [...productos, ...ingsCPComoInsumos]
-    .filter((p,i,arr)=>arr.findIndex(x=>x.nombre===p.nombre)===i) // deduplicar
-    .sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
-
-  // Agrupar por categoría para el acordeón. Los elaborados del CP van primero.
-  window._insumosCP = todosInsumos;
-  const catDe = (p) => {
-    if(p.tipoProd !== 'ingrediente') return '🍳 Elaborados del CP';
-    const ing = ingsCP.find(i => i.id === p.ingId);
-    return (ing && ing.cat) ? ing.cat : 'Sin categoría';
-  };
+  const yaTengo = new Set(demoData.ingredientes.map(i=>(i.nombre||'').toLowerCase().trim()));
   const grupos = {};
-  todosInsumos.forEach(p => { (grupos[catDe(p)] = grupos[catDe(p)] || []).push(p); });
-  const nombresCat = Object.keys(grupos).sort((a,b) => {
-    if(a.startsWith('🍳')) return -1;
-    if(b.startsWith('🍳')) return 1;
-    return a.localeCompare(b,'es');
+  productos.forEach(p=>{
+    const cat = p.tipoProd === 'elaborado'  ? '🍳 Elaborados'
+              : p.tipoProd === 'porcionado' ? '🔪 Porcionados'
+              : '📦 Redistribuidos';
+    (grupos[cat] = grupos[cat] || []).push(p);
   });
+  const orden = ['🍳 Elaborados','🔪 Porcionados','📦 Redistribuidos'];
+  const nombresCat = Object.keys(grupos).sort((a,b)=>orden.indexOf(a)-orden.indexOf(b));
 
-  const listaHtml = nombresCat.map((cat,ci) => {
-    const items = grupos[cat].map(p => {
-      const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
-      const costoLabel = p.costoXkg>0 ? '$'+fmt(p.costoXkg)+'/kg' : 'sin precio';
-      return `<div class="cp-item" data-nombre="${esc((p.nombre||'').toLowerCase())}" data-id="${esc(p.id)}"
-           onclick="seleccionarInsumoCP('${escJs(p.id)}')"
-           style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #EEE;display:flex;justify-content:space-between;gap:10px;align-items:center">
-        <span style="font-size:13px">${esc(p.nombre)}</span>
-        <span style="font-size:11px;color:var(--gris-2);white-space:nowrap">${modoLabel} · ${costoLabel}</span>
-      </div>`;
-    }).join('');
+  const listaHtml = nombresCat.map((cat,ci)=>{
+    const items = grupos[cat]
+      .slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es'))
+      .map(p=>{
+        const tengo = yaTengo.has((p.nombre||'').toLowerCase().trim());
+        const precio = p.costoXkg>0 ? '$'+fmt(p.costoXkg)+'/kg' : '⚠ sin precio';
+        return `<div class="cp-item" data-nombre="${esc((p.nombre||'').toLowerCase())}" data-id="${esc(p.id)}"
+             onclick="seleccionarInsumoCP('${escJs(p.id)}')"
+             style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #EEE;display:flex;justify-content:space-between;gap:10px;align-items:center">
+          <span style="font-size:13px">${esc(p.nombre)}${tengo?' <span style="font-size:11px;color:var(--oliva)">· ya está en tu lista</span>':''}</span>
+          <span style="font-size:11px;color:var(--gris-2);white-space:nowrap">${precio}</span>
+        </div>`;
+      }).join('');
     return `<div class="cp-grupo" data-cat="${esc(cat.toLowerCase())}">
       <div onclick="toggleGrupoCP(${ci})" style="padding:8px 12px;background:#F5F0E8;cursor:pointer;user-select:none;display:flex;justify-content:space-between;font-weight:600;font-size:13px;border-bottom:1px solid #E5DED0">
         <span>${esc(cat)}</span>
@@ -3024,14 +3130,20 @@ function agregarProductoCP(){
     </div>`;
   }).join('');
 
+  window._insumosCP = productos;
   openModal(`
     <div class="modal-header">
-      <span class="modal-title">🏭 Agregar insumo del Centro de Producción</span>
+      <span class="modal-title">🏭 Traer un insumo del Centro de Producción</span>
       <button class="btn btn-icon" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
+      <div style="font-size:12.5px;color:var(--gris-2);margin-bottom:10px;line-height:1.6">
+        Esto es lo que el CP publica para los locales. Al traerlo queda en
+        <strong>Mis ingredientes</strong> con su origen declarado: se costea al precio de
+        transferencia y se pide desde Pedido sugerido, como cualquier otro insumo.
+      </div>
       <div class="form-group">
-        <label>Buscar insumo</label>
+        <label>Buscar</label>
         <input type="text" id="cp-buscar" placeholder="🔎 Escribí para filtrar…" autocomplete="off"
           style="width:100%;font-size:14px" oninput="filtrarInsumosCP(this.value)">
         <div id="cp-elegido" style="display:none;margin-top:8px;padding:8px 12px;background:#FFF6EC;border:1px solid #B8540A;border-radius:6px;font-size:13px"></div>
@@ -3041,13 +3153,13 @@ function agregarProductoCP(){
         </div>
       </div>
       <div class="form-group">
-        <label>Cantidad (g o ml)</label>
+        <label>Cuánto lleva la receta (g o ml)</label>
         <input type="text" inputmode="decimal" id="cp-prod-neto" placeholder="ej: 200" min="0" style="width:100%">
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarProductoCP()">Agregar</button>
+      <button class="btn btn-primary" onclick="confirmarProductoCP()">Traer y agregar a la receta</button>
     </div>
   `);
 }
@@ -3056,18 +3168,14 @@ function confirmarProductoCP(){
   const prodId = document.getElementById('cp-prod-sel').value;
   const neto   = num(document.getElementById('cp-prod-neto').value) || 0;
   if(!prodId){ showToast('Elegí un insumo','error'); return; }
-  // Buscar en productos elaborados primero, luego en ingredientes CP
-  const cp = getCentroProduccion();
-  const ingsCP = (cp && cp._datos && cp._datos.ingredientes) || [];
-  let prod = resolverInsumoCP(prodId);
-  if(!prod){ closeModal(); return; }
-  recetaEditando.ingredientes.push({
-    productoCP: prodId,
-    ingId: prod.ingId || null,
-    neto,
-    modoUso: prod.modoUso || 'directo',
-  });
+  const ing = _adoptarProductoCP(prodId);
+  if(!ing){ showToast('Ese producto ya no está en el catálogo del CP','error'); closeModal(); return; }
+  // Una línea de receta común y corriente, que apunta a un ingrediente del
+  // local. Lo que llega del CP viene elaborado: su merma ya se aplicó adentro
+  // de la receta del CP, así que acá va sin merma.
+  recetaEditando.ingredientes.push({ ingId: ing.id, tecnica: SIN_MERMA, neto });
   closeModal();
+  showToast(`✓ "${ing.nombre}" quedó en tus ingredientes y se agregó a la receta`,'success');
   renderEditorReceta();
   programarAutoguardadoReceta();
 }
@@ -4649,6 +4757,9 @@ async function abrirOperacion(opId){
   }
   // Reconstruir sidebar para reflejar tipo de operación
   buildSidebar(currentUser?.rol||'cliente');
+  // Al entrar a un local, pasar a la forma nueva lo que quedó de la vieja.
+  window._migradoCPen = null;
+  _migrarInsumosCPsiHaceFalta();
   navigate('operacion');
 }
 
@@ -7278,6 +7389,10 @@ function nuevaReceta(){
 
 function editarReceta(id){
   _reiniciarAutoguardadoReceta();
+  // Antes de abrir: si esta receta todavía usa las formas viejas de referirse a
+  // un insumo del CP, se convierten (ver migrarInsumosCPaIngredientes). Así el
+  // editor nunca tiene que saber dibujar dos tipos de línea distintos.
+  _migrarInsumosCPsiHaceFalta();
   recetaEditando = JSON.parse(JSON.stringify(demoData.recetas.find(r=>r.id===id)));
   renderEditorReceta();
 }
@@ -7391,7 +7506,6 @@ function renderEditorReceta(){
     if(c&&!c.error) merc += c.costo_porcion;
     // Mermas disponibles: si es del CP, incluir mermas del CP
     const todasMermas = getMermasDisponibles();
-    const tecnicas = ingObj ? [...new Set(todasMermas.filter(m=>m.ingrediente===ingObj.nombre).map(m=>m.tecnica))].filter(Boolean) : [];
     const esCPIng = ing._esCP || false;
     const modoUsoCP = ing._modoUso || 'granel';
     return `<tr>
@@ -7402,9 +7516,7 @@ function renderEditorReceta(){
       </td>
       <td>
         <select onchange="updIngReceta(${idx},'tecnica',this.value)" style="min-width:130px">
-          ${tecnicas.length
-            ? '<option value="">— técnica —</option>'+tecnicas.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join('')
-            : `<option>Elegí ingrediente primero</option>`}
+          ${_opcionesTecnica(ingObj, ing.tecnica)}
         </select>
       </td>
       <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
@@ -7480,6 +7592,7 @@ function renderEditorReceta(){
     : (usadaComoInsumo && !(r.rendimientoG>0));
 
   setContent(r.nombre||'Nueva receta', `
+    <div class="editor-receta">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn btn-secondary" onclick="salirEditorReceta()">← Volver</button>
       ${demoData.recetas.some(x=>x.id===r.id) ? `<button class="btn btn-secondary" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ver ficha</button>` : ''}
@@ -7513,7 +7626,6 @@ function renderEditorReceta(){
     </div>
 
     <div class="metric-grid">
-      <div class="metric">
       ${esLoteCP ? `
         <div class="metric">
           <div class="metric-label">Cuánto pesa el lote terminado (g)</div>
@@ -7589,8 +7701,8 @@ function renderEditorReceta(){
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
-          <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" onclick="agregarRecetaEnReceta()">+ Receta elaborada</button>
-          ${esCP ? '' : `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" onclick="agregarProductoCP()">🏭 + Insumo CP</button>`}
+          <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" title="Una preparación tuya que ya cargaste como receta acá (un chimichurri, una salsa) y que este plato usa por gramos." onclick="agregarRecetaEnReceta()">+ Preparación mía</button>
+          ${esCP ? '' : `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" title="Lo que el Centro de Producción publica para los locales. Al traerlo queda en Mis ingredientes con su origen declarado." onclick="agregarProductoCP()">🏭 Traer del CP</button>`}
         </div>
       </div>
       <div class="table-wrap">
@@ -7607,6 +7719,7 @@ function renderEditorReceta(){
     </div>
 
     ${((op.tieneDelivery || esDarkKitchen()) && !esNivelCocina()) ? renderVarianteDelivery(r, merc) : ''}
+    </div>
   `);
 }
 
@@ -8099,12 +8212,11 @@ function renderVarianteDelivery(r, mercSalon){
                 const ingObj = getIngrediente(ing.ingId);
                 // Mermas disponibles: si es del CP, incluir mermas del CP
     const todasMermas = getMermasDisponibles();
-    const tecnicas = ingObj ? [...new Set(todasMermas.filter(m=>m.ingrediente===ingObj.nombre).map(m=>m.tecnica))].filter(Boolean) : [];
     const esCPIng = ing._esCP || false;
     const modoUsoCP = ing._modoUso || 'granel';
                 return `<tr>
                   <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px">${_opcionesIngrediente(ing.ingId)}</select></td>
-                  <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${tecnicas.length?'<option value="">— técnica —</option>'+tecnicas.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join(''):'<option>Elegí ingrediente</option>'}</select></td>
+                  <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${_opcionesTecnica(ingObj, ing.tecnica)}</select></td>
                   <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:75px;text-align:right" onchange="updIngDelivery(${idx},'neto',num(this.value))"></td>
                   <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
                   <td><button class="btn btn-icon btn-sm" onclick="quitarIngDelivery(${idx})">✕</button></td>
@@ -8144,8 +8256,18 @@ function updIngReceta(idx,field,val){
     if(ing){
       // Mismas mermas disponibles (propias + CP) que ve el desplegable de técnica,
       // si no esto nunca auto-completa para un ingrediente que llega del CP.
-      const tecnicas = [...new Set(getMermasDisponibles().filter(m=>m.ingrediente===ing.nombre).map(m=>m.tecnica))];
-      if(tecnicas.length===1) recetaEditando.ingredientes[idx].tecnica=tecnicas[0];
+      // Lo que llega elaborado del CP ya trae su merma aplicada adentro de la
+      // receta del CP: acá va sin merma, y no hay nada que elegir.
+      if(ing.proveedor === 'cp' || ing._origenCP || ing._esCP){
+        recetaEditando.ingredientes[idx].tecnica = SIN_MERMA;
+      } else {
+        const tecnicas = [...new Set(getMermasDisponibles()
+          .filter(m=>m.ingrediente===ing.nombre).map(m=>m.tecnica))]
+          .filter(t => t && t !== SIN_MERMA);
+        // Una sola técnica real: se elige sola. Ninguna: sin merma.
+        recetaEditando.ingredientes[idx].tecnica = tecnicas.length===1 ? tecnicas[0]
+          : tecnicas.length===0 ? SIN_MERMA : '';
+      }
     }
   }
   renderEditorReceta();
@@ -8164,10 +8286,25 @@ function onChangeIngrediente(idx, ingId){
   const ing = recetaEditando.ingredientes[idx];
   if(!ing) return;
   ing.ingId = ingId;
-  ing.tecnica = '';
   delete ing.productoCP;
   delete ing._esCP;
   delete ing._modoUso;
+  // La técnica se propone sola: si el insumo llega elaborado del CP no hay
+  // merma que aplicar acá (ya se aplicó adentro de la receta del CP); si el
+  // ingrediente tiene una sola técnica real, esa; si no tiene ninguna, sin
+  // merma. Dejarla vacía obligaba a un clic más en cada uno de los 245 platos.
+  ing.tecnica = '';
+  const _io = getIngrediente(ingId);
+  if(_io){
+    if(_io.proveedor === 'cp' || _io._origenCP || _io._esCP){
+      ing.tecnica = SIN_MERMA;
+    } else {
+      const _tecs = [...new Set(getMermasDisponibles()
+        .filter(m=>m.ingrediente===_io.nombre).map(m=>m.tecnica))]
+        .filter(t => t && t !== SIN_MERMA);
+      ing.tecnica = _tecs.length===1 ? _tecs[0] : _tecs.length===0 ? SIN_MERMA : '';
+    }
+  }
   // Detectar si viene del CP
   const todosIngs = getIngredientesConCP();
   const ingObj = todosIngs.find(i=>i.id===ingId);
