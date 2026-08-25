@@ -2978,6 +2978,87 @@ function semaforo(pct){
   return `<span class="sem sem-r" title="${tip}">${dot} ${fmtD(pct)}% · Alto</span>`;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// COSTO COMPARABLE — la misma unidad de los dos lados de la división
+// ═══════════════════════════════════════════════════════════════════════════
+// Un lote del centro de producción se cotiza POR KILO, no por lote. Comparar
+// el costo del lote entero (ej: $11.459 los 3,2 kg de bocadillos de acelga)
+// contra el precio por kilo ($4.118) daba "food cost 278% · Alto": un número
+// que no significa nada. Ese error estaba repetido en siete pantallas y se
+// arreglaba de a una, así que volvía a aparecer en la próxima.
+//
+// Acá se decide UNA sola vez cuál es la base de costo que se compara contra el
+// precio cargado. Todas las pantallas piden el porcentaje a esta función, así
+// que todas dicen lo mismo y un arreglo futuro se hace en un solo lugar.
+function _opDeReceta(r, op){
+  if(op) return op;
+  if(r && r.opId && demoData.operaciones && demoData.operaciones[r.opId]) return demoData.operaciones[r.opId];
+  return getOp();
+}
+// Es un lote cuando lo produce una cabecera (CP o casa madre) y se mide por
+// peso. En un local, una receta por peso sigue siendo por porción: el precio
+// de la carta es por plato, no por kilo.
+function esLoteDeCP(r, op){
+  return !!r && esCabeceraOp(_opDeReceta(r, op)) && esRecetaPorPeso(r);
+}
+function costoComparableReceta(r, merc, op){
+  const m = +merc || 0;
+  if(!esLoteDeCP(r, op)) return m;
+  const rend = +r.rendimientoG || 0;
+  return rend > 0 ? m / rend * 1000 : 0;   // 0 = todavía no se puede comparar
+}
+// Devuelve el % y, si no se puede calcular, POR QUÉ. El motivo importa: no es
+// lo mismo "falta el precio" que "falta el peso del lote", y decir lo primero
+// cuando pasa lo segundo manda al usuario a corregir el campo equivocado.
+function estadoCostoReceta(r, merc, op){
+  if(esLoteDeCP(r, op) && !(+r.rendimientoG > 0)) return {pct:null, base:0, motivo:'sin-rendimiento'};
+  const base = costoComparableReceta(r, merc, op);
+  const pv = (r && +r.precioVenta) || 0;
+  if(!(pv > 0))   return {pct:null, base, motivo:'sin-precio'};
+  if(!(base > 0)) return {pct:null, base, motivo:'sin-costo'};
+  return {pct: base/pv*100, base, motivo:null};
+}
+function pctCostoReceta(r, merc, op){
+  return estadoCostoReceta(r, merc, op).pct;
+}
+
+// ── EL CP NO TIENE FOOD COST ─────────────────────────────────────────────
+// El food cost es "cuánto de lo que cobro se me va en mercadería", y tiene
+// sentido en un local que vende un plato al público. El centro de producción
+// no vende platos: le transfiere insumos al local con un MARGEN SOBRE EL
+// COSTO. Un panaché transferido con 20% de margen tiene un "food cost" de
+// 83%, que el semáforo pintaba de rojo "Alto" — correcto como cuenta,
+// disparatado como diagnóstico. En el editor y en la ficha ya se mostraba el
+// margen; los listados seguían mostrando el semáforo de food cost, y ahí es
+// donde el número malo quedaba pegado.
+function esOpCabeceraDeReceta(r, op){
+  return esCabeceraOp(_opDeReceta(r, op));
+}
+// La métrica correcta para esta receta, según quién la produce.
+//   tipo 'margen'   → CP: % que le carga al local por encima de su costo
+//   tipo 'foodcost' → local: % del precio que se va en mercadería
+function metricaPrecioReceta(r, merc, op){
+  const e = estadoCostoReceta(r, merc, op);
+  const esCP = esOpCabeceraDeReceta(r, op);
+  if(e.motivo) return { tipo: esCP?'margen':'foodcost', valor: null, motivo: e.motivo, base: e.base };
+  if(esCP) return { tipo:'margen', valor: ((+r.precioVenta) / e.base - 1) * 100, motivo:null, base:e.base };
+  return { tipo:'foodcost', valor: e.pct, motivo:null, base:e.base };
+}
+function semaforoReceta(r, merc, op){
+  const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0"></span>';
+  const m = metricaPrecioReceta(r, merc, op);
+  if(m.motivo === 'sin-rendimiento'){
+    return `<span class="sem sem-a" title="Es un lote del centro de producción y todavía no está cargado cuánto pesa terminado. Sin ese dato no se puede saber el costo por kilo, que es contra lo que se compara el precio de transferencia.">${dot} Falta el peso del lote</span>`;
+  }
+  if(m.tipo === 'foodcost') return semaforo(m.valor);
+  // Margen del CP sobre su propio costo.
+  if(m.motivo === 'sin-precio') return `<span class="sem sem-a" title="Falta el precio de transferencia al local">${dot} Cargá el precio de transferencia</span>`;
+  if(m.motivo === 'sin-costo')  return `<span class="sem sem-a" title="Todavía no hay costo de mercadería cargado">${dot} Falta el costo</span>`;
+  const tipM = 'Margen del centro de producción sobre su propio costo — lo que le carga al local. No es food cost: el CP no vende platos.';
+  const cls = m.valor < 0 ? 'sem-r' : m.valor < 10 ? 'sem-a' : 'sem-v';
+  return `<span class="sem ${cls}" title="${tipM}">${dot} ${fmtD(m.valor)}% de margen</span>`;
+}
+
 // ── ÍCONOS SVG (línea fina, monocromo — reemplazan emojis) ──
 function ico(name, size=16){
   const paths = {
@@ -4197,12 +4278,20 @@ function buildSidebar(rol){
     // ANÁLISIS — lo que se mira para decidir. Lista de compras y Pedido
     // sugerido van juntos: son un solo circuito, mirar el stock y comprar.
     {section:'Análisis'},
-    {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
-    {icon:'coin', label:'Salud del negocio', vista:'resultado'},
+    // Rentabilidad y Salud del negocio están armadas sobre food cost y punto
+    // de equilibrio de un local que le vende un plato al público. Un Centro de
+    // Producción no vende platos: le transfiere insumos al local con un margen
+    // sobre el costo, así que ahí esos promedios y esas bandas de rojo/verde no
+    // significan nada. Mismo criterio con el que se sacó Planificación.
+    // Lo que sí necesita el CP es qué le compra cada local, para planificar
+    // producción y compras: eso vive en "Lo que piden los locales".
+    ...(!isCP ? [{icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'}] : []),
+    ...(!isCP ? [{icon:'coin', label:'Salud del negocio', vista:'resultado'}] : []),
+    ...(isCP ? [{icon:'chart', label:'📈 Lo que piden los locales', vista:'demandaCP'}] : []),
     ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
     ...(!isCP ? [{icon:'cart', label:'Pedido sugerido', vista:'pedido'}] : []),
     ...(!isCP && estaVinculadaACP ? [{icon:'clipboard', label:'📋 Historial de pedidos', vista:'historialPedidos'}] : []),
-    {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
+    ...(!isCP ? [{icon:'trenddown', label:'Informe de ventas', vista:'desvios'}] : []),
     {section:'Herramientas'},
     {icon:'store', label:'Modalidades de la operación', vista:'modalidades'},
     {icon:'updown', label:'Importar / Exportar', vista:'importExport'},
@@ -4278,8 +4367,11 @@ function buildSidebar(rol){
     // ANÁLISIS — lo que se mira para decidir. Lista de compras y Pedido
     // sugerido van juntos: son un solo circuito.
     {section:'Análisis'},
-    {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
-    {icon:'coin', label:'Salud del negocio', vista:'resultado'},
+    // Ver la nota del menú de admin: en un CP, Rentabilidad y Salud del negocio
+    // miden algo que ahí no existe. Se reemplazan por la demanda de los locales.
+    ...(!isCP ? [{icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'}] : []),
+    ...(!isCP ? [{icon:'coin', label:'Salud del negocio', vista:'resultado'}] : []),
+    ...(isCP ? [{icon:'chart', label:'📈 Lo que piden los locales', vista:'demandaCP'}] : []),
     ...(!isCP ? [{icon:'cart', label:'Lista de compras', vista:'compras'}] : []),
     ...(!isCP ? [{icon:'cart', label:'Pedido sugerido', vista:'pedido'}] : []),
     ...(!isCP && estaVinculadaACP ? [{icon:'clipboard', label:'📋 Historial de pedidos', vista:'historialPedidos'}] : []),
@@ -4464,6 +4556,13 @@ function navigate(vista, params={}){
   if(esNivelCocina() && ['rentabilidad','resultado','evento','desvios'].includes(vista)){
     vista = 'dashboard';
   }
+  // Un CP no tiene food cost ni punto de equilibrio de local. Si alguien llega
+  // a esas vistas por un enlace viejo o por el historial del navegador, se lo
+  // manda a la pantalla que sí contesta su pregunta.
+  if(esCentroProduccion() && ['rentabilidad','resultado','desvios','semanal','compras','pedido'].includes(vista)){
+    vista = 'demandaCP';
+  }
+  if(!esCentroProduccion() && vista === 'demandaCP') vista = 'dashboard';
   vistaActual = vista;
   
   // Actualizar nav activo
@@ -4527,6 +4626,7 @@ function navigate(vista, params={}){
     },
     dashboardCadena: renderDashboardCadena,
     historialPedidos: renderHistorialPedidos,
+    demandaCP: renderDemandaCP,
     rentabilidad: renderRentabilidad,
     compras: renderCompras,
     stock: renderStock,
@@ -4764,7 +4864,8 @@ function opStats(opId){
   recetas.forEach(r=>{
     const {merc} = calcReceta(r, r.porciones||1);
     sumMerc += merc; nMerc++;
-    if(r.precioVenta>0) sumPct += merc/r.precioVenta*100;
+    const _p = pctCostoReceta(r, merc);
+    if(_p !== null) sumPct += _p;
   });
   return {
     total: recetas.length,
@@ -5168,6 +5269,7 @@ function admFiltrarClientes(txt){
 function renderDashboardOperacion(){
   const op = getOp();
   if(!op){ renderDashboardAdmin(); return; }
+  const _cpDash = esCentroProduccion();
 
   // Dashboard especial para Centro de Producción
   if(esCentroProduccion()){
@@ -5310,22 +5412,25 @@ function renderDashboardOperacion(){
         <table>
           <thead><tr>
             <th>Receta</th><th>Servicio</th>
-            ${cocina ? '' : `<th style="text-align:right">Costo merc./p</th>
-            <th style="text-align:right">Precio venta</th>
-            <th style="text-align:right">% sobre venta</th>
+            ${cocina ? '' : `<th style="text-align:right">Costo</th>
+            <th style="text-align:right">${_cpDash?'Precio de transferencia':'Precio venta'}</th>
+            <th style="text-align:right">${_cpDash?'% de margen':'% sobre venta'}</th>
             <th>Estado</th>`}
           </tr></thead>
           <tbody>
             ${getRecetas().map(r=>{
               const {merc} = calcReceta(r, r.porciones||1);
-              const pct = r.precioVenta>0 ? merc/r.precioVenta*100 : null;
+              const _lote = esLoteDeCP(r);
+              const _m = metricaPrecioReceta(r, merc);
+              const _kg = _lote?'<span style="font-size:11px;color:var(--gris-2)">/kg</span>':'';
+              const _costo = costoComparableReceta(r, merc);
               return `<tr>
                 <td><strong>${esc(r.nombre)}</strong></td>
                 <td>${badgeLinea(r.tipoServicio)}</td>
-                ${cocina ? '' : `<td style="text-align:right">$${fmt(merc)}</td>
-                <td style="text-align:right">${r.precioVenta>0 ? '$'+fmt(r.precioVenta) : '<span style="color:var(--gris-3)">—</span>'}</td>
-                <td style="text-align:right">${pct!==null ? fmtD(pct)+'%' : '<span style="color:var(--gris-3)">—</span>'}</td>
-                <td>${pct!==null ? semaforo(pct) : '<span class="badge badge-gray">Sin precio</span>'}</td>`}
+                ${cocina ? '' : `<td style="text-align:right">${_costo>0?'$'+fmt(_costo)+_kg:'<span style="color:var(--gris-3)">—</span>'}</td>
+                <td style="text-align:right">${r.precioVenta>0 ? '$'+fmt(r.precioVenta)+_kg : '<span style="color:var(--gris-3)">—</span>'}</td>
+                <td style="text-align:right">${_m.valor!==null ? fmtD(_m.valor)+'%' : '<span style="color:var(--gris-3)">—</span>'}</td>
+                <td>${semaforoReceta(r, merc)}</td>`}
               </tr>`;
             }).join('')}
           </tbody>
@@ -6931,7 +7036,8 @@ async function salirEditorReceta(){
 
 function renderRecetas(){
   const op = getOp();
-  const ordenTipo = ['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
+  const _cpVista = esCentroProduccion();
+  const ordenTipo =['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
   const recetasOrdenadas = [...getRecetas()].sort((a,b)=>{
     const ta = ordenTipo.indexOf(a.tipoPlato||''), tb = ordenTipo.indexOf(b.tipoPlato||'');
     const oa = ta===-1?99:ta, ob = tb===-1?99:tb;
@@ -6941,7 +7047,10 @@ function renderRecetas(){
   let ultimoTipo = null;
   const rows = recetasOrdenadas.map(r=>{
     const {merc} = calcReceta(r, r.porciones||1);
-    const pct = r.precioVenta > 0 ? merc/r.precioVenta*100 : null;
+    // Un lote del CP se compara por kilo, no por lote entero (ver
+    // costoComparableReceta). Antes acá quedaba "278% · Alto" pegado.
+    const esLote = esLoteDeCP(r);
+    const costoMostrado = esLote ? costoComparableReceta(r, merc) : merc;
     let sep = '';
     if(r.tipoPlato !== ultimoTipo){
       ultimoTipo = r.tipoPlato;
@@ -6951,9 +7060,9 @@ function renderRecetas(){
       <td><strong>${esc(r.nombre)}</strong></td>
       <td>${badgeLinea(r.tipoServicio)}</td>
       <td><span class="badge badge-gray">${r.tipoPlato}</span></td>
-      <td style="text-align:right">$${fmt(merc)}</td>
-      <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'<span style="color:var(--gris-3)">—</span>'}</td>
-      <td>${pct!==null?semaforo(pct):'<span class="sem" style="color:var(--gris-2)">Sin precio</span>'}</td>
+      <td style="text-align:right">${costoMostrado>0?'$'+fmt(costoMostrado):'<span style="color:var(--gris-3)">—</span>'}${esLote&&costoMostrado>0?'<span style="font-size:11px;color:var(--gris-2)">/kg</span>':''}</td>
+      <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'<span style="color:var(--gris-3)">—</span>'}${esLote&&r.precioVenta?'<span style="font-size:11px;color:var(--gris-2)">/kg</span>':''}</td>
+      <td>${semaforoReceta(r, merc)}</td>
       <td style="white-space:nowrap"><div style="display:flex;gap:6px">
         <button class="btn btn-secondary btn-sm" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ficha</button>
         <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
@@ -6981,7 +7090,9 @@ function renderRecetas(){
         <table>
           <thead><tr>
             <th>Receta</th><th>Servicio</th><th>Tipo</th>
-            <th style="text-align:right">Costo merc./p</th><th>Estado</th><th></th>
+            <th style="text-align:right">${_cpVista?'Costo':'Costo merc./p'}</th>
+            <th style="text-align:right">${_cpVista?'Precio de transferencia':'Precio de venta'}</th>
+            <th>Estado</th><th></th>
           </tr></thead>
           <tbody>${rows||'<tr><td colspan="6" style="text-align:center;color:var(--gris-3);padding:32px">No hay recetas. Creá la primera.</td></tr>'}</tbody>
         </table>
@@ -7020,14 +7131,16 @@ function filtrarRecetas(q){
           <tbody>
             ${recetas.map(r=>{
               const {merc} = calcReceta(r, 1);
-              const pct = r.precioVenta>0 ? merc/r.precioVenta*100 : null;
+              const _m = metricaPrecioReceta(r, merc);
+              const _kg = esLoteDeCP(r)?'<span style="font-size:11px;color:var(--gris-2)">/kg</span>':'';
+              const _costo = costoComparableReceta(r, merc);
               return `<tr>
                 <td><strong>${esc(r.nombre)}</strong></td>
                 <td><span class="badge badge-op">${r.tipoServicio||'—'}</span></td>
                 <td>${r.tipoPlato||'—'}</td>
-                <td style="text-align:right">$${fmt(merc)}</td>
-                <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'—'}</td>
-                <td style="text-align:right">${pct!==null?fmtD(pct)+'%':'—'}</td>
+                <td style="text-align:right">${_costo>0?'$'+fmt(_costo)+_kg:'—'}</td>
+                <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta)+_kg:'—'}</td>
+                <td style="text-align:right">${_m.valor!==null?fmtD(_m.valor)+'%':'—'}</td>
                 <td style="white-space:nowrap"><div style="display:flex;gap:6px">
                   <button class="btn btn-secondary btn-sm" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ficha</button>
                   <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
@@ -7341,12 +7454,15 @@ function renderEditorReceta(){
             : 'para poder usarla dentro de otra receta'}</div>
         </div>` : ''}
         <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
-        <div class="metric"><div class="metric-label">${esCP ? "% sobre precio transferencia" : "% sobre precio venta"}</div>
-          <div class="metric-value" style="color:${pct===null?'var(--gris-2)':pct>35?'var(--bordo)':pct>25?'#8B6914':'var(--oliva)'}">
+        <div class="metric"><div class="metric-label">${esCP ? "Margen sobre el costo" : "% sobre precio venta"}</div>
+          ${esCP
+            ? (()=>{ const _mg = metricaPrecioReceta(r, merc);
+                     return `<div class="metric-value" style="color:${_mg.valor===null?'var(--gris-2)':_mg.valor<0?'var(--bordo)':_mg.valor<10?'#8B6914':'var(--oliva)'}">${_mg.valor===null?'— Sin precio':fmtD(_mg.valor)+'%'}</div>`; })()
+            : `<div class="metric-value" style="color:${pct===null?'var(--gris-2)':pct>35?'var(--bordo)':pct>25?'#8B6914':'var(--oliva)'}">
             ${pct===null?'— Sin precio':fmtD(pct)+'%'}
-          </div>
+          </div>`}
         </div>
-        <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
+        <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${semaforoReceta(r, merc)}</div></div>
       `}
     </div>
 
@@ -7687,7 +7803,7 @@ function renderFichaPlato(id){
     ? (receta.precioVenta / costoXkgLote - 1) * 100 : null;
 
   // Comparación honesta: en un lote, el costo por kilo contra el precio por kilo.
-  const _baseCostoFicha = esLoteCP ? costoXkgLote : merc;
+  const _baseCostoFicha = costoComparableReceta(receta, merc);
   const pct = receta.precioVenta > 0 && _baseCostoFicha > 0 ? _baseCostoFicha/receta.precioVenta*100 : null;
   const margenPesos = receta.precioVenta > 0 ? receta.precioVenta - _baseCostoFicha : null;
 
@@ -7745,7 +7861,7 @@ function renderFichaPlato(id){
             ? `<div class="metric-value">$${fmt(margenPesos)}</div><div class="metric-sub">${fmtD(100-pct)}% del precio</div>`
             : `<div class="metric-value" style="font-size:14px;color:var(--gris-2)">— Sin precio</div>`}
         </div>
-        <div class="metric"><div class="metric-label">Food cost</div><div style="margin-top:8px">${semaforo(pct)}</div></div>
+        <div class="metric"><div class="metric-label">${_esCPFicha?'Margen sobre el costo':'Food cost'}</div><div style="margin-top:8px">${semaforoReceta(receta, merc)}</div></div>
       `}
       ` : ''}
     </div>
@@ -9021,14 +9137,10 @@ function usarPrecioRecetaCP(prodId){
 // costos internos de producción — así lo pidió Javier explícitamente.
 function _baseCostoReceta(r, merc){
   if(!r) return 0;
-  const m = +merc || 0;
-  if(esRecetaPorPeso(r)){
-    // "Elaborado": el precio se maneja en $/kg — misma cuenta que getProductosCP()
-    const rend = +r.rendimientoG || 0;
-    return rend > 0 ? m / rend * 1000 : 0;
-  }
-  // "Directo": la porción de referencia ES la que se transfiere → $/porción
-  return m;
+  // Una sola regla para toda la app (ver costoComparableReceta, arriba):
+  //  - "Elaborado" del CP: el precio se maneja en $/kg → costo por kilo.
+  //  - "Directo": la porción de referencia ES la que se transfiere → $/porción.
+  return costoComparableReceta(r, merc);
 }
 
 // Recalcula el lado NO anclado. Se llama desde renderEditorReceta() en cada
@@ -9800,13 +9912,13 @@ function renderDashboardCadena(){
     recetas.forEach(r => {
       const merc = calcularCostoRecetaCP(r, loc);
       totalMerc += merc;
-      if(r.precioVenta > 0) sumPct += merc / r.precioVenta * 100;
+      const _p = pctCostoReceta(r, merc, loc);
+      if(_p !== null) sumPct += _p;
     });
     const pctProm = conPrecio.length > 0 ? sumPct / conPrecio.length : null;
     const alertas = recetas.filter(r => {
-      if(!r.precioVenta || r.precioVenta <= 0) return false;
-      const merc = calcularCostoRecetaCP(r, loc);
-      return merc / r.precioVenta * 100 > 35;
+      const _p = pctCostoReceta(r, calcularCostoRecetaCP(r, loc), loc);
+      return _p !== null && _p > 35;
     }).length;
 
     return { loc, recetas, conPrecio: conPrecio.length, pctProm, alertas };
@@ -11128,6 +11240,7 @@ async function confirmarRecepcionDetallada(pedidoId){
     p.conDiferencias = conDif.length > 0;
     p.observacionRecepcion = obs;
     await _guardarPedidosCP(cpId, pedidos);
+    await _archivarPedido(cpId, p);   // el historial de verdad
 
     ocultarProgreso && ocultarProgreso();
     closeModal();
@@ -11141,6 +11254,296 @@ async function confirmarRecepcionDetallada(pedidoId){
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LO QUE PIDEN LOS LOCALES — la demanda real del Centro de Producción
+// ═══════════════════════════════════════════════════════════════════════════
+// Reemplaza a Rentabilidad y Salud del negocio en el menú del CP. Esas dos
+// miden food cost y punto de equilibrio de un local que le vende un plato al
+// público; un CP no vende platos. Lo que un CP necesita saber para decidir es
+// qué le pide cada local, cuánto de eso pudo cubrir, y cuánta plata mueve —
+// que es la base para planificar producción y compras.
+//
+// Javier fijó el criterio (24/8): la demanda es lo PEDIDO (si el CP no llegó,
+// eso no significa que el local necesitara menos), y al lado se ve el faltante,
+// que es dónde el CP viene quedando corto. La plata se cuenta al precio de
+// transferencia congelado en el DESPACHO, no al de hoy.
+
+window._demandaCPPeriodo = window._demandaCPPeriodo || 90;
+
+function setPeriodoDemandaCP(dias){
+  window._demandaCPPeriodo = +dias || 90;
+  renderDemandaCP();
+}
+function toggleProductoDemanda(clave){
+  if(!window._demandaCPAbierto) window._demandaCPAbierto = {};
+  window._demandaCPAbierto[clave] = !window._demandaCPAbierto[clave];
+  renderDemandaCP();
+}
+
+// Un pedido cerrado, desarmado en líneas comparables. Devuelve, por línea:
+// lo pedido, lo que realmente llegó, y la plata al precio del despacho.
+function _lineasDeDemanda(p){
+  const rec = p.recepcion || null;
+  return (p.lineas||[]).map(l=>{
+    const d = rec ? rec.find(x=>x.ingId===l.ingId) : null;
+    const pedido   = +l.cantidad || 0;
+    // Sin detalle de recepción, se cerró conforme: llegó lo que se pidió.
+    const recibido = d ? (+d.recibido||0) : pedido;
+    const precio   = +l.precioUnit || 0;
+    return {
+      clave: (l.nombre||'').toLowerCase().trim(),
+      nombre: l.nombre || '(sin nombre)',
+      unidad: l.unidad || 'kg',
+      pedido, recibido,
+      faltante: Math.max(0, pedido - recibido),
+      precio,
+      importePedido:   precio * pedido,
+      importeRecibido: precio * recibido,
+      sinPrecio: !(precio > 0),
+      motivo: (d && d.motivo) || '',
+    };
+  });
+}
+
+async function renderDemandaCP(){
+  const op = getOp();
+  if(!op || !esCabeceraOp(op)){
+    showToast('Esta pantalla es del Centro de Producción','info');
+    navigate('dashboard'); return;
+  }
+  const dias = +window._demandaCPPeriodo || 90;
+  setContent('Lo que piden los locales',
+    '<div class="card" style="padding:18px;color:var(--gris-2)">Buscando el historial de pedidos…</div>');
+
+  const hoy = new Date();
+  const desde = new Date(hoy.getTime() - dias*24*3600*1000);
+  const desdeISO = desde.toISOString().slice(0,10);
+  const desdeMes = desdeISO.slice(0,7);
+
+  // Dos fuentes, unidas por id: el archivo (el historial de verdad) y la cola
+  // de trabajo, que todavía tiene los últimos cerrados sin archivar. Sin lo
+  // segundo, la pantalla arrancaría vacía el día del deploy aunque haya
+  // pedidos cerrados a la vista en la pantalla de al lado.
+  let archivo = [], errArchivo = null;
+  try{ archivo = await _leerArchivoPedidos(currentOpId, desdeMes); }
+  catch(err){ errArchivo = err; }
+
+  let cola = [];
+  try{ cola = (await _leerPedidosCP(currentOpId)).filter(p=>p.estado==='recibido'); }
+  catch(err){ /* la cola es un extra: si falla, se sigue con el archivo */ }
+
+  const porId = new Map();
+  [...archivo, ...cola].forEach(p=>{ if(p && p.id) porId.set(p.id, p); });
+  const pedidos = [...porId.values()]
+    .filter(p => !p.fecha || p.fecha >= desdeISO)
+    .sort((a,b)=>String(a.fecha||'').localeCompare(String(b.fecha||'')));
+
+  // ── Agregación ───────────────────────────────────────────────────────────
+  const prods = {}, locales = {};
+  let totPedido = 0, totRecibido = 0, lineasSinPrecio = 0;
+
+  pedidos.forEach(p=>{
+    const locId = p.sucursalId || '—';
+    if(!locales[locId]) locales[locId] = {
+      nombre: p.sucursalNombre || 'Local', pedidos:0, importePedido:0, importeRecibido:0,
+      lineas:0, lineasConFaltante:0,
+    };
+    locales[locId].pedidos++;
+    _lineasDeDemanda(p).forEach(l=>{
+      if(!l.clave) return;
+      const k = l.clave + '|' + l.unidad;
+      if(!prods[k]) prods[k] = {
+        clave:k, nombre:l.nombre, unidad:l.unidad,
+        pedido:0, recibido:0, faltante:0, importePedido:0, importeRecibido:0,
+        nPedidos:0, sinPrecio:false, porLocal:{},
+      };
+      const P = prods[k];
+      P.pedido += l.pedido; P.recibido += l.recibido; P.faltante += l.faltante;
+      P.importePedido += l.importePedido; P.importeRecibido += l.importeRecibido;
+      P.nPedidos++;
+      if(l.sinPrecio) { P.sinPrecio = true; lineasSinPrecio++; }
+      if(!P.porLocal[locId]) P.porLocal[locId] = { nombre: locales[locId].nombre, pedido:0, recibido:0, importe:0 };
+      P.porLocal[locId].pedido += l.pedido;
+      P.porLocal[locId].recibido += l.recibido;
+      P.porLocal[locId].importe += l.importeRecibido;
+
+      const L = locales[locId];
+      L.importePedido += l.importePedido; L.importeRecibido += l.importeRecibido;
+      L.lineas++; if(l.faltante > 0.001) L.lineasConFaltante++;
+      totPedido += l.importePedido; totRecibido += l.importeRecibido;
+    });
+  });
+
+  const filasProd = Object.values(prods).sort((a,b)=> b.importePedido - a.importePedido || a.nombre.localeCompare(b.nombre));
+  const filasLoc  = Object.values(locales).sort((a,b)=> b.importeRecibido - a.importeRecibido);
+  const abierto   = window._demandaCPAbierto || {};
+
+  // Cuántos días de historial hay DE VERDAD. Sin esto, un promedio semanal
+  // calculado sobre tres días parece un dato y no lo es.
+  const fechas = pedidos.map(p=>p.fecha).filter(Boolean).sort();
+  const diasReales = fechas.length
+    ? Math.max(1, Math.round((new Date(fechas[fechas.length-1]) - new Date(fechas[0]))/86400000) + 1)
+    : 0;
+  const semanas = diasReales / 7;
+
+  const btnPer = (d, t)=>`<button class="btn ${dias===d?'btn-primary':'btn-secondary'} btn-sm" onclick="setPeriodoDemandaCP(${d})">${t}</button>`;
+
+  const avisoArchivo = errArchivo ? `
+    <div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">⚠ El archivo de pedidos todavía no está habilitado</div>
+      <div style="font-size:12.5px;line-height:1.6">
+        Esta pantalla lee un historial que se guarda aparte de la cola de trabajo del CP.
+        Firestore lo está rechazando (<code>${esc(errArchivo.code||'error')}</code>), así que por ahora
+        solo se ve lo que queda en la cola — los últimos pedidos cerrados, que el sistema va podando.
+        <strong>Hay que agregar la regla de la colección <code>pedidosArchivo</code> en la consola de Firebase.</strong>
+      </div>
+    </div>` : '';
+
+  setContent('Lo que piden los locales', `
+    ${avisoArchivo}
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--gris-2);font-weight:600">Período:</span>
+      ${btnPer(30,'30 días')} ${btnPer(90,'90 días')} ${btnPer(365,'12 meses')}
+      <div style="flex:1"></div>
+      <span style="font-size:12px;color:var(--gris-2)">
+        ${diasReales ? `${pedidos.length} pedido(s) cerrado(s) · ${diasReales} día(s) de historial` : 'sin pedidos cerrados en el período'}
+      </span>
+    </div>
+
+    ${!pedidos.length ? `
+    <div class="card"><div style="padding:26px 22px;font-size:13.5px;line-height:1.7;color:var(--gris-1)">
+      <div style="font-weight:700;margin-bottom:8px">Todavía no hay historial para analizar.</div>
+      Esta pantalla se llena sola: cada pedido que un local cierra queda archivado con lo que pidió,
+      lo que realmente recibió y el precio de transferencia al que salió. Con unas semanas de pedidos,
+      acá vas a ver qué produce y qué compra el CP para cada local, y con qué anticipación.
+      <div style="margin-top:12px;font-size:12.5px;color:var(--gris-2)">
+        El historial arranca desde el momento en que se instaló esta versión — los pedidos cerrados
+        de antes no se pueden recuperar, porque el sistema solo conservaba los últimos veinte.
+      </div>
+    </div></div>` : `
+
+    <div class="metric-grid" style="margin-bottom:18px">
+      <div class="metric">
+        <div class="metric-label">Le compraron al CP</div>
+        <div class="metric-value">$${fmt(totRecibido)}</div>
+        <div class="metric-sub">${semanas>=1?'$'+fmt(totRecibido/semanas)+' por semana':'en '+diasReales+' día(s)'}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Lo que pidieron</div>
+        <div class="metric-value">$${fmt(totPedido)}</div>
+        <div class="metric-sub">la demanda real, haya llegado o no</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">No se pudo cubrir</div>
+        <div class="metric-value" style="color:${(totPedido-totRecibido)>0.005*totPedido?'var(--bordo)':'var(--oliva)'}">
+          $${fmt(totPedido-totRecibido)}
+        </div>
+        <div class="metric-sub">${totPedido>0?fmtD((totPedido-totRecibido)/totPedido*100)+'% de lo pedido':'—'}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Locales activos</div>
+        <div class="metric-value">${filasLoc.length}</div>
+        <div class="metric-sub">${pedidos.length} pedido(s) cerrado(s)</div>
+      </div>
+    </div>
+
+    ${lineasSinPrecio ? `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:12.5px">
+      ⚠ <strong>${lineasSinPrecio} renglón(es) salieron sin precio de transferencia cargado</strong>, así que
+      no suman plata en esta pantalla — las cantidades sí están. Cargales el precio en el catálogo del CP
+      para que los próximos despachos queden valuados.
+    </div>` : ''}
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">Por producto — qué hay que producir y comprar</span>
+        <span style="font-size:12px;color:var(--gris-2)">${filasProd.length} producto(s)</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Producto</th>
+          <th style="text-align:right">Pedido</th>
+          <th style="text-align:right">Recibido</th>
+          <th style="text-align:right">Faltó</th>
+          ${semanas>=1?'<th style="text-align:right">Por semana</th>':''}
+          <th style="text-align:right">Plata</th>
+          <th style="width:36px"></th>
+        </tr></thead>
+        <tbody>
+          ${filasProd.map(P=>{
+            const ab = !!abierto[P.clave];
+            const faltaPct = P.pedido>0 ? P.faltante/P.pedido*100 : 0;
+            const detalle = Object.values(P.porLocal).sort((a,b)=>b.pedido-a.pedido);
+            return `<tr style="cursor:pointer" onclick="toggleProductoDemanda('${escJs(P.clave)}')">
+              <td><strong>${esc(P.nombre)}</strong>
+                <span style="font-size:11px;color:var(--gris-2);margin-left:6px">${detalle.length} local(es) · ${P.nPedidos} pedido(s)</span></td>
+              <td style="text-align:right;white-space:nowrap"><strong>${fmt1(P.pedido)}</strong> <span style="font-size:11px;color:var(--gris-2)">${esc(P.unidad)}</span></td>
+              <td style="text-align:right;white-space:nowrap">${fmt1(P.recibido)}</td>
+              <td style="text-align:right;white-space:nowrap;${P.faltante>0.001?'color:var(--bordo);font-weight:700':'color:var(--gris-3)'}">
+                ${P.faltante>0.001?fmt1(P.faltante)+' <span style="font-size:11px">('+fmtD(faltaPct)+'%)</span>':'—'}</td>
+              ${semanas>=1?`<td style="text-align:right;white-space:nowrap">${fmt1(P.pedido/semanas)} <span style="font-size:11px;color:var(--gris-2)">${esc(P.unidad)}</span></td>`:''}
+              <td style="text-align:right;white-space:nowrap">${P.importeRecibido>0?'$'+fmt(P.importeRecibido):(P.sinPrecio?'<span style="font-size:11px;color:#B8540A">sin precio</span>':'—')}</td>
+              <td style="text-align:center;color:var(--gris-2)">${ab?'▾':'▸'}</td>
+            </tr>
+            ${ab ? `<tr><td colspan="${semanas>=1?7:6}" style="background:var(--crema);padding:0">
+              <table style="width:100%;margin:0">
+                <thead><tr>
+                  <th style="font-size:11px">Local</th>
+                  <th style="text-align:right;font-size:11px">Pedido</th>
+                  <th style="text-align:right;font-size:11px">Recibido</th>
+                  <th style="text-align:right;font-size:11px">Plata</th>
+                </tr></thead>
+                <tbody>${detalle.map(d=>`<tr>
+                  <td style="font-size:12.5px">${esc(d.nombre)}</td>
+                  <td style="text-align:right;font-size:12.5px;white-space:nowrap">${fmt1(d.pedido)} <span style="font-size:11px;color:var(--gris-2)">${esc(P.unidad)}</span></td>
+                  <td style="text-align:right;font-size:12.5px;${(d.pedido-d.recibido)>0.001?'color:var(--bordo)':''}">${fmt1(d.recibido)}</td>
+                  <td style="text-align:right;font-size:12.5px">${d.importe>0?'$'+fmt(d.importe):'—'}</td>
+                </tr>`).join('')}</tbody>
+              </table>
+            </td></tr>` : ''}`;
+          }).join('')}
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Por local — cuánto se lleva cada uno</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Local</th>
+          <th style="text-align:right">Pedidos</th>
+          <th style="text-align:right">Le compró al CP</th>
+          ${semanas>=1?'<th style="text-align:right">Por semana</th>':''}
+          <th style="text-align:right">Se le cubrió</th>
+        </tr></thead>
+        <tbody>
+          ${filasLoc.map(L=>{
+            const cobertura = L.importePedido>0 ? L.importeRecibido/L.importePedido*100 : null;
+            const col = cobertura===null?'var(--gris-3)':cobertura>=99?'var(--oliva)':cobertura>=95?'#8B6914':'var(--bordo)';
+            return `<tr>
+              <td><strong>${esc(L.nombre)}</strong></td>
+              <td style="text-align:right">${L.pedidos}</td>
+              <td style="text-align:right;white-space:nowrap">${L.importeRecibido>0?'$'+fmt(L.importeRecibido):'—'}</td>
+              ${semanas>=1?`<td style="text-align:right;white-space:nowrap">${L.importeRecibido>0?'$'+fmt(L.importeRecibido/semanas):'—'}</td>`:''}
+              <td style="text-align:right;white-space:nowrap;color:${col};font-weight:600">
+                ${cobertura===null?'—':fmtD(cobertura)+'%'}
+                ${L.lineasConFaltante?`<span style="display:block;font-size:11px;font-weight:400;color:var(--gris-2)">${L.lineasConFaltante} de ${L.lineas} renglones cortos</span>`:''}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>
+      <div style="padding:12px 16px;font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
+        La plata se cuenta al precio de transferencia con el que salió cada despacho, no al de hoy:
+        un cambio de lista no reescribe lo que ya se facturó.
+      </div>
+    </div>
+    `}
+  `);
+}
 
 // ── HISTORIAL DE PEDIDOS — trazabilidad completa ─────────────────────────
 // Quién pidió qué, quién lo autorizó (y si cambió cantidades), cuándo salió
@@ -11300,6 +11703,106 @@ async function _guardarPedidosCP(cpId, pedidos){
   if(demoData.operaciones[cpId]) demoData.operaciones[cpId]._pedidosSucursales = pedidos;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ARCHIVO DE PEDIDOS — el historial de verdad
+// ═══════════════════════════════════════════════════════════════════════════
+// `_pedidosSucursales` NO es un historial: es la cola de trabajo del CP, y se
+// poda a los últimos 20 pedidos cerrados DE TODA LA CADENA cada vez que un
+// local confirma uno nuevo. Con doce locales pidiendo tres veces por semana,
+// eso es menos de cuatro días. Además vive adentro del documento único de la
+// operación, que Firestore corta en 1 MB — un historial sin techo ahí lo
+// rompe, y el proyecto ya arrastra ese documento como deuda técnica.
+//
+// Por eso, cuando un pedido se cierra, se guarda como documento propio en una
+// colección aparte. La cola sigue chica y rápida; el archivo crece sin techo y
+// solo lo leen el historial y la pantalla de demanda.
+//
+// El archivo es "lo mejor que se pueda": si falla (típicamente porque las
+// reglas de Firestore todavía no permiten esta colección), el pedido se cierra
+// igual. Nunca se traba el circuito operativo por no poder guardar estadística.
+function _colPedidosArchivo(cpId){
+  return db.collection('empresas').doc(getEmpresaId())
+    .collection('operaciones').doc(cpId)
+    .collection('pedidosArchivo');
+}
+
+async function _archivarPedido(cpId, p){
+  if(!cpId || !p || !p.id) return false;
+  try{
+    // `mes` sirve para filtrar por período sin traerse el archivo entero.
+    const mes = (p.fecha || '').slice(0,7) || '';
+    await _colPedidosArchivo(cpId).doc(String(p.id)).set({
+      ...p,
+      mes,
+      _archivadoEn: Date.now(),
+    });
+    return true;
+  }catch(err){
+    console.warn('No se pudo archivar el pedido', p.id, err);
+    // Se deja la marca en memoria para que la pantalla de demanda pueda decir
+    // por qué está vacía, en vez de mostrar cero como si nadie hubiera pedido.
+    window._archivoPedidosError = (err && err.code) || 'error';
+    return false;
+  }
+}
+
+async function _leerArchivoPedidos(cpId, desdeMes){
+  let q = _colPedidosArchivo(cpId);
+  try{
+    const snap = desdeMes
+      ? await q.where('mes', '>=', desdeMes).get()
+      : await q.get();
+    window._archivoPedidosError = null;
+    return snap.docs.map(d=>d.data());
+  }catch(err){
+    window._archivoPedidosError = (err && err.code) || 'error';
+    throw err;
+  }
+}
+
+// El precio de transferencia que le corresponde a una línea de pedido, en la
+// misma unidad en la que se pide. Javier lo definió así: el precio se congela
+// en el DESPACHO — lo que salió por la puerta, al precio de ese día. Si entre
+// el pedido y el envío el precio cambió, manda el del envío.
+function _precioTransfDeLinea(linea){
+  if(!linea) return null;
+  let prod = null;
+  const prods = getProductosCP();
+  if(linea.cpProductoId) prod = prods.find(p=>p.id===linea.cpProductoId) || null;
+  if(!prod){
+    const n = (linea.nombre||'').toLowerCase().trim();
+    prod = prods.find(p=>(p.nombre||'').toLowerCase().trim()===n) || null;
+  }
+  if(!prod) return null;
+  const u = linea.unidad || 'kg';
+  // Cada producto publica su precio en la unidad en la que se despacha.
+  if(u === 'porciones' || u === 'porcion' || u === 'unidades' || u === 'unidad'){
+    const pu = +prod.precioUnidad || +prod.precioPorcion || 0;
+    if(pu > 0) return { precio: pu, unidad: u, prodId: prod.id };
+  }
+  const pk = +prod.precioTransf || +prod.precioXkg || 0;
+  if(pk > 0) return { precio: pk, unidad: 'kg', prodId: prod.id };
+  return { precio: 0, unidad: u, prodId: prod.id, sinPrecio: true };
+}
+
+// Estampa el precio en cada línea. Se llama UNA vez, al despachar, y después
+// ese número no se toca nunca más: es el precio al que salió esa mercadería.
+function _estamparPreciosDespacho(p){
+  if(!p || !Array.isArray(p.lineas)) return;
+  let sinPrecio = 0;
+  p.lineas.forEach(l=>{
+    const r = _precioTransfDeLinea(l);
+    if(!r || !(r.precio > 0)){ sinPrecio++; return; }
+    l.precioUnit   = Math.round(r.precio * 100) / 100;
+    l.precioUnidad = r.unidad;
+    l.importe      = Math.round(r.precio * (+l.cantidad||0) * 100) / 100;
+    if(r.prodId && !l.cpProductoId) l.cpProductoId = r.prodId;
+  });
+  p.preciosEn = 'despacho';
+  p.lineasSinPrecio = sinPrecio;
+  p.importeTotal = p.lineas.reduce((s,l)=>s+(+l.importe||0), 0);
+}
+
 // Confirmar el pedido de esta sucursal al CP. Guarda el pedido en el CP
 // (en cp._pedidosSucursales) para que el CP vea la demanda consolidada.
 // "Confirmado" — la sucursal pudo revisar y modificar antes. Achica la ventana de error.
@@ -11318,7 +11821,16 @@ async function confirmarPedidoCP(){
     const ingId  = tr.getAttribute('data-ing');
     const inp = tr.querySelector('[data-ped-cp]');
     const val = inp && inp.value!=='' ? +inp.value : 0;
-    if(val>0) lineas.push({ ingId, nombre, unidad, cantidad: val });
+    if(!(val>0)) return;
+    // El vínculo con el producto del CP se declara ACÁ, donde el local sí lo
+    // sabe (su ingrediente ya tiene el origen declarado). Al despachar, el CP
+    // resuelve el precio por este id en vez de adivinar por nombre — el
+    // matcheo por nombre ya causó problemas en este proyecto más de una vez.
+    const _ing = (demoData.ingredientes||[]).find(i=>i.id===ingId);
+    lineas.push({
+      ingId, nombre, unidad, cantidad: val,
+      cpProductoId: (_ing && _ing.cpProductoId) || null,
+    });
   });
   if(!lineas.length){ showToast('No hay nada para pedir al CP','info'); return; }
 
@@ -11372,6 +11884,8 @@ async function confirmarPedidoCP(){
       hora: new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
       lineas,
       estado: 'confirmado',
+      pedidoPor: (currentUser && currentUser.email) || null,
+      pedidoEn: hoy + ' ' + _ahora,
       corregido: !!pend,
       lineasAntes: pend ? (pend.lineas||[]).length : null,
       horaAntes: pend ? (pend.hora || null) : null,
@@ -11409,9 +11923,17 @@ async function marcarPedidoDespachado(pedidoId){
     }
     p.estado = 'despachado';
     p.despachadoEn = Date.now();
+    p.despachadoPor = (currentUser && currentUser.email) || null;
+    // El precio se congela acá y no se toca nunca más (decisión de Javier,
+    // 24/8): es lo que salió por la puerta al precio de ese día. Valuar
+    // después, al precio de hoy, sería reescribir el pasado cada vez que
+    // cambia una lista.
+    _estamparPreciosDespacho(p);
     await _guardarPedidosCP(cpId, pedidos);
     ocultarProgreso && ocultarProgreso();
-    showToast(`✓ Despachado — esperando que ${p.sucursalNombre||'la sucursal'} confirme la recepción`,'success');
+    showToast(`✓ Despachado — esperando que ${p.sucursalNombre||'la sucursal'} confirme la recepción`
+      + (p.lineasSinPrecio ? ` · ⚠ ${p.lineasSinPrecio} producto(s) salieron sin precio de transferencia cargado` : ''),
+      p.lineasSinPrecio ? 'info' : 'success');
     renderPedidosCP();
   }catch(err){
     ocultarProgreso && ocultarProgreso();
@@ -11442,7 +11964,9 @@ async function confirmarRecepcionPedido(pedidoId){
     }
     p.estado = 'recibido';
     p.recibidoEn = Date.now();
+    p.recibidoPor = (currentUser && currentUser.email) || null;
     await _guardarPedidosCP(op.grupoId, pedidos);
+    await _archivarPedido(op.grupoId, p);   // el historial de verdad
     ocultarProgreso && ocultarProgreso();
     showToast('✓ Recepción confirmada','success');
     renderPedidoSugerido();
@@ -12336,8 +12860,10 @@ function renderResultado(){
     let sumMargenPct = 0, sumMargenPesos = 0, sumPV = 0;
     recetasConPrecio.forEach(r=>{
       const {merc} = calcReceta(r, r.porciones||1);
-      sumMargenPct += (r.precioVenta - merc)/r.precioVenta;
-      sumMargenPesos += (r.precioVenta - merc);
+      // Contra la misma base que el precio: en un lote del CP, el costo por kilo.
+      const _base = costoComparableReceta(r, merc);
+      sumMargenPct += (r.precioVenta - _base)/r.precioVenta;
+      sumMargenPesos += (r.precioVenta - _base);
       sumPV += r.precioVenta;
     });
     margenPctProm = sumMargenPct/recetasConPrecio.length;
@@ -13444,8 +13970,10 @@ function renderRentabilidad(){
   const recetasConCosto = recetas.map(r=>{
     const {merc} = calcReceta(r, 1);
     const pv = r.precioVenta || 0;
-    const pct = pv > 0 ? merc/pv*100 : null;
-    return {...r, merc, pct, pv};
+    // Base comparable: un lote del CP se mide por kilo, no por lote entero.
+    const base = costoComparableReceta(r, merc);
+    const pct = pctCostoReceta(r, merc);
+    return {...r, merc: base, _mercCrudo: merc, pct, pv};
   }).sort((a,b)=>{
     // Sin precio al final, luego de mayor a menor %
     if(a.pct===null && b.pct===null) return 0;
@@ -13551,7 +14079,7 @@ function renderRentabilidad(){
               <td style="text-align:right">${r.pv?'$'+fmt(r.pv):'<span style="color:var(--gris-3)">—</span>'}</td>
               <td style="text-align:right;color:var(--oliva);font-weight:600">${r.pv?'$'+fmt(r.pv-r.merc):'—'}</td>
               <td style="text-align:right">${r.pct!==null?fmtD(r.pct)+'%':'<span style="color:var(--gris-3)">—</span>'}</td>
-              <td>${r.pct!==null?semaforo(r.pct):'<span style="color:var(--gris-3);font-size:12px">Sin precio</span>'}</td>
+              <td>${semaforoReceta(r, r._mercCrudo)}</td>
             </tr>`).join('');
             })()}
           </tbody>
@@ -19189,8 +19717,16 @@ function construirContextoOperacion(){
   ctx += `\nRECETAS (${recetas.length} cargadas):\n`;
   recetas.forEach(r=>{
     const {merc} = calcReceta(r, 1);
-    ctx += `- ${r.nombre}: $${Math.round(merc)}/porción`;
-    if(r.precioVenta) ctx += `, precio venta $${r.precioVenta}, costo ${Math.round(merc/r.precioVenta*100)}%`;
+    const _lote = esLoteDeCP(r);
+    const _base = costoComparableReceta(r, merc);
+    ctx += `- ${r.nombre}: $${Math.round(_base||merc)}${_lote?'/kg (lote de '+(r.rendimientoG||0)+' g, costo total $'+Math.round(merc)+')':'/porción'}`;
+    if(r.precioVenta){
+      const _m = metricaPrecioReceta(r, merc);
+      ctx += _lote
+        ? `, precio de transferencia $${r.precioVenta}/kg`
+        : `, precio venta $${r.precioVenta}`;
+      if(_m.valor !== null) ctx += `, ${_m.tipo==='margen'?'margen':'costo'} ${Math.round(_m.valor)}%`;
+    }
     ctx += `\n`;
     if(r.ingredientes){
       r.ingredientes.filter(i=>!i.esCondimento).forEach(ing=>{
