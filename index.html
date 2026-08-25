@@ -2210,13 +2210,46 @@ function getIngredientesConCP(){
   if(!cp || !esCabeceraOp(cp)) return propios;
   
   const ingsCP = (cp._datos && cp._datos.ingredientes) || [];
-  
-  // Combinar: propios primero, luego los del CP que no estén ya en propios
-  const nombresProxios = new Set(propios.map(i => i.nombre.toLowerCase()));
-  const soloCP = ingsCP
-    .filter(i => !nombresProxios.has(i.nombre.toLowerCase()))
-    .map(i => ({...i, _esCP: true, _precioCP: i.precio}));
-  
+
+  // ── EL LOCAL VE EL CATÁLOGO DEL CP, NO SU DESPENSA ─────────────────────
+  // Antes acá se volcaban TODOS los ingredientes del CP en el desplegable del
+  // local: los 127 de la despensa, incluidos los que el CP nunca vende. Por
+  // eso a Javier le aparecía "Ojo de bife (pieza entera)" —la pieza que el CP
+  // compra para porcionar— en vez del porcionado que el CP sí publica. Peor
+  // todavía: esa fila traía el precio de COMPRA del CP, sin su margen.
+  //
+  // El CP publica un catálogo (getProductosCP): sus elaborados, sus
+  // porcionados y los ingredientes que tildó como "también lo vendo a los
+  // locales". Eso —y solo eso— es lo que el local puede pedir y usar. Es la
+  // decisión #5 de la arquitectura de cadenas: el local elige de lo que el CP
+  // publica; si falta algo, lo agrega el CP.
+  //
+  // Además resuelve de raíz un choque de ids: los ids del catálogo ya vienen
+  // con prefijo ('cp-rec-…', 'cp-ing-…'), así que no pueden chocar con los del
+  // local. Ver el comentario de _idsUnicos() acá abajo.
+  const nombresProxios = new Set(propios.map(i => (i.nombre||'').toLowerCase().trim()));
+  let soloCP = [];
+  try{
+    soloCP = (getProductosCP() || [])
+      .filter(p => p && p.nombre && !nombresProxios.has(p.nombre.toLowerCase().trim()))
+      .map(p => ({
+        id: p.id,
+        nombre: p.nombre,
+        cat: p.tipoProd === 'elaborado' ? 'Elaborados del CP'
+           : p.tipoProd === 'porcionado' ? 'Porcionados del CP'
+           : 'Del CP',
+        // El precio que ve el local es el de TRANSFERENCIA, ya en $/kg.
+        precio: +p.costoXkg || 0,
+        bulto: 1,
+        unidadMedida: 'kg',
+        unidadTipo: 'kg',
+        _esCP: true,
+        _cpProducto: p.id,
+        _tipoProd: p.tipoProd,
+        _sinPrecioCP: !(p.costoXkg > 0),
+      }));
+  }catch(e){ console.warn('catálogo del CP no disponible', e); }
+
   // Los que el CP también tiene se MARCAN, pero no se les pisa el precio.
   //
   // Antes acá se le metía el precio de COMPRA del CP a cualquier ingrediente
@@ -2227,12 +2260,65 @@ function getIngredientesConCP(){
   // ficha del ingrediente (ing.proveedor) y el precio sale de ahí — ver
   // getIngrediente().
   const combinados = propios.map(ing => {
-    const enCP = ingsCP.find(i => i.nombre.toLowerCase() === ing.nombre.toLowerCase());
+    const enCP = ingsCP.find(i => (i.nombre||'').toLowerCase() === (ing.nombre||'').toLowerCase());
     if(enCP) return {...ing, _precioCP: enCP.precio, _sincronizadoCP: true};
     return ing;
   });
-  
-  return [...combinados, ...soloCP];
+
+  return _idsUnicos([...combinados, ...soloCP]);
+}
+
+// ── DOS COSAS NO PUEDEN LLAMARSE IGUAL ────────────────────────────────────
+// Este filtro existe por un bug real y feo: Javier eligió "Ojo de bife (pieza
+// entera)" en una receta de la sucursal y el sistema le puso "queso azul".
+//
+// El motivo: los ingredientes del CP se habían importado con ids i1…i127, y
+// los del local también arrancaban en i1. Dos operaciones distintas, los
+// mismos ids. Al juntar las dos listas en un <select>, quedaban dos
+// <option value="i2"> — uno el ojo de bife del CP, otro el queso azul del
+// local. Al elegir se guardaba "i2"; al redibujar, las DOS opciones quedaban
+// marcadas como seleccionadas y el navegador se queda con la última. De ahí
+// salía también el costo absurdo: getIngrediente('i2') devolvía cualquiera de
+// los dos, el que encontrara primero.
+//
+// Es la misma clase del bug de "ids duplicados" que ya se cerró adentro de una
+// operación, pero un nivel más arriba: entre operaciones de la misma cadena.
+// Ninguna lista que mezcle datos de dos operaciones puede confiar en que los
+// ids no se pisen, así que se garantiza acá, en la lista misma. El primero
+// gana: lo propio del local manda sobre lo que llega de afuera.
+// Las opciones del desplegable de ingredientes, en un solo lugar para que la
+// receta, su versión delivery y el registro de desperdicio digan lo mismo.
+// Incluye una red de seguridad: si la línea apunta a algo que ya no está en la
+// lista (un ingrediente borrado, o un insumo del CP que el CP dejó de
+// publicar), NO se muestra "— elegí —" como si el renglón estuviera vacío;
+// se muestra qué había, marcado, para que la persona vea que hay algo roto.
+function _opcionesIngrediente(selId){
+  const lista = getIngredientesConCP().slice()
+    .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es',{sensitivity:'base'}));
+  const html = lista.map(i=>{
+    const ico = i._esCP ? '🏭 ' : i._sincronizadoCP ? '🔗 ' : '';
+    const avisoPrecio = i._sinPrecioCP ? ' ⚠ sin precio' : '';
+    return `<option value="${esc(i.id)}"${i.id===selId?' selected':''}>${ico}${esc(i.nombre)}${avisoPrecio}</option>`;
+  }).join('');
+  if(selId && !lista.some(i=>i.id===selId)){
+    const perdido = getIngrediente(selId);
+    return `<option value="">— elegí —</option>`
+      + `<option value="${esc(selId)}" selected>⚠ ${esc((perdido&&perdido.nombre)||'ingrediente que ya no está')} — revisalo</option>`
+      + html;
+  }
+  return `<option value="">— elegí —</option>` + html;
+}
+
+function _idsUnicos(lista){
+  const vistos = new Set();
+  const out = [];
+  (lista||[]).forEach(x=>{
+    if(!x || !x.id) return;
+    if(vistos.has(x.id)) return;
+    vistos.add(x.id);
+    out.push(x);
+  });
+  return out;
 }
 function esCadena(){
   return currentUser && currentUser.rol==='cadena';
@@ -2506,9 +2592,30 @@ function getIngrediente(id){
   // Propio del local (o sin definir todavía): su precio es el suyo.
   if(propio) return propio;
 
+  // ¿Es un producto del CATÁLOGO del CP elegido directo en la receta?
+  // Los ids del catálogo vienen con prefijo propio, así que no se confunden
+  // con un ingrediente del local. El precio que corresponde es el de
+  // TRANSFERENCIA (lo que el CP le cobra), ya en $/kg.
+  // El guardarraíl de recursión es el mismo que usa _productoCPdeIngrediente:
+  // mientras se está armando el catálogo, no se puede pedir el catálogo.
+  if(!propio && cp && enCadena && !_enGetProductosCP && id){
+    const prod = (getProductosCP() || []).find(p => p.id === id);
+    if(prod){
+      if(prod.costoXkg > 0){
+        return { id: prod.id, nombre: prod.nombre, cat: 'Del CP',
+                 precio: prod.costoXkg, bulto: 1, unidadMedida: 'kg',
+                 _esCP: true, _origenCP: true, _cpProducto: prod.id, _cpNombre: prod.nombre };
+      }
+      // Publicado pero sin precio: no se inventa nada, la receta lo avisa.
+      return { id: prod.id, nombre: prod.nombre, cat: 'Del CP', bulto: 1,
+               unidadMedida: 'kg', _esCP: true, _origenCP: true, _cpSinPrecio: true };
+    }
+  }
+
   // No está en la lista del local. Puede ser un ingrediente del CP elegido
-  // directo desde el desplegable: si el CP lo publica con precio de
-  // transferencia, ese es el que corresponde; si no, su precio de compra.
+  // directo desde el desplegable en una versión anterior del sistema: si el CP
+  // lo publica con precio de transferencia, ese es el que corresponde; si no,
+  // su precio de compra. Se mantiene para no romper recetas ya guardadas.
   if(cp){
     const ingCP = (_datosCP(cp).ingredientes || []).find(i=>i.id===id);
     if(ingCP){
@@ -7290,8 +7397,7 @@ function renderEditorReceta(){
     return `<tr>
       <td>
         <select onchange="onChangeIngrediente(${idx},this.value)" style="min-width:180px">
-          <option value="">— elegí —</option>
-          ${getIngredientesConCP().sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i._esCP?'🏭 ':i._sincronizadoCP?'🔗 ':''}${i.nombre}</option>`).join('')}
+          ${_opcionesIngrediente(ing.ingId)}
         </select>
       </td>
       <td>
@@ -7997,7 +8103,7 @@ function renderVarianteDelivery(r, mercSalon){
     const esCPIng = ing._esCP || false;
     const modoUsoCP = ing._modoUso || 'granel';
                 return `<tr>
-                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px"><option value="">— elegí —</option>${getIngredientesConCP().sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(i=>`<option value="${i.id}"${i.id===ing.ingId?' selected':''}>${i._esCP?'🏭 ':i._sincronizadoCP?'🔗 ':''}${esc(i.nombre)}</option>`).join('')}</select></td>
+                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px">${_opcionesIngrediente(ing.ingId)}</select></td>
                   <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${tecnicas.length?'<option value="">— técnica —</option>'+tecnicas.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join(''):'<option>Elegí ingrediente</option>'}</select></td>
                   <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:75px;text-align:right" onchange="updIngDelivery(${idx},'neto',num(this.value))"></td>
                   <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
@@ -8065,14 +8171,17 @@ function onChangeIngrediente(idx, ingId){
   // Detectar si viene del CP
   const todosIngs = getIngredientesConCP();
   const ingObj = todosIngs.find(i=>i.id===ingId);
-  if(ingObj && (ingObj._esCP || ingObj._sincronizadoCP)){
-    let modoUso = 'granel';
-    const cat = (ingObj.cat||'').toLowerCase();
-    if(cat.includes('fiambre')||cat.includes('lácteo')||cat.includes('almacen')||cat.includes('almacén')){
-      modoUso = 'directo';
-    }
+  if(ingObj && ingObj._esCP){
+    // Viene del catálogo del CP: el modo de uso lo declara el propio producto
+    // en la pantalla del Centro de Producción. Antes se adivinaba mirando el
+    // nombre de la categoría del ingrediente ("fiambres" → directo), que no
+    // tiene relación con cómo se despacha.
+    const prod = (getProductosCP()||[]).find(p=>p.id===ingId);
     ing._esCP = true;
-    ing._modoUso = modoUso;
+    ing._modoUso = (prod && prod.modoUso) || 'directo';
+  } else if(ingObj && ingObj._sincronizadoCP){
+    ing._esCP = true;
+    ing._modoUso = 'granel';
   }
   renderEditorReceta();
   programarAutoguardadoReceta();
@@ -8767,9 +8876,20 @@ function getProductosCP(){
   // Todo lo que se le muestra al local sale de costoXkg.
   const cp = getCentroProduccion();
   if(!cp) return [];
+  // Memoria de un solo tick. Armar el catálogo cuesta: recorre todas las
+  // recetas del CP y las costea. Ahora que cada línea de receta del local
+  // resuelve su precio contra el catálogo, dibujar una carta de 245 platos lo
+  // pediría miles de veces. La copia se borra sola apenas termina el bloque
+  // sincrónico en curso (o sea, apenas termina de dibujarse la pantalla), así
+  // que no puede quedar vieja: cualquier cambio ocurre en un tick posterior.
+  if(window._cacheProductosCP) return window._cacheProductosCP;
   _enGetProductosCP = true;
-  try { return _getProductosCPInterno(cp); }
+  let res;
+  try { res = _getProductosCPInterno(cp); }
   finally { _enGetProductosCP = false; }
+  window._cacheProductosCP = res;
+  Promise.resolve().then(()=>{ window._cacheProductosCP = null; });
+  return res;
 }
 
 function _getProductosCPInterno(cp){
@@ -15835,10 +15955,48 @@ function procesarImportacion(data){
   window._importData = data;
 }
 
+// ── LOS IDS IMPORTADOS SE MARCAN CON LA OPERACIÓN QUE LOS RECIBE ──────────
+// Los archivos de importación numeran sus ingredientes i1, i2, i3… y sus
+// recetas r1, r2, r3… Si dos operaciones de la misma cadena se cargan así —el
+// Centro de Producción y una sucursal, por ejemplo— terminan con los MISMOS
+// ids para cosas distintas, y cualquier pantalla que mezcle datos de las dos
+// (el desplegable de ingredientes de una receta, sin ir más lejos) empieza a
+// confundir una cosa con otra en silencio. Le pasó a Javier: eligió "Ojo de
+// bife" y el sistema le puso "queso azul".
+//
+// Al importar, cada id queda marcado con la operación que lo recibe. Como la
+// marca es siempre la misma para una misma operación, un segundo archivo que
+// se cargue después ahí (las recetas, después de los ingredientes) sigue
+// encontrando lo que referencia. Lo que ya estaba cargado no se toca.
+function _marcarIdsImportados(data, opId){
+  if(!data || !opId) return data;
+  // La marca es el id completo de la operación, no un pedacito: dos
+  // operaciones cuyos ids arrancaran igual volverían a chocar, que es
+  // exactamente el problema que esto viene a resolver.
+  const marca = String(opId) + '~';
+  const yaMarcado = (x) => typeof x === 'string' && x.indexOf(marca) === 0;
+  const m = (x) => (!x || yaMarcado(x)) ? x : marca + x;
+
+  (data.ingredientes||[]).forEach(i=>{ i.id = m(i.id); });
+  (data.mermas||[]).forEach(x=>{ x.id = m(x.id); });
+  (data.recetas||[]).forEach(r=>{
+    r.id = m(r.id);
+    (r.ingredientes||[]).forEach(l=>{
+      if(l.ingId)    l.ingId    = m(l.ingId);
+      if(l.recetaId) l.recetaId = m(l.recetaId);
+    });
+    if(r.delivery && r.delivery.ingredientes){
+      r.delivery.ingredientes.forEach(l=>{ if(l.ingId) l.ingId = m(l.ingId); });
+    }
+  });
+  return data;
+}
+
 async function confirmarImportacion(){
   const data = window._importData;
   if(!data) return;
-  
+  _marcarIdsImportados(data, currentOpId);
+
   let importados = [];
 
   // Al importar una operación completa, sus ingredientes y mermas REEMPLAZAN
@@ -15925,7 +16083,10 @@ function importarRecetas(){
         // Puede ser exportación completa o solo array de recetas
         const recetas = Array.isArray(data) ? data : (data.recetas || []);
         if(!recetas.length){ showToast('No se encontraron recetas en el archivo','error'); return; }
-        
+        // Misma marca que usan los ingredientes al importarse en esta misma
+        // operación, así las recetas siguen encontrando lo que referencian.
+        _marcarIdsImportados({recetas}, currentOpId);
+
         let nuevas = 0;
         recetas.forEach(r=>{
           r.opId = currentOpId;
