@@ -572,6 +572,21 @@ body {
    tope, con pocas métricas cada una se estira media pantalla. */
 .editor-receta .metric-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 240px)); }
 .editor-receta .table-wrap table { width: 100%; }
+/* ── LA PANTALLA NO SE MUEVE MIENTRAS SE EDITA ──────────────────────────────
+   Dos cosas la corrían de costado en cada tecleada, y las dos son de layout,
+   no de datos:
+   1) El cartelito de autoguardado ("● cambios sin guardar…" → "⏳ guardando…"
+      → "✓ guardado en la nube") vive en una fila flex junto al nombre, que es
+      el que estira. Cada cambio de texto reacomodaba TODA la barra de arriba.
+      Se le reservó un ancho fijo: el texto cambia adentro y nada se mueve.
+   2) Las columnas de la tabla de ingredientes se calculaban según el contenido.
+      Cuando un costo pasaba de vacío a "$7.600", o aparecía el renglón "de 320 g
+      · $830 c/u", TODAS las columnas se recalculaban y saltaban. Con anchos
+      fijos, la columna del ingrediente absorbe la diferencia y el resto queda
+      quieto. */
+.tabla-ingredientes { table-layout: fixed; }
+.tabla-ingredientes td, .tabla-ingredientes th { overflow-wrap: anywhere; }
+.tabla-ingredientes select, .tabla-ingredientes input[type=text] { max-width: 100%; }
 .ficha-plato-cols {
   display: grid;
   grid-template-columns: minmax(320px, 420px) 1fr;
@@ -7773,7 +7788,7 @@ function renderEditorReceta(){
         ${(getOp().tiposPlato||['Principal']).map(s=>`<option${s===r.tipoPlato?' selected':''}>${s}</option>`).join('')}
       </select>`}
       <button class="btn btn-primary" onclick="guardarReceta()">${ico('save',13)} Guardar</button>
-      <span id="rec-autoguardado" style="font-size:11px;font-weight:600;white-space:nowrap"></span>
+      <span id="rec-autoguardado" style="font-size:11px;font-weight:600;white-space:nowrap;flex:0 0 200px;width:200px;overflow:hidden;text-overflow:ellipsis"></span>
     </div>
 
     <div class="metric-grid">
@@ -7857,7 +7872,12 @@ function renderEditorReceta(){
         </div>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="tabla-ingredientes">
+          <colgroup>
+            <col><col style="width:150px"><col style="width:160px"><col style="width:80px">
+            <col style="width:90px"><col style="width:100px"><col style="width:110px">
+            <col style="width:90px"><col style="width:96px">
+          </colgroup>
           <thead><tr>
             <th>Ingrediente</th><th>Técnica</th><th style="text-align:right">Cantidad</th>
             <th style="text-align:right">Merma</th><th style="text-align:right">Bruto/p</th>
