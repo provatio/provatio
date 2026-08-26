@@ -7252,70 +7252,162 @@ async function salirEditorReceta(){
   renderRecetas();
 }
 
-function renderRecetas(){
-  const op = getOp();
-  const _cpVista = esCentroProduccion();
-  const ordenTipo =['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
-  const recetasOrdenadas = [...getRecetas()].sort((a,b)=>{
-    const ta = ordenTipo.indexOf(a.tipoPlato||''), tb = ordenTipo.indexOf(b.tipoPlato||'');
-    const oa = ta===-1?99:ta, ob = tb===-1?99:tb;
-    if(oa!==ob) return oa-ob;
-    return a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'});
+// ═══════════════════════════════════════════════════════════════════════════
+// LISTA DE RECETAS — categorizada y alfabética
+// ═══════════════════════════════════════════════════════════════════════════
+// Javier, mirando el CP con 23 panificados: "un cp con 100 recetas es un caos
+// y no encontramos nada". Tenía dos problemas encima, no uno:
+//
+//  1. El orden por categoría usaba una lista fija de tipos de plato de local
+//     ('Entrada','Principal','Guarnición','Salsa','Postre','Infantil'). Las
+//     categorías del CP —Panificados, Pastas, Postres— no estaban ahí, así que
+//     TODAS empataban en el mismo puesto y la lista terminaba ordenada solo por
+//     nombre. Peor: el separador de categoría se dibujaba cada vez que cambiaba
+//     el tipo, y como el orden no era por tipo, aparecía un separador casi en
+//     cada fila.
+//  2. La vista de búsqueda no agrupaba ni ordenaba nada: mostraba las recetas
+//     en el orden en que estaban guardadas.
+//
+// Ahora hay UNA sola regla de orden y UNA sola forma de dibujar una fila, que
+// usan las dos vistas. Las categorías conocidas van primero en el orden de
+// oficio; las que no conoce el sistema (las que invente cada cocina) van
+// después, alfabéticas; "Sin categoría" siempre al final, para que se vea lo
+// que falta clasificar. Adentro de cada una, alfabético.
+
+const _ORDEN_CAT_RECETA = ['Entrada','Principal','Plato principal','Guarnición',
+                           'Salsa','Pastas','Panificados','Postre','Postres','Infantil'];
+
+function _catDeReceta(r){
+  const c = (r && r.tipoPlato || '').trim();
+  return c || 'Sin categoría';
+}
+
+// Agrupa y ordena. Devuelve [{cat, recetas}] listo para dibujar.
+function _gruposRecetas(lista){
+  const grupos = new Map();
+  (lista||[]).forEach(r=>{
+    const c = _catDeReceta(r);
+    if(!grupos.has(c)) grupos.set(c, []);
+    grupos.get(c).push(r);
   });
-  let ultimoTipo = null;
-  const rows = recetasOrdenadas.map(r=>{
-    const {merc} = calcReceta(r, r.porciones||1);
-    // Un lote del CP se compara por kilo, no por lote entero (ver
-    // costoComparableReceta). Antes acá quedaba "278% · Alto" pegado.
-    const esLote = esLoteDeCP(r);
-    const costoMostrado = esLote ? costoComparableReceta(r, merc) : merc;
-    let sep = '';
-    if(r.tipoPlato !== ultimoTipo){
-      ultimoTipo = r.tipoPlato;
-      sep = `<tr><td colspan="7" style="background:var(--crema);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--gris-1);padding:8px 12px">${r.tipoPlato||'Sin categoría'}</td></tr>`;
-    }
-    return sep + `<tr>
-      <td><strong>${esc(r.nombre)}</strong></td>
-      <td>${badgeLinea(r.tipoServicio)}</td>
-      <td><span class="badge badge-gray">${r.tipoPlato}</span></td>
-      <td style="text-align:right">${costoMostrado>0?'$'+fmt(costoMostrado):'<span style="color:var(--gris-3)">—</span>'}${esLote&&costoMostrado>0?'<span style="font-size:11px;color:var(--gris-2)">/kg</span>':''}</td>
-      <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta):'<span style="color:var(--gris-3)">—</span>'}${esLote&&r.precioVenta?'<span style="font-size:11px;color:var(--gris-2)">/kg</span>':''}</td>
-      <td>${semaforoReceta(r, merc)}</td>
-      <td style="white-space:nowrap"><div style="display:flex;gap:6px">
-        <button class="btn btn-secondary btn-sm" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ficha</button>
-        <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
-        <button class="btn btn-danger btn-sm" onclick="delReceta('${escJs(r.id)}')">${ico('trash',13)} Eliminar</button>
-      </div></td>
-    </tr>`;
-  }).join('');
+  const peso = (c)=>{
+    if(c === 'Sin categoría') return 9999;          // lo que falta clasificar, al final
+    const i = _ORDEN_CAT_RECETA.findIndex(x => x.toLowerCase() === c.toLowerCase());
+    return i === -1 ? 500 : i;                       // las inventadas, en el medio
+  };
+  return [...grupos.entries()]
+    .map(([cat, recetas]) => ({
+      cat,
+      recetas: recetas.sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es',{sensitivity:'base'})),
+    }))
+    .sort((a,b)=> peso(a.cat) - peso(b.cat) || a.cat.localeCompare(b.cat,'es'));
+}
+
+// Acordeón. Vive en memoria y no en el HTML: la pantalla se vuelve a dibujar
+// entera ante cualquier cambio, y si el estado viviera en el DOM se cerraría
+// todo cada vez. Mismo criterio que el catálogo del CP.
+const _recAcordeon = {};
+function toggleCatReceta(cat, n){
+  // Ojo con el segundo parámetro: sin él, _catRecetaAbierta cae en su regla
+  // por defecto ("una categoría de 0 recetas es chica, así que está abierta"),
+  // y entonces tocar una categoría grande —que arranca CERRADA— la mandaba a
+  // cerrarse otra vez. El clic no hacía nada y no se veía por qué.
+  _recAcordeon[cat] = !_catRecetaAbierta(cat, +n || 0);
+  _recAcordeon._forzar = null;
+  renderRecetas();
+}
+function _catRecetaAbierta(cat, n){
+  if(_recAcordeon._forzar === 'abrir')  return true;
+  if(_recAcordeon._forzar === 'cerrar') return false;
+  if(_recAcordeon[cat] !== undefined)   return _recAcordeon[cat];
+  // Por defecto: una categoría chica se ve entera; una grande arranca cerrada
+  // para que lo primero que aparezca sea el índice y no una pared de filas.
+  return n <= 8;
+}
+function expandirTodoRecetas(abrir){
+  Object.keys(_recAcordeon).forEach(k=>{ if(k !== '_forzar') delete _recAcordeon[k]; });
+  _recAcordeon._forzar = abrir ? 'abrir' : 'cerrar';
+  renderRecetas();
+}
+
+// Una sola forma de dibujar una fila, para que las dos vistas digan lo mismo.
+function _filaReceta(r, opts){
+  const conBorrar = !opts || opts.conBorrar !== false;
+  const {merc} = calcReceta(r, r.porciones||1);
+  const esLote = esLoteDeCP(r);
+  const kg = esLote ? '<span style="font-size:11px;color:var(--gris-2)">/kg</span>' : '';
+  const costo = costoComparableReceta(r, merc);
+  const m = metricaPrecioReceta(r, merc);
+  return `<tr>
+    <td><strong>${esc(r.nombre)}</strong></td>
+    <td>${badgeLinea(r.tipoServicio)}</td>
+    <td style="text-align:right;white-space:nowrap">${costo>0?'$'+fmt(costo)+kg:'<span style="color:var(--gris-3)">—</span>'}</td>
+    <td style="text-align:right;white-space:nowrap">${r.precioVenta?'$'+fmt(r.precioVenta)+kg:'<span style="color:var(--gris-3)">—</span>'}</td>
+    <td style="text-align:right;white-space:nowrap">${m.valor!==null?fmtD(m.valor)+'%':'<span style="color:var(--gris-3)">—</span>'}</td>
+    <td>${semaforoReceta(r, merc)}</td>
+    <td style="white-space:nowrap"><div style="display:flex;gap:6px">
+      <button class="btn btn-secondary btn-sm" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ficha</button>
+      <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
+      ${conBorrar?`<button class="btn btn-danger btn-sm" onclick="delReceta('${escJs(r.id)}')">${ico('trash',13)} Eliminar</button>`:''}
+    </div></td>
+  </tr>`;
+}
+
+function _encabezadoTablaRecetas(esCP){
+  return `<thead><tr>
+    <th>Receta</th><th>Servicio</th>
+    <th style="text-align:right">${esCP?'Costo':'Costo merc./p'}</th>
+    <th style="text-align:right">${esCP?'Precio de transferencia':'Precio de venta'}</th>
+    <th style="text-align:right">${esCP?'% de margen':'% de costo'}</th>
+    <th>Estado</th><th></th>
+  </tr></thead>`;
+}
+
+// Una tarjeta plegable por categoría. La categoría ya no se repite en cada
+// fila: está en el encabezado del bloque, que es donde sirve.
+function _bloqueCategoriaRecetas(g, esCP, opts){
+  const abierta = (opts && opts.siempreAbierto) || _catRecetaAbierta(g.cat, g.recetas.length);
+  const sinCat = g.cat === 'Sin categoría';
+  const plegable = !(opts && opts.siempreAbierto);
+  return `<div class="card" style="margin-bottom:12px${sinCat?';border-left:3px solid #B8540A':''}">
+    <div class="card-header" ${plegable?`onclick="toggleCatReceta('${escJs(g.cat)}',${g.recetas.length})" style="cursor:pointer;user-select:none"`:''}>
+      <span class="card-title" style="text-transform:uppercase;letter-spacing:.04em;font-size:13px">
+        ${plegable?`<span style="color:var(--gris-2);margin-right:6px">${abierta?'▾':'▸'}</span>`:''}${esc(g.cat)}
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2);font-size:12px"> · ${g.recetas.length} receta${g.recetas.length!==1?'s':''}</span>
+      </span>
+      ${sinCat?'<span style="font-size:11px;color:#B8540A;font-weight:600">poneles categoría para encontrarlas</span>':''}
+    </div>
+    ${abierta?`<div class="table-wrap"><table>
+      ${_encabezadoTablaRecetas(esCP)}
+      <tbody>${g.recetas.map(r=>_filaReceta(r, opts)).join('')}</tbody>
+    </table></div>`:''}
+  </div>`;
+}
+
+function renderRecetas(){
+  const esCP = esCentroProduccion();
+  const todas = getRecetas();
+  const grupos = _gruposRecetas(todas);
 
   setContent('Recetas', `
-    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
-      <div style="position:relative;flex:1">
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+      <div style="position:relative;flex:1;min-width:220px">
         <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--gris-2);font-size:15px">${ico('search',15)}</span>
         <input type="text" id="rec-search" placeholder="Buscar receta..."
           style="width:100%;padding:10px 12px 10px 36px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px"
           oninput="filtrarRecetas(this.value)">
       </div>
+      ${grupos.length>1?`
+        <button class="btn btn-secondary btn-sm" onclick="expandirTodoRecetas(true)">Expandir todo</button>
+        <button class="btn btn-secondary btn-sm" onclick="expandirTodoRecetas(false)">Contraer todo</button>`:''}
+    </div>
+    <div style="font-size:12px;color:var(--gris-2);margin-bottom:12px">
+      ${todas.length} receta${todas.length!==1?'s':''} en ${grupos.length} categoría${grupos.length!==1?'s':''}
     </div>
     <div id="rec-lista">
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">${getRecetas().length} recetas cargadas</span>
-        <button class="btn btn-primary btn-sm" onclick="nuevaReceta()">+ Nueva receta</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Receta</th><th>Servicio</th><th>Tipo</th>
-            <th style="text-align:right">${_cpVista?'Costo':'Costo merc./p'}</th>
-            <th style="text-align:right">${_cpVista?'Precio de transferencia':'Precio de venta'}</th>
-            <th>Estado</th><th></th>
-          </tr></thead>
-          <tbody>${rows||'<tr><td colspan="6" style="text-align:center;color:var(--gris-3);padding:32px">No hay recetas. Creá la primera.</td></tr>'}</tbody>
-        </table>
-      </div>
-    </div>
+      ${grupos.length
+        ? grupos.map(g=>_bloqueCategoriaRecetas(g, esCP)).join('')
+        : `<div class="card"><div style="text-align:center;color:var(--gris-3);padding:32px">No hay recetas. Creá la primera.</div></div>`}
     </div>
   `, `<button class="btn btn-primary btn-sm" onclick="nuevaReceta()">+ Nueva receta</button>`);
 }
@@ -7326,49 +7418,22 @@ function filtrarRecetas(q){
   if(!lista) return;
   if(!q){ renderRecetas(); document.getElementById('rec-search')?.focus(); return; }
   const recetas = getRecetas().filter(r=>
-    r.nombre.toLowerCase().includes(q) ||
+    (r.nombre||'').toLowerCase().includes(q) ||
     (r.tipoServicio||'').toLowerCase().includes(q) ||
     (r.tipoPlato||'').toLowerCase().includes(q)
   );
   if(recetas.length === 0){
-    lista.innerHTML = '<div class="empty"><div class="empty-icon">'+ico('search',40)+'</div><h3>Sin resultados</h3><p>No encontramos recetas para "'+q+'"</p></div>';
+    lista.innerHTML = '<div class="empty"><div class="empty-icon">'+ico('search',40)+'</div><h3>Sin resultados</h3><p>No encontramos recetas para "'+esc(q)+'"</p></div>';
     return;
   }
+  // Los resultados se agrupan y se ordenan igual que la lista completa — antes
+  // salían en el orden en que estaban guardados, que no es ningún orden. Y van
+  // siempre abiertos: si buscaste, querés ver lo que encontró.
+  const esCP = esCentroProduccion();
+  const grupos = _gruposRecetas(recetas);
   lista.innerHTML = `
-    <div style="font-size:12px;color:var(--gris-2);margin-bottom:10px">${recetas.length} resultado${recetas.length!==1?'s':''} para "<strong>${q}</strong>"</div>
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Receta</th><th>Servicio</th><th>Tipo</th>
-            <th style="text-align:right">Costo/porción</th>
-            <th style="text-align:right">Precio venta</th>
-            <th style="text-align:right">% Costo</th>
-            <th></th>
-          </tr></thead>
-          <tbody>
-            ${recetas.map(r=>{
-              const {merc} = calcReceta(r, 1);
-              const _m = metricaPrecioReceta(r, merc);
-              const _kg = esLoteDeCP(r)?'<span style="font-size:11px;color:var(--gris-2)">/kg</span>':'';
-              const _costo = costoComparableReceta(r, merc);
-              return `<tr>
-                <td><strong>${esc(r.nombre)}</strong></td>
-                <td><span class="badge badge-op">${r.tipoServicio||'—'}</span></td>
-                <td>${r.tipoPlato||'—'}</td>
-                <td style="text-align:right">${_costo>0?'$'+fmt(_costo)+_kg:'—'}</td>
-                <td style="text-align:right">${r.precioVenta?'$'+fmt(r.precioVenta)+_kg:'—'}</td>
-                <td style="text-align:right">${_m.valor!==null?fmtD(_m.valor)+'%':'—'}</td>
-                <td style="white-space:nowrap"><div style="display:flex;gap:6px">
-                  <button class="btn btn-secondary btn-sm" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ficha</button>
-                  <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
-                </div></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <div style="font-size:12px;color:var(--gris-2);margin-bottom:10px">${recetas.length} resultado${recetas.length!==1?'s':''} para "<strong>${esc(q)}</strong>"</div>
+    ${grupos.map(g=>_bloqueCategoriaRecetas(g, esCP, {siempreAbierto:true, conBorrar:false})).join('')}
   `;
 }
 
