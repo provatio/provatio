@@ -2560,6 +2560,45 @@ function _productoCPdeIngrediente(ing){
   return prods.find(p => (p.nombre||'').toLowerCase().trim() === n) || null;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// LO QUE VIENE PORCIONADO DEL CP SE CUENTA EN PORCIONES, NO EN GRAMOS
+// ═══════════════════════════════════════════════════════════════════════════
+// El CP decide el panaché en porciones de 320 g a $830. Hasta acá, el local lo
+// usaba POR GRAMOS: el sistema convertía ese precio a $2.594/kg y le cobraba al
+// plato por gramo. O sea que el número correcto solo salía si la persona
+// reescribía de memoria el gramaje exacto que había decidido el CP. Javier
+// puso 325 en vez de 320 y el panaché pasó de $830 a $843, sin que nada avise.
+// Con 245 platos y 145 productos, eso no es un riesgo: es una certeza.
+//
+// Es el mismo error que ya se corrigió un nivel más arriba con los huevos
+// ("el gramaje es indicativo, el precio siempre es $/huevo") y que nunca se
+// bajó al local. La regla, ahora en los dos niveles: el precio vive en la
+// unidad en la que el producto se despacha, y el gramaje es información.
+//
+// Una porción del CP NO SE PARTE (decisión de Javier, 25/8): si el local
+// necesita 150 g, el CP tiene que publicar ese otro porcionado. Por eso la
+// cantidad es un número entero de porciones.
+function _infoPorcionCP(prod){
+  if(!prod) return {};
+  const u = prod.despachoUnidad;
+  if(u !== 'porcion' && u !== 'unidades') return {};
+  const precio = +prod.precioUnidad || 0;
+  if(!(precio > 0)) return {};
+  return {
+    _cpPorPorcion: true,
+    _precioPorcion: precio,
+    _gramosPorcion: +prod.gramosPorcion || 0,
+    _unidadDespacho: u,
+  };
+}
+// Cómo se llama una unidad de este producto, para que la pantalla hable como
+// la cocina: "3 porciones de panaché", "2 ojos de bife", "6 huevos".
+function _nombreUnidadCP(ing, n){
+  const plural = Math.abs(+n || 0) !== 1;
+  if(ing && ing._unidadDespacho === 'unidades') return plural ? 'unidades' : 'unidad';
+  return plural ? 'porciones' : 'porción';
+}
+
 function getIngrediente(id){
   const propio = demoData.ingredientes.find(i=>i.id===id);
   const cp = getCentroProduccion();
@@ -2581,7 +2620,8 @@ function getIngrediente(id){
       // El precio de transferencia ya viene en $/kg: se expresa como un
       // ingrediente "por kilo" para que el resto del cálculo sea el de siempre.
       return { ...propio, precio: prod.costoXkg, bulto: 1, unidadMedida: 'kg',
-               _origenCP: true, _cpProducto: prod.id, _cpNombre: prod.nombre };
+               _origenCP: true, _cpProducto: prod.id, _cpNombre: prod.nombre,
+               ..._infoPorcionCP(prod) };
     }
     // Marcado como del CP pero el CP todavía no lo publica o no le puso
     // precio: no se inventa nada, se avisa en la receta.
@@ -2603,7 +2643,8 @@ function getIngrediente(id){
       if(prod.costoXkg > 0){
         return { id: prod.id, nombre: prod.nombre, cat: 'Del CP',
                  precio: prod.costoXkg, bulto: 1, unidadMedida: 'kg',
-                 _esCP: true, _origenCP: true, _cpProducto: prod.id, _cpNombre: prod.nombre };
+                 _esCP: true, _origenCP: true, _cpProducto: prod.id, _cpNombre: prod.nombre,
+                 ..._infoPorcionCP(prod) };
       }
       // Publicado pero sin precio: no se inventa nada, la receta lo avisa.
       return { id: prod.id, nombre: prod.nombre, cat: 'Del CP', bulto: 1,
@@ -2697,19 +2738,46 @@ function getMermaObj(nombre, tecnica, estado, proceso){
   return getMerma(nombre, tecnica, estado, proceso);
 }
 
-function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadReceta){
+function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadReceta, linea){
   if(esCondimento){
     const f = porciones<=20?0.8:porciones<=50?0.65:0.55;
     const c = 150*f;
     return {costo_porcion:c, costo_total:c*porciones, bruto:0, kg_total:0, bultos:0, esCondimento:true};
   }
   const ing = getIngrediente(ingId);
-  if(!ing||!neto) return null;
+  if(!ing) return null;
+  // Una línea contada en porciones puede no tener gramos cargados todavía: su
+  // cantidad vive en `porcionesCP`, no en `neto`. Si se cortara acá por !neto,
+  // el costo de un insumo porcionado del CP nunca se calcularía.
+  const _esLineaPorcion = !!(ing._cpPorPorcion && linea && +linea.porcionesCP > 0);
+  if(!neto && !_esLineaPorcion) return null;
   // Declarado como provisto por el CP, pero el CP todavía no lo publica con
   // precio de transferencia. No se inventa un costo: se dice qué falta.
   if(ing._cpSinPrecio){
     return {error:`"${ing.nombre}" figura como provisto por el Centro de Producción, pero el CP todavía no le puso precio de transferencia (o no está en su catálogo)`, cpSinPrecio:true};
   }
+  // ── LO QUE VIENE PORCIONADO DEL CP: SE CUENTA EN PORCIONES ──────────────
+  // El costo sale del precio de transferencia POR PORCIÓN multiplicado por
+  // cuántas porciones lleva el plato. El gramaje no entra en la cuenta — solo
+  // sirve para los kilos que se piden y para que el cocinero sepa qué recibe.
+  // Ver _infoPorcionCP() para el porqué.
+  if(ing._cpPorPorcion && linea && linea.porcionesCP !== undefined && linea.porcionesCP !== null){
+    const cant = +linea.porcionesCP || 0;
+    if(!(cant > 0)) return null;
+    const costo_porcion = cant * ing._precioPorcion;
+    const gramos = cant * (+ing._gramosPorcion || 0);
+    return {
+      bruto: gramos, bruto_con_desperdicio: gramos,
+      costo_porcion, costo_total: costo_porcion * porciones,
+      kg_total: gramos * porciones / 1000,
+      bultos: Math.ceil(cant * porciones),
+      merma_pct: 0, desperdicio_pct: 0, subproducto: '', esMultifactorial: false,
+      precio: ing._precioPorcion,
+      unidadDisplay: _nombreUnidadCP(ing, cant),
+      esPorcionCP: true, cantPorciones: cant, gramosPorcion: +ing._gramosPorcion || 0,
+    };
+  }
+
   const mermaObj = getMerma(ing.nombre, tecnica, ing.estado, ing.proceso);
   if(mermaObj===null){
     // No es lo mismo "todavía no elegiste la técnica" que "esa técnica no
@@ -2826,83 +2894,13 @@ function calcReceta(receta, porciones){
       }
       return {...ing, calc:{error:'Sin rendimiento cargado'}};
     }
-    // ── ITEM TIPO INSUMO CP — 3 modos ──────────────────────────────────────
-    if(ing.productoCP !== undefined){
-      const productos = getProductosCP();
-      const prod = ing.productoCP ? productos.find(p=>p.id===ing.productoCP) : null;
-      const modo = ing.modoUso || (prod && prod.modoUso) || 'directo';
-      const costoXkg = prod ? prod.costoXkg : 0;
-      const gramosUsados = +ing.neto || 0;
-      const nombreProd = prod ? prod.nombre : '— elegí producto —';
-
-      let costoItem = null, costoTotal = null, mermaPct = null, brutoG = null;
-
-      if(prod && costoXkg > 0 && gramosUsados > 0){
-        if(modo === 'directo'){
-          // Sin merma — costo directo
-          costoItem = costoXkg * gramosUsados / 1000;
-        } else if(modo === 'granel'){
-          // Merma local — usar técnica del item si existe
-          const mermaRec = ing.tecnica ? demoData.mermas.find(m=>m.id===ing.tecnica) : null;
-          mermaPct = mermaRec ? mermaRec.pct : 0;
-          brutoG = gramosUsados / (1 - mermaPct/100);
-          costoItem = costoXkg * brutoG / 1000;
-        } else if(modo === 'porcionado'){
-          // Costo por porción fija — merma NO multiplica costo
-          costoItem = costoXkg * gramosUsados / 1000;
-          // La merma es solo informativa
-          const mermaRec = ing.tecnica ? demoData.mermas.find(m=>m.id===ing.tecnica) : null;
-          mermaPct = mermaRec ? mermaRec.pct : null;
-        }
-        costoTotal = costoItem !== null ? costoItem * porciones : null;
-        if(costoItem) merc += costoItem;
-      }
-
-      const modoBadge = modo==='directo'
-        ? '<span style="background:#2D5016;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px">✅ Directo</span>'
-        : modo==='granel'
-        ? '<span style="background:#B8540A;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px">📦 Granel</span>'
-        : '<span style="background:#1B3A5C;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px">🔪 Porcionado</span>';
-
-      // Técnica — solo para granel y porcionado (informativa en porcionado)
-      const tecnicaCell = (modo==='granel' || modo==='porcionado')
-        ? `<select onchange="updIngReceta(${idx},'tecnica',this.value)" style="font-size:12px;min-width:120px">
-            <option value="">Sin técnica</option>
-            ${getMermasDisponibles().map(m=>`<option value="${m.id}"${m.id===ing.tecnica?' selected':''}>${m.tecnica||m.nombre} (${m.pct}%)</option>`).join('')}
-           </select>
-           ${modo==='porcionado'?'<span style="font-size:10px;color:var(--gris-2);display:block">solo informativa</span>':''}`
-        : '<span style="color:var(--gris-3);font-size:12px">—</span>';
-
-      return `<tr style="background:#F0F7F0">
-        <td>
-          <span style="font-size:10px;color:var(--gris-2)">🏭</span>
-          <strong style="font-size:13px;margin-left:4px">${nombreProd}</strong>
-          <div style="margin-top:3px">${modoBadge}</div>
-        </td>
-        <td>${tecnicaCell}</td>
-        <td><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="g" style="width:75px;text-align:right"
-          onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
-        <td style="text-align:right;font-size:12px">
-          ${modo==='granel' && mermaPct!==null ? fmtD(mermaPct)+'%' : '—'}
-        </td>
-        <td style="text-align:right;font-size:12px">
-          ${brutoG!==null ? fmtD(brutoG)+'g' : gramosUsados>0 ? gramosUsados+'g' : '—'}
-        </td>
-        <td style="text-align:right;font-size:12px;color:var(--gris-2)">
-          ${costoXkg>0?'$'+fmt(costoXkg)+'/kg':'—'}
-        </td>
-        <td style="text-align:right">
-          ${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:'—'}
-        </td>
-        <td style="text-align:right">
-          ${costoTotal!==null?`<span class="calc">$${fmt(costoTotal)}</span>`:'—'}
-        </td>
-        <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
-      </tr>`;
-    }
+    // (Acá vivía una segunda copia del bloque de insumo CP, inalcanzable porque
+    // la de más arriba ya atrapa el caso — y que además devolvía HTML de la
+    // tabla del editor desde adentro del motor de costeo. Se borró: el tipo de
+    // línea `productoCP` está retirado y se migra a un ingrediente del local.)
 
     // Item tipo condimento o ingrediente normal
-    const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, ing.esCondimento);
+    const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, ing.esCondimento, null, ing);
     if(c&&!c.error) merc += c.costo_porcion;
     return {...ing, calc:c};
   });
@@ -2949,6 +2947,13 @@ function seleccionarInsumoCP(id){
   const hid = document.getElementById('cp-prod-sel');
   if(hid) hid.value = id;
   const p = (window._insumosCP||[]).find(x => String(x.id) === String(id));
+  // Si se despacha porcionado, pedir gramos sería pedir un dato que no se usa
+  // y que además invita al error que esto viene a resolver.
+  const _porc = !!(p && (p.despachoUnidad === 'porcion' || p.despachoUnidad === 'unidades') && p.precioUnidad > 0);
+  const _bNeto = document.getElementById('cp-neto-box');
+  const _bPorc = document.getElementById('cp-porcion-box');
+  if(_bNeto) _bNeto.style.display = _porc ? 'none' : '';
+  if(_bPorc) _bPorc.style.display = _porc ? '' : 'none';
   const box = document.getElementById('cp-elegido');
   if(box && p){
     const modoLabel = p.modoUso==='granel'?'📦 Granel':p.modoUso==='porcionado'?'🔪 Porcionado':'✅ Directo';
@@ -3076,6 +3081,46 @@ function migrarInsumosCPaIngredientes(){
   return cambios;
 }
 
+// ── PASAR A PORCIONES LAS LÍNEAS QUE ESTABAN EN GRAMOS ────────────────────
+// Una línea vieja contra un producto que el CP despacha porcionado tiene el
+// gramaje escrito a mano (300, 325...). Se convierte dividiendo por el gramaje
+// que declara el CP: 325 g ÷ 320 = 1,02 porciones.
+//
+// NO se redondea solo. Javier lo pidió así y tiene razón: redondear 1,02 a 1
+// le cambiaría el costo de un plato ($843 → $830) sin que él lo decida. La
+// línea queda marcada en naranja con el número que dio, para que la redondee
+// mirándola. Las que dan exacto (300 ÷ 300 = 1) pasan sin ruido.
+function migrarPorcionesCP(){
+  const op = getOp();
+  if(!op || !op.grupoId || esCentroProduccion()) return {convertidas:0, aRevisar:0};
+  let convertidas = 0, aRevisar = 0;
+  (demoData.recetas||[]).filter(r=>r.opId===currentOpId).forEach(r=>{
+    (r.ingredientes||[]).forEach(l=>{
+      if(!l || l.esCondimento || l.recetaId) return;
+      if(l.porcionesCP !== undefined && l.porcionesCP !== null) return;  // ya convertida
+      const ing = getIngrediente(l.ingId);
+      if(!ing || !ing._cpPorPorcion) return;
+      const g = +ing._gramosPorcion || 0;
+      if(!(g > 0)) return;                       // sin gramaje no hay conversión posible
+      const cant = (+l.neto || 0) / g;
+      if(!(cant > 0)) return;
+      const entero = Math.round(cant);
+      if(Math.abs(cant - entero) < 0.005 && entero >= 1){
+        l.porcionesCP = entero;
+        l.neto = entero * g;
+        delete l._revisarPorciones;
+      } else {
+        l.porcionesCP = Math.round(cant * 100) / 100;
+        l._revisarPorciones = true;
+        aRevisar++;
+      }
+      l.tecnica = SIN_MERMA;
+      convertidas++;
+    });
+  });
+  return {convertidas, aRevisar};
+}
+
 // Se corre al entrar a un local, una sola vez por operación abierta, y avisa
 // qué hizo. No se corre en silencio: si tocó datos, la persona se entera.
 async function _migrarInsumosCPsiHaceFalta(){
@@ -3084,10 +3129,17 @@ async function _migrarInsumosCPsiHaceFalta(){
     if(window._migradoCPen === currentOpId) return;
     window._migradoCPen = currentOpId;
     const n = migrarInsumosCPaIngredientes();
+    const {convertidas, aRevisar} = migrarPorcionesCP();
     if(n > 0){
       showToast(`Se pasaron ${n} insumo(s) del CP a tu lista de ingredientes — mismo producto y mismo precio, ahora en un solo lugar`,'success');
-      await guardarEnFirestore({silencioso:true});
     }
+    if(convertidas > 0){
+      showToast(aRevisar > 0
+        ? `${convertidas} insumo(s) porcionados del CP pasaron a contarse en porciones. ${aRevisar} quedó/quedaron con un número raro (ej: 1,02) y está(n) marcado(s) en naranja para que lo redondees vos — no quise cambiarte el costo de un plato por mi cuenta.`
+        : `${convertidas} insumo(s) porcionados del CP ahora se cuentan en porciones: el costo sale del precio de transferencia y ya no depende de que alguien recuerde el gramaje.`,
+        aRevisar > 0 ? 'info' : 'success');
+    }
+    if(n > 0 || convertidas > 0) await guardarEnFirestore({silencioso:true});
   }catch(e){ console.warn('migración de insumos CP', e); }
 }
 
@@ -3152,9 +3204,16 @@ function agregarProductoCP(){
           ${listaHtml}
         </div>
       </div>
-      <div class="form-group">
+      <div class="form-group" id="cp-neto-box">
         <label>Cuánto lleva la receta (g o ml)</label>
         <input type="text" inputmode="decimal" id="cp-prod-neto" placeholder="ej: 200" min="0" style="width:100%">
+      </div>
+      <div class="form-group" id="cp-porcion-box" style="display:none">
+        <div style="font-size:12.5px;color:var(--gris-2);line-height:1.6;background:#F5F0E8;border-radius:8px;padding:10px 12px">
+          Este producto el CP lo despacha <strong>porcionado</strong>, así que la receta lo cuenta
+          en porciones y no en gramos. Entra con <strong>1 porción</strong> y la cantidad la ajustás
+          en la receta. El costo sale del precio de transferencia — no depende de ningún gramaje.
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -3166,14 +3225,24 @@ function agregarProductoCP(){
 
 function confirmarProductoCP(){
   const prodId = document.getElementById('cp-prod-sel').value;
-  const neto   = num(document.getElementById('cp-prod-neto').value) || 0;
+  const _inpNeto = document.getElementById('cp-prod-neto');
+  const neto   = (_inpNeto ? num(_inpNeto.value) : 0) || 0;
   if(!prodId){ showToast('Elegí un insumo','error'); return; }
   const ing = _adoptarProductoCP(prodId);
   if(!ing){ showToast('Ese producto ya no está en el catálogo del CP','error'); closeModal(); return; }
   // Una línea de receta común y corriente, que apunta a un ingrediente del
   // local. Lo que llega del CP viene elaborado: su merma ya se aplicó adentro
   // de la receta del CP, así que acá va sin merma.
-  recetaEditando.ingredientes.push({ ingId: ing.id, tecnica: SIN_MERMA, neto });
+  const _resuelto = getIngrediente(ing.id);
+  if(_resuelto && _resuelto._cpPorPorcion){
+    // Se despacha porcionado: la receta lo cuenta en porciones, no en gramos.
+    recetaEditando.ingredientes.push({
+      ingId: ing.id, tecnica: SIN_MERMA,
+      porcionesCP: 1, neto: +_resuelto._gramosPorcion || 0,
+    });
+  } else {
+    recetaEditando.ingredientes.push({ ingId: ing.id, tecnica: SIN_MERMA, neto });
+  }
   closeModal();
   showToast(`✓ "${ing.nombre}" quedó en tus ingredientes y se agregó a la receta`,'success');
   renderEditorReceta();
@@ -6027,7 +6096,7 @@ function renderDiagnosticoUnidades(){
       if(!idsUnidad.has(ri.ingId)) return;
       const ing = getIngrediente(ri.ingId);
       if(!ing || !ri.neto) return;
-      const c = calcIngrediente(ri.ingId, ri.tecnica, +ri.neto||0, r.porciones||1, false);
+      const c = calcIngrediente(ri.ingId, ri.tecnica, +ri.neto||0, r.porciones||1, false, null, ri);
       if(c && c.pesoUnitarioFalta){
         filas.push({ receta: r.nombre, ingrediente: ing.nombre });
       }
@@ -7567,12 +7636,14 @@ function renderEditorReceta(){
     }
 
     const ingObj = getIngrediente(ing.ingId);
-    const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, false);
+    const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, false, null, ing);
     if(c&&!c.error) merc += c.costo_porcion;
     // Mermas disponibles: si es del CP, incluir mermas del CP
     const todasMermas = getMermasDisponibles();
     const esCPIng = ing._esCP || false;
     const modoUsoCP = ing._modoUso || 'granel';
+    // Lo que el CP despacha porcionado se cuenta en porciones, no en gramos.
+    const porcionCP = !!(ingObj && ingObj._cpPorPorcion);
     return `<tr>
       <td>
         <select onchange="onChangeIngrediente(${idx},this.value)" style="min-width:180px">
@@ -7580,12 +7651,27 @@ function renderEditorReceta(){
         </select>
       </td>
       <td>
-        <select onchange="updIngReceta(${idx},'tecnica',this.value)" style="min-width:130px">
-          ${_opcionesTecnica(ingObj, ing.tecnica)}
-        </select>
+        ${porcionCP
+          ? `<span style="font-size:12px;color:var(--gris-2)">viene listo del CP</span>`
+          : `<select onchange="updIngReceta(${idx},'tecnica',this.value)" style="min-width:130px">
+              ${_opcionesTecnica(ingObj, ing.tecnica)}
+            </select>`}
       </td>
-      <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
-      <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.merma_pct)}%</span>`:c&&c.error?`<span class="calc calc-err" title="${c.error}">⚠ ${c.pesoUnitarioFalta?'falta el peso':'Sin merma'}</span>`:''}</td>
+      <td>
+        ${porcionCP ? `
+          <input type="text" inputmode="numeric" value="${ing.porcionesCP||''}" placeholder="1"
+            style="width:70px;text-align:right;${ing._revisarPorciones?'border-color:#B8540A;background:#FFF6EC':''}"
+            title="Cuántas porciones del CP lleva este plato. Una porción del CP no se parte: si necesitás otro gramaje, pedile al CP que publique ese porcionado."
+            onchange="updPorcionesCP(${idx}, this.value)">
+          <span style="font-size:11px;color:var(--gris-2)">${esc(_nombreUnidadCP(ingObj, ing.porcionesCP||1))}</span>
+          <div style="font-size:11px;color:${ing._revisarPorciones?'#B8540A':'var(--gris-2)'};margin-top:2px">
+            ${ing._revisarPorciones
+              ? `⚠ quedó en ${fmtD(+ing.porcionesCP||0,2)} — redondealo`
+              : `de ${fmtD(ingObj._gramosPorcion,0)} g · $${fmt(ingObj._precioPorcion)} c/u`}
+          </div>`
+        : `<input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))">`}
+      </td>
+      <td style="text-align:right">${porcionCP?'<span style="color:var(--gris-3)">—</span>':(c&&!c.error?`<span class="calc">${fmtD(c.merma_pct)}%</span>`:c&&c.error?`<span class="calc calc-err" title="${c.error}">⚠ ${c.pesoUnitarioFalta?'falta el peso':'Sin merma'}</span>`:'')}</td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.bruto_con_desperdicio||c.bruto)}g</span>`:''}</td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
       <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_total)}</span>`:''}</td>
@@ -7773,7 +7859,7 @@ function renderEditorReceta(){
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Ingrediente</th><th>Técnica</th><th style="text-align:right">Neto (g)</th>
+            <th>Ingrediente</th><th>Técnica</th><th style="text-align:right">Cantidad</th>
             <th style="text-align:right">Merma</th><th style="text-align:right">Bruto/p</th>
             <th style="text-align:right">Costo/p</th><th style="text-align:right">Costo total</th>
             <th style="text-align:right">Kg total</th><th></th>
@@ -8217,7 +8303,7 @@ function renderVarianteDelivery(r, mercSalon){
     mercDelivery = 0;
     d.ingredientes.forEach(ing=>{
       if(ing.esCondimento){ mercDelivery += 150*0.6; return; }
-      const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false);
+      const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false, null, ing);
       if(c && !c.error) mercDelivery += c.costo_porcion;
     });
   }
@@ -8273,7 +8359,7 @@ function renderVarianteDelivery(r, mercSalon){
             <tbody>
               ${d.ingredientes.map((ing,idx)=>{
                 if(ing.esCondimento) return `<tr style="background:var(--oliva-c)"><td colspan="3" style="color:var(--oliva);font-style:italic;font-size:13px">Condimentos básicos</td><td style="text-align:right;color:var(--oliva)">$${fmt(150*0.6)}</td><td><button class="btn btn-icon btn-sm" onclick="quitarIngDelivery(${idx})">✕</button></td></tr>`;
-                const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false);
+                const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false, null, ing);
                 const ingObj = getIngrediente(ing.ingId);
                 // Mermas disponibles: si es del CP, incluir mermas del CP
     const todasMermas = getMermasDisponibles();
@@ -8311,6 +8397,29 @@ function renderVarianteDelivery(r, mercSalon){
         </div>
       </div>` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">Activá la versión delivery para ver cuánto te deja realmente este plato cuando lo vendés por una app — con su comisión y su packaging descontados.</div>`}
     </div>`;
+}
+
+// Cuántas porciones del CP lleva el plato. Es un ENTERO: una porción del CP no
+// se parte (decisión de Javier, 25/8) — si el local necesita otro gramaje, el
+// CP tiene que publicar ese otro porcionado. En vez de dejar cargar 1,5 y
+// costear una fracción que en la práctica no existe, se redondea y se explica.
+function updPorcionesCP(idx, val){
+  const linea = recetaEditando && recetaEditando.ingredientes[idx];
+  if(!linea) return;
+  const crudo = num(val);
+  const entero = Math.max(1, Math.round(crudo || 0));
+  if(crudo > 0 && Math.abs(crudo - entero) > 0.001){
+    showToast('Una porción del CP no se parte — lo dejé en ' + entero
+      + '. Si el plato necesita otro gramaje, pedile al CP que publique ese porcionado.', 'info');
+  }
+  linea.porcionesCP = entero;
+  delete linea._revisarPorciones;
+  // Los gramos quedan al día para el stock y el pedido, pero NO son los que
+  // mandan en el precio: el costo sale del precio de transferencia por porción.
+  const ingObj = getIngrediente(linea.ingId);
+  linea.neto = entero * ((ingObj && +ingObj._gramosPorcion) || 0);
+  renderEditorReceta();
+  programarAutoguardadoReceta();
 }
 
 function updIngReceta(idx,field,val){
@@ -8359,8 +8468,17 @@ function onChangeIngrediente(idx, ingId){
   // ingrediente tiene una sola técnica real, esa; si no tiene ninguna, sin
   // merma. Dejarla vacía obligaba a un clic más en cada uno de los 245 platos.
   ing.tecnica = '';
+  delete ing.porcionesCP;
+  delete ing._revisarPorciones;
   const _io = getIngrediente(ingId);
   if(_io){
+    if(_io._cpPorPorcion){
+      // Viene porcionado del CP: la unidad de la línea es la porción, y una
+      // porción es lo que lleva por defecto. Nadie tiene que acordarse del
+      // gramaje que decidió el CP — ese es justo el error que esto evita.
+      ing.porcionesCP = 1;
+      ing.neto = +_io._gramosPorcion || 0;
+    }
     if(_io.proveedor === 'cp' || _io._origenCP || _io._esCP){
       ing.tecnica = SIN_MERMA;
     } else {
@@ -10764,7 +10882,7 @@ function _consolidarSemana(semana){
       if(!receta) return;
       receta.ingredientes.forEach(ing=>{
         if(ing.esCondimento) return;
-        const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, sel.porciones||120, false);
+        const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, sel.porciones||120, false, null, ing);
         if(!c||c.error) return;
         const ingObj = getIngrediente(ing.ingId);
         if(!ingObj) return;
@@ -12605,7 +12723,7 @@ async function registrarDesperdicio(){
     unidad = 'plato'+(cant>1?'s':'');
     const porciones = rec.porciones||1;
     (rec.ingredientes||[]).forEach(ri=>{
-      const calc = calcIngrediente(ri.ingId, ri.tecnica, ri.neto, 1, ri.esCondimento, ri.unidad);
+      const calc = calcIngrediente(ri.ingId, ri.tecnica, ri.neto, 1, ri.esCondimento, ri.unidad, ri);
       if(!calc || calc.error) return;
       costo += (calc.costo_porcion||0) * cant / porciones;
       if(!calc.esCondimento && calc.kg_total!=null){
@@ -13019,7 +13137,7 @@ function _sumarConsumoDeVentas(out, ventasDia, factor){
     if(!rec || !rec.ingredientes) return;
     const porcionesRec = rec.porciones || 1;
     rec.ingredientes.forEach(ri=>{
-      const calc = calcIngrediente(ri.ingId, ri.tecnica, ri.neto, 1, ri.esCondimento, ri.unidad);
+      const calc = calcIngrediente(ri.ingId, ri.tecnica, ri.neto, 1, ri.esCondimento, ri.unidad, ri);
       if(!calc || calc.error || calc.esCondimento) return;
       const ing = getIngrediente(ri.ingId);
       if(!ing) return;
@@ -13785,7 +13903,7 @@ function expandirMatrizConDelivery(km, mes){
         mercD = 0;
         d.ingredientes.forEach(ing=>{
           if(ing.esCondimento){ mercD += 150*0.6; return; }
-          const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false);
+          const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false, null, ing);
           if(c && !c.error) mercD += c.costo_porcion;
         });
       }
@@ -18966,7 +19084,7 @@ function renderDesvios(){
       if(!receta) return;
       receta.ingredientes.forEach(ing=>{
         if(ing.esCondimento) return;
-        const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, sel.porciones||120, false);
+        const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, sel.porciones||120, false, null, ing);
         if(!c||c.error) return;
         const ingObj = getIngrediente(ing.ingId);
         if(!ingObj) return;
@@ -19764,7 +19882,7 @@ function getOnboardingContent(paso){
               ${r.ingredientes.filter(i=>!i.esCondimento).slice(0,4).map(ing=>{
                 const ingObj = getIngrediente(ing.ingId);
                 if(!ingObj) return '';
-                const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, false);
+                const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, porciones, false, null, ing);
                 if(!c||c.error) return '';
                 return `<div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.8);padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.1)">
                   <span>${esc(ingObj.nombre)}</span>
