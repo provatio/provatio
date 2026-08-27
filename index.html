@@ -3888,14 +3888,52 @@ async function completarRegistro(email, pass){
   }
 }
 
-function logout(){
-  auth.signOut().then(()=>{
-    document.getElementById('app').style.display = 'none';
-    document.getElementById('auth-screen').style.display = 'flex';
-    currentUser = null;
-    // Limpiar datos en memoria
-    demoData.recetas = demoData.recetas.filter(r=>r.opId==='op-patagonia');
-  });
+// ═══════════════════════════════════════════════════════════════════════════
+// CERRAR SESIÓN — se va TODO, no solo la sesión
+// ═══════════════════════════════════════════════════════════════════════════
+// Esta función dejaba media sesión adentro: cerraba en Firebase, ponía
+// currentUser en null y filtraba las recetas… pero se quedaba con
+// demoData.operaciones, los ingredientes, las mermas, currentOpId y la caché
+// local de Firestore, y NO recargaba la página.
+//
+// Con eso, entrar después con otra cuenta en la misma computadora mezclaba dos
+// sesiones: Javier entró con la cuenta de su hija y se encontró con el panel de
+// la plataforma —con datos que el admin había leído antes, servidos desde la
+// caché local— y con sus 49 recetas "desaparecidas", porque currentOpId
+// apuntaba a una operación de la sesión anterior. Los datos nunca se perdieron:
+// la pantalla estaba filtrando por la operación equivocada.
+//
+// Las reglas de Firestore no tuvieron nada que ver: no dejan que un cliente lea
+// otras empresas. Lo que se veía ya estaba guardado en ESA computadora.
+//
+// Al lado había otra salida —el cierre por inactividad— que sí hacía lo
+// correcto: guardar y recargar. Dos caminos para lo mismo, uno bien y otro mal;
+// el de siempre. Ahora los dos hacen lo mismo.
+async function logout(){
+  // 1. No perder trabajo cargado.
+  try{
+    if(currentUser && currentOpId) await guardarEnFirestore();
+  }catch(e){ console.warn('[Provatio] no se pudo guardar antes de cerrar sesión', e); }
+
+  // 2. Cerrar en Firebase.
+  try{ await auth.signOut(); }catch(e){ console.warn('[Provatio] signOut', e); }
+
+  // 3. Borrar la caché local de Firestore. Esa caché NO está separada por
+  //    usuario: si no se limpia, la próxima persona que entre en esta máquina
+  //    puede recibir documentos que leyó la anterior. Firebase recomienda
+  //    hacerlo justamente al cerrar sesión.
+  try{
+    await db.terminate();
+    await db.clearPersistence();
+  }catch(e){
+    // Falla si quedan otras pestañas abiertas con la app. No es motivo para
+    // dejar la sesión a medio cerrar: se recarga igual y se avisa por consola.
+    console.warn('[Provatio] no se pudo limpiar la caché local (¿otra pestaña abierta?)', e);
+  }
+
+  // 4. Recargar. Es la única forma de garantizar que no quede nada en memoria:
+  //    ni operaciones, ni ingredientes, ni la operación activa.
+  location.reload();
 }
 
 function showAuthError(msg){
@@ -4858,6 +4896,14 @@ function navigate(vista, params={}){
   if(esNivelCocina() && ['rentabilidad','resultado','evento','desvios'].includes(vista)){
     vista = 'dashboard';
   }
+  // ── LAS VISTAS DEL EQUIPO DE PROVATIO NO SE ABREN DESDE UNA CUENTA CLIENTE ──
+  // Cada una de estas pantallas ya tiene su propia guarda, pero la puerta va
+  // también acá: es el único lugar por el que se pasa siempre, y así una
+  // pantalla nueva no nace desprotegida por olvido.
+  if(['adminProvatio','equipoProvatio','clientes'].includes(vista) && !esAdminProvatio()){
+    vista = 'dashboard';
+  }
+
   // Un CP no tiene food cost ni punto de equilibrio de local. Si alguien llega
   // a esas vistas por un enlace viejo o por el historial del navegador, se lo
   // manda a la pantalla que sí contesta su pregunta.
@@ -4982,6 +5028,44 @@ function renderDashboard(){
 
 // ── ARRANQUE — bienvenida post-activación para el cliente nuevo ──
 // (Acá va después el video de bienvenida; por ahora, texto + acción.)
+// Qué ver cuando no hay operación activa. Antes, las pantallas que se topaban
+// con esto llamaban al panel del admin — una salida de emergencia pensada para
+// el equipo de Provatio, que efectivamente no tiene operación propia. Para un
+// cliente eso era mostrarle la pantalla equivocada, y encima con datos de otros.
+//
+// Lo correcto, para un cliente, es lo que ya hacía getRecetas() cuando perdía
+// la referencia: si tiene una sola operación, es obvio cuál — se entra a esa.
+// Si tiene varias, se le pide que elija. Si no tiene ninguna, la de arranque.
+function _panelSinOperacion(){
+  if(esAdminProvatio()){ renderDashboardAdmin(); return; }
+  const ops = Object.keys(demoData.operaciones || {});
+  if(ops.length === 1){
+    currentOpId = ops[0];
+    buildSidebar((currentUser && currentUser.rol) || 'cliente');
+    renderDashboardOperacion();
+    return;
+  }
+  if(ops.length > 1){
+    setContent('Elegí con cuál trabajar', `
+      <div class="alert alert-info" style="margin-bottom:16px">
+        Tenés ${ops.length} operaciones. Elegí una para abrirla.
+      </div>
+      ${ops.map(id=>{
+        const o = demoData.operaciones[id] || {};
+        return `<div class="card" style="margin-bottom:10px">
+          <div class="card-header">
+            <span class="card-title">${esc(o.nombre || id)}
+              <span style="font-weight:400;font-size:12px;color:var(--gris-2)"> · ${esc(o.tipo||'')}</span></span>
+            <button class="btn btn-primary btn-sm" onclick="abrirOperacion('${escJs(id)}')">Abrir →</button>
+          </div>
+        </div>`;
+      }).join('')}
+    `);
+    return;
+  }
+  renderArranque();
+}
+
 function renderArranque(){
   const nombre = (currentUser && (currentUser.displayName || currentUser.email||'').split('@')[0]) || '';
   setContent('¡Bienvenido!', `
@@ -5326,6 +5410,23 @@ async function quitarDelEquipoProvatio(mail){
 }
 
 async function renderDashboardAdmin(){
+  // ── ESTA PANTALLA ES DEL EQUIPO DE PROVATIO, DE NADIE MÁS ───────────────
+  // Lee la lista completa de cuentas y de empresas: nombres y mails de TODOS
+  // los clientes. Javier entró con la cuenta de Lucía —una clienta— y se
+  // encontró con este panel a la vista.
+  //
+  // La causa: cuatro pantallas hacían `if(!op) renderDashboardAdmin()` como
+  // salida de emergencia cuando no había operación activa. Ese atajo se
+  // escribió pensando en el admin (que efectivamente no tiene operación) y
+  // terminó mandando acá a cualquier cliente que llegara sin operación
+  // cargada en memoria. renderDashboard() sí preguntaba por el rol; las otras
+  // cuatro, no. Ahora la puerta se cierra ACÁ, que es donde tiene que estar:
+  // aunque alguien llegue por un camino que todavía no vimos, no entra.
+  if(!esAdminProvatio()){
+    console.warn('[Provatio] acceso al panel de plataforma bloqueado para', (currentUser&&currentUser.email)||'sin sesión');
+    _panelSinOperacion();
+    return;
+  }
   setContent('Panel general', '<div style="padding:24px;color:var(--gris-2)">Leyendo el universo Provatio…</div>');
 
   let cuentas = [], empresas = [];
@@ -5570,7 +5671,7 @@ function admFiltrarClientes(txt){
 // ── DASHBOARD DE OPERACIÓN — rentabilidad por receta ──
 function renderDashboardOperacion(){
   const op = getOp();
-  if(!op){ renderDashboardAdmin(); return; }
+  if(!op){ _panelSinOperacion(); return; }
   const _cpDash = esCentroProduccion();
 
   // Dashboard especial para Centro de Producción
@@ -10919,7 +11020,7 @@ function _consolidarSemana(semana){
 
 function renderSemanal(){
   const op = getOp();
-  if(!op){ renderDashboardAdmin(); return; }
+  if(!op){ _panelSinOperacion(); return; }
   const vista = window._planVista || 'semana';
   setContent('Planificación semanal', `
     <div class="tabs">
@@ -11075,7 +11176,7 @@ async function limpiarSemana(){
 // ══════════════════════════════════════════════════════════════════════
 function renderPedidoSugerido(){
   const op = getOp();
-  if(!op){ renderDashboardAdmin(); return; }
+  if(!op){ _panelSinOperacion(); return; }
 
   // ¿Esta operación es una sucursal vinculada a un CP/casa madre?
   const cpVinculado = (op.grupoId && demoData.operaciones[op.grupoId]) ? demoData.operaciones[op.grupoId] : null;
@@ -13307,7 +13408,7 @@ function getGastosFijos(){
 
 function renderResultado(){
   const op = getOp();
-  if(!op){ renderDashboardAdmin(); return; }
+  if(!op){ _panelSinOperacion(); return; }
   const gastos = getGastosFijos();
   const totalFijos = gastos.reduce((s,g)=>s+(+g.monto||0),0);
   const dias = op.diasOperativos || 26;
@@ -13559,7 +13660,7 @@ function renderResultado(){
             <table>
               <thead><tr><th>Receta</th><th style="text-align:right">Precio venta</th><th style="text-align:right">Margen/porción</th><th style="text-align:right;width:110px">${getOp().tieneDelivery?'Ventas salón':'Unidades vendidas'}</th>${getOp().tieneDelivery?'<th style="text-align:right;width:110px;color:var(--dorado)">Ventas delivery</th>':''}</tr></thead>
               <tbody>
-                ${[...km.items].sort((a,b)=>{
+                ${(()=>{ const _hayDiarias = _mesTieneVentasDiarias(mesSel); return [...km.items].sort((a,b)=>{
                   const ord=['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
                   const ta=ord.indexOf(a.tipoPlato), tb=ord.indexOf(b.tipoPlato);
                   return (ta===-1?99:ta)-(tb===-1?99:tb) || a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'});
@@ -13571,10 +13672,13 @@ function renderResultado(){
                   <td><strong>${esc(i.nombre)}</strong></td>
                   <td style="text-align:right">$${fmt(i.pv)}</td>
                   <td style="text-align:right">$${fmt(i.mc)}</td>
-                  <td style="text-align:right"><input type="text" inputmode="decimal" min="0" value="${i.unid||''}" placeholder="0" style="width:90px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)"></td>
+                  <td style="text-align:right">${_hayDiarias
+                    ? `<span title="Sale de las ventas cargadas día por día — el dato exacto. No se edita acá para no pisarlo con una estimación.">${fmtD(i.unid,0)}</span>
+                       <span style="display:block;font-size:10px;color:var(--gris-2)">de las ventas diarias</span>`
+                    : `<input type="text" inputmode="decimal" min="0" value="${i.unid||''}" placeholder="0" style="width:90px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)">`}</td>
                   ${getOp().tieneDelivery ? `<td style="text-align:right">${tieneDelivery ? `<input type="text" inputmode="decimal" min="0" value="${ventasMes[i.id+'_dlv']||''}" placeholder="0" style="width:90px;text-align:right;border-color:var(--dorado)" onchange="updVentaReceta('${mesSel}','${i.id}_dlv',this.value)">` : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>` : ''}
                 </tr>`;
-                }).join('')}
+                }).join(''); })()}
               </tbody>
             </table>
           </div>
@@ -13881,9 +13985,59 @@ const CLASES_MENU = {
   perro:     {nombre:'Perro',               col:'#8B1A1A', consejo:'Ni se vende ni deja margen: candidata a salir de la carta o reformularse por completo.'},
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CUÁNTO SE VENDIÓ DE CADA RECETA EN UN MES — un solo lugar que lo conteste
+// ═══════════════════════════════════════════════════════════════════════════
+// Las ventas viven en DOS cajones: `ventasPorDia` (importar ventas diarias, el
+// dato exacto) y `ventasPorMes` (importar el resumen del mes, o cargarlo a
+// mano). El motor de desvío de stock ya sabía usar los dos —el día exacto si
+// está, el promedio del mes si no— pero la matriz de ingeniería de menú y
+// Salud del negocio leían SOLO el mensual. Consecuencia: alguien cargaba el
+// detalle diario, que es el camino más preciso, y esas dos pantallas le
+// quedaban VACÍAS sin decir por qué. Los datos estaban; las pantallas los
+// buscaban en el otro cajón.
+//
+// Mismo criterio que _consumoTeoricoPeriodo, para que las dos partes del
+// sistema cuenten lo mismo: cada día vale por su dato exacto si lo tiene, y si
+// no, por la parte proporcional del mes. Sin dato diario devuelve el mensual
+// tal cual, así que nada de lo que ya andaba cambia.
+function unidadesVendidasMes(mes){
+  const op = getOp();
+  const out = {};
+  if(!op || !mes) return out;
+  const porDia = op.ventasPorDia || {};
+  const porMes = (op.ventasPorMes || {})[mes] || {};
+  const n = _diasEnMes(mes);
+  let diasConDato = 0;
+  for(let d = 1; d <= n; d++){
+    const iso = mes + '-' + String(d).padStart(2, '0');
+    if(!porDia[iso]) continue;
+    diasConDato++;
+    Object.keys(porDia[iso]).forEach(id => {
+      out[id] = (out[id] || 0) + (+porDia[iso][id] || 0);
+    });
+  }
+  const diasSin = n - diasConDato;
+  if(diasSin > 0){
+    Object.keys(porMes).forEach(id => {
+      out[id] = (out[id] || 0) + (+porMes[id] || 0) * diasSin / n;
+    });
+  }
+  return out;
+}
+
+// ¿Este mes tiene ventas cargadas día por día? Si las tiene, el número que se
+// muestra NO se edita a mano: sale del detalle diario, y dejar un campo
+// editable al lado invitaría a pisar el dato bueno con uno estimado.
+function _mesTieneVentasDiarias(mes){
+  const op = getOp();
+  const porDia = (op && op.ventasPorDia) || {};
+  return Object.keys(porDia).some(iso => iso.slice(0,7) === mes);
+}
+
 function clasificarMenu(mes){
   const op = getOp();
-  const ventas = (op.ventasPorMes||{})[mes] || {};
+  const ventas = unidadesVendidasMes(mes);
   const items = demoData.recetas
     .filter(r=>r.opId===op.id && r.precioVenta>0)
     .map(r=>{
@@ -13911,7 +14065,7 @@ function expandirMatrizConDelivery(km, mes){
   try {
     const op = getOp();
     if(!op || !op.tieneDelivery || !km || !km.listo) return km;
-    const ventas = (op.ventasPorMes||{})[mes] || {};
+    const ventas = unidadesVendidasMes(mes);
     const extra = [];
     (demoData.recetas||[]).filter(r=>r.opId===op.id && r.precioVenta>0 && r.delivery && r.delivery.activa).forEach(r=>{
       const unidD = +ventas[r.id+'_dlv'] || 0;
@@ -14551,7 +14705,10 @@ function renderRentabilidad(){
 
 // ── CLIENTES (admin only) ──
 async function cargarUsuariosFirebase(){
-  if(!currentUser || currentUser.rol !== 'admin') return [];
+  // Se pregunta por el equipo de Provatio, NO por el campo 'rol': ese campo
+  // quedó mal escrito en cuentas viejas, y acá se lee la lista completa de
+  // cuentas de la plataforma. Es el mismo criterio que ya usa renderDashboard().
+  if(!esAdminProvatio()) return [];
   try {
     const snap = await db.collection('usuarios').get();
     const usuarios = [];
@@ -19997,10 +20154,26 @@ document.addEventListener('keydown', e=>{
 
 // ── FIREBASE AUTH STATE ──
 // Detecta si ya hay una sesión activa al abrir la app
-auth.onAuthStateChanged(firebaseUser => {
-  if(firebaseUser && !currentUser){
-    cargarUsuarioFirebase(firebaseUser);
-  }
+auth.onAuthStateChanged(async firebaseUser => {
+  if(!firebaseUser || currentUser) return;
+  // ── SI CAMBIÓ LA PERSONA, SE ARRANCA LIMPIO ─────────────────────────────
+  // Cinturón para el caso de arriba: aunque alguien haya cerrado sesión mal
+  // (una pestaña vieja, un cierre a la fuerza, una versión anterior de la app),
+  // entrar con otra cuenta en esta computadora no puede heredar la caché de la
+  // anterior. Se limpia una sola vez y se recarga: después de recargar, el uid
+  // guardado ya coincide y no vuelve a pasar.
+  try{
+    const _ultimo = localStorage.getItem('provatio_uid');
+    if(_ultimo && _ultimo !== firebaseUser.uid){
+      localStorage.setItem('provatio_uid', firebaseUser.uid);
+      console.warn('[Provatio] cambió la cuenta en esta máquina — se limpia la caché local');
+      try{ await db.terminate(); await db.clearPersistence(); }catch(e){ console.warn(e); }
+      location.reload();
+      return;
+    }
+    localStorage.setItem('provatio_uid', firebaseUser.uid);
+  }catch(_){ /* sin localStorage: se sigue igual */ }
+  cargarUsuarioFirebase(firebaseUser);
 });
 
 // ═══════════════════════════════════════════════════════════════════════
