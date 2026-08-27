@@ -1087,6 +1087,7 @@ input:focus, select:focus, textarea:focus {
       <button class="btn btn-icon hamburger-btn" onclick="toggleSidebar()" title="Menú" style="display:none">
         ☰
       </button>
+      <span id="topbar-volver"></span>
       <div class="topbar-title" id="topbar-title">—</div>
       <div id="topbar-actions"></div>
       <button class="btn btn-secondary btn-sm" id="btn-guardar-top" onclick="guardarEnFirestore()">
@@ -3659,7 +3660,7 @@ async function cargarUsuarioFirebase(firebaseUser){
     // un cliente que abre la app y no toca nada figuraba en cero en el panel
     // de Provatio — y desde las reglas v6 no hay forma de ir a mirar.
     if(tieneDatos) actualizarResumenEmpresa();
-    navigate('dashboard');
+    _navegarAlArranque();
     if(tieneDatos){
       showToast('Datos cargados desde la nube', 'success');
     }
@@ -3931,9 +3932,11 @@ async function logout(){
     console.warn('[Provatio] no se pudo limpiar la caché local (¿otra pestaña abierta?)', e);
   }
 
-  // 4. Recargar. Es la única forma de garantizar que no quede nada en memoria:
-  //    ni operaciones, ni ingredientes, ni la operación activa.
-  location.reload();
+  // 4. Recargar SIN el hash: si quedara, la próxima persona entraría a la
+  //    pantalla donde estaba trabajando la anterior. Y es la única forma de
+  //    garantizar que no quede nada en memoria: ni operaciones, ni
+  //    ingredientes, ni la operación activa.
+  location.replace(location.pathname + location.search);
 }
 
 function showAuthError(msg){
@@ -4020,8 +4023,8 @@ function initApp(user){
     if(chefBtn) chefBtn.style.display = 'flex';
   }, 500);
   
-  // Vista inicial
-  navigate('dashboard');
+  // Vista inicial: la que traiga la URL, o el panel.
+  _navegarAlArranque();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -4885,7 +4888,116 @@ async function abrirOperacion(opId){
   navigate('operacion');
 }
 
-function navigate(vista, params={}){
+// ═══════════════════════════════════════════════════════════════════════════
+// EL BOTÓN "ATRÁS" — la app participa del historial del navegador
+// ═══════════════════════════════════════════════════════════════════════════
+// Hasta acá la app no tocaba el historial: la URL decía siempre "provatio.io"
+// sin importar en qué pantalla estuvieras. Para el navegador nunca navegabas a
+// ningún lado, así que la flecha de volver te sacaba del sistema.
+//
+// En la computadora es molesto. En la app instalada en un celular es peor: ahí
+// NO hay flecha, el gesto de deslizar es el único "atrás" que existe, y ese
+// gesto cerraba Provatio. Un encargado en la cocina, con las manos ocupadas,
+// se quedaba afuera de la nada.
+//
+// Se resuelve haciendo que cada pantalla quede registrada, con hash
+// (provatio.io/#/stock). Con hash no hay que configurar nada en el servidor y
+// funciona igual en la app instalada. De regalo: F5 te deja donde estabas en
+// vez de mandarte al panel, y el botón "← Volver" pasa a ser uno solo, que
+// aparece cuando de verdad hay a dónde volver, en lugar de seis puestos a mano.
+//
+// Las tres cosas delicadas, resueltas:
+//  1. NO ENTRAR EN BUCLE. Cuando la navegación viene del botón atrás, no se
+//     vuelve a apilar (opts.desdeHistorial).
+//  2. LA URL MUESTRA LA PANTALLA FINAL, NO LA PEDIDA. El registro se hace
+//     DESPUÉS de las guardas: si un CP pide "rentabilidad" y se lo manda a
+//     "demandaCP", en el historial queda demandaCP. Si no, volver atrás
+//     reintentaría una pantalla que no le corresponde, para siempre.
+//  3. LA PRIMERA PANTALLA REEMPLAZA, NO APILA. Si apilara, volver atrás desde
+//     el panel te dejaría en una entrada vacía y nunca podrías salir del sitio.
+
+let _navProfundidad = 0;          // cuántas pantallas hay detrás, dentro de la app
+let _navIniciado    = false;      // ¿ya se registró la primera pantalla de esta sesión?
+let _navRestaurando = false;      // evita que el arranque apile de más
+
+// Solo estas dos vistas llevan un dato en la URL. El resto son pantallas sueltas.
+const _VISTAS_CON_ID = ['fichaPlato', 'editorReceta'];
+
+function _hashDeRuta(vista, params){
+  const id = params && params.id;
+  return '#/' + vista + ((_VISTAS_CON_ID.includes(vista) && id) ? '/' + encodeURIComponent(id) : '');
+}
+
+function _rutaDesdeHash(){
+  const h = (location.hash || '').replace(/^#\/?/, '');
+  if(!h) return null;
+  const partes = h.split('/');
+  const vista = partes[0];
+  if(!vista) return null;
+  const id = partes[1] ? decodeURIComponent(partes[1]) : null;
+  return { vista, params: id ? {id} : {} };
+}
+
+function _registrarEnHistorial(vista, params){
+  const hash = _hashDeRuta(vista, params);
+  try{
+    if(location.hash === hash) return;               // misma pantalla: no duplicar
+    const estado = { vista, params: params || {}, prof: _navProfundidad + 1 };
+    if(!_navIniciado || _navRestaurando){
+      // La primera pantalla de la sesión REEMPLAZA la entrada de arranque, así
+      // desde el panel la flecha de volver sale del sitio, como corresponde.
+      //
+      // OJO con la condición: preguntar por _navProfundidad === 0 parece lo
+      // mismo y NO lo es. La profundidad vuelve a 0 cada vez que se retrocede
+      // hasta el panel, así que con esa pregunta TODA navegación posterior
+      // seguía reemplazando en vez de apilar, y el botón atrás no funcionaba
+      // nunca. Lo que hay que preguntar es si ya se registró la primera
+      // pantalla de la sesión, que es otra cosa.
+      history.replaceState({ ...estado, prof: 0 }, '', hash);
+      _navProfundidad = 0;
+      _navIniciado = true;
+    } else {
+      history.pushState(estado, '', hash);
+      _navProfundidad++;
+    }
+  }catch(e){ console.warn('[Provatio] no se pudo registrar la pantalla en el historial', e); }
+}
+
+// La flecha del navegador (o el gesto del celular) manda acá.
+window.addEventListener('popstate', ev => {
+  if(!currentUser) return;                    // sin sesión: que el navegador haga lo suyo
+  const est = (ev.state && ev.state.vista) ? ev.state : _rutaDesdeHash();
+  if(!est || !est.vista) return;
+  _navProfundidad = (ev.state && typeof ev.state.prof === 'number') ? ev.state.prof : 0;
+  // Salir del editor de receta por el botón atrás no puede perder lo tipeado:
+  // se sube lo pendiente igual que al tocar "← Volver".
+  if(recetaEditando){
+    try{ _ejecutarAutoguardadoReceta(); }catch(_){}
+    recetaEditando = null;
+    try{ limpiarBorradorEditor(); }catch(_){}
+  }
+  if(est.vista === 'editorReceta' && est.params && est.params.id){
+    editarReceta(est.params.id, { desdeHistorial: true });
+    return;
+  }
+  navigate(est.vista, est.params || {}, { desdeHistorial: true });
+});
+
+// Al entrar: si la URL trae una pantalla, se abre esa. Si no, el panel.
+// Así recargar con F5 te deja donde estabas trabajando.
+function _navegarAlArranque(){
+  const r = _rutaDesdeHash();
+  _navProfundidad = 0;
+  _navIniciado = false;
+  if(!r){ navigate('dashboard'); return; }
+  _navRestaurando = true;
+  try{
+    if(r.vista === 'editorReceta' && r.params.id) editarReceta(r.params.id, { desdeHistorial: true });
+    else navigate(r.vista, r.params);
+  } finally { _navRestaurando = false; }
+}
+
+function navigate(vista, params={}, opts={}){
   if(esDarkKitchen() && currentUser?.rol!=='admin' && ['semanal','evento','buffet','compras'].includes(vista)){
     setContent('Vista no disponible', `<div class="alert alert-warn" style="margin-top:20px">
       Esta vista no aplica para operaciones Dark Kitchen.
@@ -4912,6 +5024,11 @@ function navigate(vista, params={}){
   }
   if(!esCentroProduccion() && vista === 'demandaCP') vista = 'dashboard';
   vistaActual = vista;
+
+  // Recién ACÁ se registra: con la vista ya resuelta por las guardas de arriba.
+  // Si viene del botón atrás, no se vuelve a apilar.
+  if(!(opts && opts.desdeHistorial)) _registrarEnHistorial(vista, params);
+
   
   // Actualizar nav activo
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
@@ -5001,6 +5118,14 @@ function setContent(titulo, html, acciones=''){
   const _bg = document.getElementById('btn-guardar-top');
   if(_bg) _bg.style.display = currentOpId ? '' : 'none';
   document.getElementById('topbar-title').textContent = titulo;
+  // "← Volver" aparece solo cuando hay una pantalla anterior DENTRO de la app.
+  // En el panel de arranque no aparece, porque ahí volver es salir del sistema.
+  const _bv = document.getElementById('topbar-volver');
+  if(_bv){
+    _bv.innerHTML = (_navProfundidad > 0)
+      ? `<button class="btn btn-secondary btn-sm" style="margin-right:10px" title="Volver a la pantalla anterior" onclick="history.back()">← Volver</button>`
+      : '';
+  }
   document.getElementById('topbar-actions').innerHTML = acciones;
   document.getElementById('main-content').innerHTML = html;
 }
@@ -7434,7 +7559,11 @@ async function salirEditorReceta(){
   }
   recetaEditando = null;
   limpiarBorradorEditor();
-  renderRecetas();
+  // Retroceder en vez de navegar hacia adelante: si no, cada entrada y salida
+  // del editor dejaría una entrada más en el historial y volver atrás te haría
+  // recorrer todas las recetas que abriste.
+  if(_navProfundidad > 0) history.back();
+  else navigate('recetas');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -7637,7 +7766,16 @@ function nuevaReceta(){
   renderEditorReceta();
 }
 
-function editarReceta(id){
+function editarReceta(id, opts){
+  // El editor es una pantalla como cualquier otra: queda en el historial con su
+  // propia URL. Así el botón atrás (y el gesto del celular) salen del editor en
+  // vez de salir de Provatio, y recargar con F5 te devuelve a la misma receta.
+  if(!(opts && opts.desdeHistorial)){
+    vistaActual = 'editorReceta';
+    _registrarEnHistorial('editorReceta', {id});
+  } else {
+    vistaActual = 'editorReceta';
+  }
   _reiniciarAutoguardadoReceta();
   // Antes de abrir: si esta receta todavía usa las formas viejas de referirse a
   // un insumo del CP, se convierten (ver migrarInsumosCPaIngredientes). Así el
@@ -8301,7 +8439,6 @@ function renderFichaPlato(id){
   setContent(receta.nombre || 'Ficha de plato', `
     <div class="ficha-plato">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-      <button class="btn btn-secondary btn-sm" onclick="navigate('recetas')">← Volver</button>
       ${esLoteCP ? '' : badgeLinea(receta.tipoServicio)}
       ${(receta.tipoPlato && !esLoteCP) ? `<span class="badge badge-gray">${esc(receta.tipoPlato)}</span>` : ''}
       <span style="font-size:12px;color:var(--gris-2)">${esLoteCP
