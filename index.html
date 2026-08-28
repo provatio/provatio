@@ -1606,6 +1606,27 @@ async function guardarEnFirestore(opts){
     if(!_silencioso) showToast('Abrí una operación para poder guardar sus datos','info');
     return false;
   }
+  // ── NO RESUCITAR UNA OPERACIÓN QUE YA NO EXISTE ────────────────────────
+  // Más abajo esto hace un .set() sobre operaciones/{currentOpId}, y .set()
+  // CREA el documento si no está. O sea: alcanzaba con que currentOpId
+  // apuntara a una operación borrada para que el próximo guardado la volviera
+  // a crear en Firestore. Y como el editor de recetas autoguarda solo cada dos
+  // segundos, no hacía falta que nadie tocara "Guardar".
+  //
+  // Así vuelve un fantasma un mes después de haberlo borrado: Javier borró
+  // "Campamento Petrolero" —el borrado funciona bien, borra el documento de
+  // verdad— pero en algún dispositivo quedó apuntado como operación activa, y
+  // el primer autoguardado la escribió de nuevo.
+  //
+  // Una operación se crea desde "Nueva operación", que la deja en memoria
+  // antes de guardar. Si no está en memoria, esto NO es una creación
+  // legítima: es una resurrección, y se corta acá.
+  if(!demoData.operaciones || !demoData.operaciones[currentOpId]){
+    console.warn('[Provatio] guardado abortado: currentOpId no corresponde a ninguna operación cargada:', currentOpId);
+    if(!_silencioso) showToast('La operación que estabas usando ya no existe. No guardé nada para no volver a crearla.','error');
+    currentOpId = null;
+    return false;
+  }
   const uid = currentUser.uid;
 
   // Lock con vencimiento: si un guardado quedó colgado, a los 20s se libera solo
@@ -1682,7 +1703,7 @@ async function guardarEnFirestore(opts){
     // ~95 KB de datos entran holgados en el límite de 1 MB por documento.
     const recetasOp = getRecetas();
     // ── Propagar ingredientes y mermas nuevos al CP ──────────────────────────
-    const opActual = demoData.operaciones[currentOpId] || {};
+    const opActual = demoData.operaciones[currentOpId];   // garantizada arriba
     if(opActual.grupoId && demoData.operaciones[opActual.grupoId]){
       const cp = demoData.operaciones[opActual.grupoId];
       if(!cp._datos) cp._datos = {ingredientes:[], mermas:[], recetas:[], eventos:[]};
@@ -16508,7 +16529,9 @@ async function delOperacion(id){
 
   const eid = getEmpresaId();
 
-  delete demoData.operaciones[id];
+  // Primero la nube, después la memoria. Al revés —como estaba— si el borrado
+  // en la nube fallaba, la operación ya había desaparecido de la pantalla: el
+  // sistema decía una cosa y la base tenía otra, hasta la próxima recarga.
   if(currentUser){
     try {
       if(eid){
@@ -16518,6 +16541,9 @@ async function delOperacion(id){
       }
     } catch(err){ showToast('No se pudo eliminar de la nube: '+err.message,'error'); return; }
   }
+  delete demoData.operaciones[id];
+  // Soltar la referencia SIEMPRE que apunte a la borrada — si quedara puesta,
+  // el próximo guardado la recrearía.
   if(currentOpId===id) currentOpId = null;
 
   // ── Poka-yoke: si la empresa quedó SIN operaciones, ofrecer limpiarla entera ──
