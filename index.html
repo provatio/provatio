@@ -933,6 +933,81 @@ input:focus, select:focus, textarea:focus {
   table { font-size: 12px; }
   th, td { padding: 8px; }
   .modal { max-width: 100%; margin: 0 8px; }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     EL EDITOR DE RECETAS EN EL CELULAR — tarjetas, no una tabla de 9 columnas
+     ═══════════════════════════════════════════════════════════════════════
+     En un teléfono de 400 px, nueve columnas no entran ni achicándolas: la
+     tabla scrolleaba de costado y tapaba justo la primera columna, la del
+     nombre. Javier vio siete filas que decían "Sin merma" y ninguna con
+     ingrediente. El riesgo no es estético: se puede cambiar el gramaje de la
+     fila equivocada sin notarlo.
+     (Se destapó con el arreglo del 24/8 que le dio todo el ancho al editor.
+     Se corrigió un problema y se abrió otro un nivel más abajo.)
+
+     Cada fila pasa a ser una tarjeta. NO se oculta ningún dato —eso iría
+     contra el principio de la casa— se reordena: arriba el nombre; debajo
+     técnica y cantidad, que es lo que se toca; después el costo por porción;
+     y al pie, en letra chica, merma, bruto, total y kilos.
+
+     Las filas son LAS MISMAS del escritorio: cada celda lleva su data-col y
+     acá se la reubica. No hay una segunda versión del editor que mantener,
+     que es como nacen las diferencias entre lo que se ve en la compu y en el
+     celular. */
+  .tabla-ingredientes { table-layout: auto; }
+  .tabla-ingredientes thead { display: none; }
+  .tabla-ingredientes, .tabla-ingredientes tbody { display: block; width: 100%; }
+  .tabla-ingredientes tbody tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+    border: 1px solid var(--crema-2); border-radius: 10px;
+    padding: 10px; margin-bottom: 10px; background: var(--blanco);
+  }
+  .tabla-ingredientes tbody tr:nth-child(even) td,
+  .tabla-ingredientes tbody tr:hover td { background: transparent; }
+  .tabla-ingredientes td { display: block; border: none; padding: 0; }
+  /* Una celda vacía en una tabla no molesta; como tarjeta deja un hueco. */
+  .tabla-ingredientes td:empty { display: none; }
+
+  .tabla-ingredientes td[data-col="ingrediente"] {
+    flex: 1 1 60%; order: 1; font-size: 14px; font-weight: 700;
+  }
+  .tabla-ingredientes td[data-col="ingrediente"] select { width: 100%; font-size: 14px; }
+  .tabla-ingredientes td[data-col="quitar"] { flex: 0 0 auto; order: 2; margin-left: auto; }
+
+  .tabla-ingredientes td[data-col="tecnica"]  { flex: 1 1 46%; order: 3; }
+  .tabla-ingredientes td[data-col="cantidad"] { flex: 1 1 46%; order: 4; }
+  .tabla-ingredientes td[data-col="tecnica"] select,
+  .tabla-ingredientes td[data-col="cantidad"] input { width: 100%; min-width: 0; }
+  .tabla-ingredientes td[data-col="tecnica"]::before,
+  .tabla-ingredientes td[data-col="cantidad"]::before,
+  .tabla-ingredientes td[data-col="costo"]::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--gris-2); margin-bottom: 2px;
+  }
+  .tabla-ingredientes td[data-col="tecnica"]::before  { content: 'Técnica'; }
+  .tabla-ingredientes td[data-col="cantidad"]::before { content: 'Cantidad'; }
+  .tabla-ingredientes td[data-col="costo"]::before    { content: 'Costo por porción'; }
+
+  .tabla-ingredientes td[data-col="costo"] {
+    flex: 1 1 100%; order: 5; text-align: left !important; font-size: 15px; font-weight: 700;
+  }
+
+  /* La letra chica del pie: informa, no se toca. */
+  .tabla-ingredientes td[data-col="merma"],
+  .tabla-ingredientes td[data-col="bruto"],
+  .tabla-ingredientes td[data-col="total"],
+  .tabla-ingredientes td[data-col="kg"] {
+    flex: 0 0 auto; order: 6; text-align: left !important;
+    font-size: 11px; color: var(--gris-2);
+  }
+  .tabla-ingredientes td[data-col="merma"]::before { content: 'merma '; }
+  .tabla-ingredientes td[data-col="bruto"]::before { content: 'bruto '; }
+  .tabla-ingredientes td[data-col="total"]::before { content: 'total '; }
+  .tabla-ingredientes td[data-col="kg"]::before    { content: 'kg '; }
+
+  /* Las métricas del editor, de a dos por fila como el resto de la app. */
+  .editor-receta .metric-grid { grid-template-columns: 1fr 1fr; }
+  .content:has(.editor-receta) { max-width: 100%; }
 }
 </style>
 
@@ -7879,14 +7954,14 @@ function renderEditorReceta(){
       const c = 150*f;
       merc += c;
       return `<tr style="background:var(--oliva-c)">
-        <td colspan="2" style="color:var(--oliva);font-style:italic;font-size:13px">Condimentos básicos (escala ${Math.round(f*100)}%)</td>
-        <td></td>
-        <td></td>
-        <td style="text-align:right;color:var(--oliva)">—</td>
-        <td style="text-align:right;color:var(--oliva)">—</td>
-        <td style="text-align:right"><span class="calc">$${fmt(c)}</span></td>
-        <td style="text-align:right"><span class="calc">$${fmt(c*porciones)}</span></td>
-        <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
+        <td data-col="ingrediente" colspan="2" style="color:var(--oliva);font-style:italic;font-size:13px">Condimentos básicos (escala ${Math.round(f*100)}%)</td>
+        <td data-col="cantidad"></td>
+        <td data-col="merma"></td>
+        <td data-col="bruto" style="text-align:right;color:var(--oliva)">—</td>
+        <td data-col="costo" style="text-align:right;color:var(--oliva)">—</td>
+        <td data-col="total" style="text-align:right"><span class="calc">$${fmt(c)}</span></td>
+        <td data-col="kg" style="text-align:right"><span class="calc">$${fmt(c*porciones)}</span></td>
+        <td data-col="quitar"><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
       </tr>`;
     }
 
@@ -7906,22 +7981,22 @@ function renderEditorReceta(){
       const recetasDisp = getRecetas().filter(x=>x.id!==r.id)
         .sort((a,b)=>a.nombre.localeCompare(b.nombre));
       return `<tr style="background:var(--azul-c,#EBF3FF)">
-        <td>
+        <td data-col="ingrediente">
           <select onchange="updIngReceta(${idx},'recetaId',this.value)" style="min-width:180px">
             <option value="">— elegí receta —</option>
             ${recetasDisp.map(x=>`<option value="${esc(x.id)}"${x.id===ing.recetaId?' selected':''}>${esc(x.nombre)}${x.rendimientoG?' ('+x.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
           </select>
         </td>
-        <td style="font-size:11px;color:var(--azul);white-space:nowrap">
+        <td data-col="tecnica" style="font-size:11px;color:var(--azul);white-space:nowrap">
           ${recBase ? (rendG>0 ? `$${fmt(costoXg)}/g` : `<span style="color:var(--bordo)">⚠ Cargá rendimiento</span>`) : '—'}
         </td>
-        <td><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
-        <td style="text-align:right;color:var(--gris-2)">—</td>
-        <td style="text-align:right;color:var(--gris-2)">—</td>
-        <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:''}</td>
-        <td style="text-align:right">${costoTotal!==null?`<span class="calc">$${fmt(costoTotal)}</span>`:''}</td>
-        <td style="text-align:right;color:var(--gris-2)">—</td>
-        <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
+        <td data-col="cantidad"><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
+        <td data-col="merma" style="text-align:right;color:var(--gris-2)">—</td>
+        <td data-col="bruto" style="text-align:right;color:var(--gris-2)">—</td>
+        <td data-col="costo" style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:''}</td>
+        <td data-col="total" style="text-align:right">${costoTotal!==null?`<span class="calc">$${fmt(costoTotal)}</span>`:''}</td>
+        <td data-col="kg" style="text-align:right;color:var(--gris-2)">—</td>
+        <td data-col="quitar"><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
       </tr>`;
     }
     // ── ITEM TIPO INSUMO CP (producto elaborado o ingrediente crudo del CP) ──
@@ -7947,15 +8022,15 @@ function renderEditorReceta(){
         ? `<select onchange="updIngReceta(${idx},'tecnica',this.value)" style="min-width:130px"><option value="">— técnica —</option>${tecnicasCP.map(t=>`<option value="${t}"${t===ing.tecnica?' selected':''}>${t}</option>`).join('')}</select>`
         : `<span style="color:var(--gris-2);font-size:12px">${modo==='porcionado'?'costo fijo/porción':'se usa como viene'}</span>`;
       return `<tr style="background:#FFF6EC">
-        <td style="white-space:nowrap">🏭 ${prod?prod.nombre:'<span style="color:var(--bordo)">insumo CP no encontrado</span>'} <span style="font-size:10px;color:#B8540A;font-weight:700">${badgeCP}</span> <span style="font-size:11px;color:var(--gris-2)">${prod&&prod.costoXkg>0?'$'+fmt(prod.costoXkg)+'/kg':''}</span></td>
-        <td>${tecCell}</td>
-        <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
-        <td style="text-align:right">${modo==='granel'&&ing.tecnica?`<span class="calc">${fmtD(mermaPct)}%</span>`:'<span style="color:var(--gris-2)">—</span>'}</td>
-        <td style="text-align:right">${modo==='granel'&&costoItem!==null?`<span class="calc">${fmtD(brutoG)}g</span>`:'—'}</td>
-        <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:(prod&&!(prod.costoXkg>0)?'<span class="calc calc-err">sin precio CP</span>':'')}</td>
-        <td style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem*porciones)}</span>`:''}</td>
-        <td style="text-align:right">${costoItem!==null?`<span class="calc">${fmtD(brutoG*porciones/1000,2)}kg</span>`:''}</td>
-        <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
+        <td data-col="ingrediente" style="white-space:nowrap">🏭 ${prod?prod.nombre:'<span style="color:var(--bordo)">insumo CP no encontrado</span>'} <span style="font-size:10px;color:#B8540A;font-weight:700">${badgeCP}</span> <span style="font-size:11px;color:var(--gris-2)">${prod&&prod.costoXkg>0?'$'+fmt(prod.costoXkg)+'/kg':''}</span></td>
+        <td data-col="tecnica">${tecCell}</td>
+        <td data-col="cantidad"><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
+        <td data-col="merma" style="text-align:right">${modo==='granel'&&ing.tecnica?`<span class="calc">${fmtD(mermaPct)}%</span>`:'<span style="color:var(--gris-2)">—</span>'}</td>
+        <td data-col="bruto" style="text-align:right">${modo==='granel'&&costoItem!==null?`<span class="calc">${fmtD(brutoG)}g</span>`:'—'}</td>
+        <td data-col="costo" style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:(prod&&!(prod.costoXkg>0)?'<span class="calc calc-err">sin precio CP</span>':'')}</td>
+        <td data-col="total" style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem*porciones)}</span>`:''}</td>
+        <td data-col="kg" style="text-align:right">${costoItem!==null?`<span class="calc">${fmtD(brutoG*porciones/1000,2)}kg</span>`:''}</td>
+        <td data-col="quitar"><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
       </tr>`;
     }
 
@@ -7969,19 +8044,19 @@ function renderEditorReceta(){
     // Lo que el CP despacha porcionado se cuenta en porciones, no en gramos.
     const porcionCP = !!(ingObj && ingObj._cpPorPorcion);
     return `<tr>
-      <td>
+      <td data-col="ingrediente">
         <select onchange="onChangeIngrediente(${idx},this.value)" style="min-width:180px">
           ${_opcionesIngrediente(ing.ingId)}
         </select>
       </td>
-      <td>
+      <td data-col="tecnica">
         ${porcionCP
           ? `<span style="font-size:12px;color:var(--gris-2)">viene listo del CP</span>`
           : `<select onchange="updIngReceta(${idx},'tecnica',this.value)" style="min-width:130px">
               ${_opcionesTecnica(ingObj, ing.tecnica)}
             </select>`}
       </td>
-      <td>
+      <td data-col="cantidad">
         ${porcionCP ? `
           <input type="text" inputmode="numeric" value="${ing.porcionesCP||''}" placeholder="1"
             style="width:70px;text-align:right;${ing._revisarPorciones?'border-color:#B8540A;background:#FFF6EC':''}"
@@ -7995,12 +8070,12 @@ function renderEditorReceta(){
           </div>`
         : `<input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))">`}
       </td>
-      <td style="text-align:right">${porcionCP?'<span style="color:var(--gris-3)">—</span>':(c&&!c.error?`<span class="calc">${fmtD(c.merma_pct)}%</span>`:c&&c.error?`<span class="calc calc-err" title="${c.error}">⚠ ${c.pesoUnitarioFalta?'falta el peso':'Sin merma'}</span>`:'')}</td>
-      <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.bruto_con_desperdicio||c.bruto)}g</span>`:''}</td>
-      <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
-      <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_total)}</span>`:''}</td>
-      <td style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.kg_total,2)}kg</span>`:''}</td>
-      <td><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
+      <td data-col="merma" style="text-align:right">${porcionCP?'<span style="color:var(--gris-3)">—</span>':(c&&!c.error?`<span class="calc">${fmtD(c.merma_pct)}%</span>`:c&&c.error?`<span class="calc calc-err" title="${c.error}">⚠ ${c.pesoUnitarioFalta?'falta el peso':'Sin merma'}</span>`:'')}</td>
+      <td data-col="bruto" style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.bruto_con_desperdicio||c.bruto)}g</span>`:''}</td>
+      <td data-col="costo" style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
+      <td data-col="total" style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_total)}</span>`:''}</td>
+      <td data-col="kg" style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.kg_total,2)}kg</span>`:''}</td>
+      <td data-col="quitar"><button class="btn btn-icon btn-sm" onclick="quitarIngReceta(${idx})">✕ Quitar</button></td>
     </tr>`;
   }).join('');
 
