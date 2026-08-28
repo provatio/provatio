@@ -1472,7 +1472,7 @@ async function actualizarResumenEmpresa(){
   if(!eid || typeof db==='undefined') return;
   try{
     const ops = Object.values(demoData.operaciones||{});
-    const recetasDeOp = op => (demoData.recetas||[]).filter(r=>r.opId===op.id).length;
+    const recetasDeOp = op => (demoData.recetas||[]).filter(r=>r.opId===opActivaId()).length;
     await db.collection('empresas').doc(eid).collection('resumen').doc('publico').set({
       nombre: (demoData.empresa && demoData.empresa.nombre) || '',
       operaciones: ops.map(o => ({
@@ -1874,8 +1874,11 @@ async function cargarDesdeFirestore(uid){
       demoData.operaciones[doc.id] = { ...doc.data(), _soloProveedor: true };
     });
 
-    // Usar primera operación como activa
-    currentOpId = Object.keys(demoData.operaciones)[0];
+    // La operación activa al cargar: si la que estaba sigue existiendo, esa;
+    // si no, la primera. Antes se pisaba siempre con la primera, lo que
+    // convertía cualquier recarga en un salto de operación sin aviso.
+    const _idsOps = Object.keys(demoData.operaciones);
+    if(!currentOpId || !demoData.operaciones[currentOpId]) currentOpId = _idsOps[0] || null;
     const opActiva = demoData.operaciones[currentOpId] || {};
 
     if(opActiva._datos){
@@ -2050,7 +2053,54 @@ function getModalidades(op){
 }
 function tieneModalidad(m, op){ return getModalidades(op).indexOf(m) >= 0; }
 
-function getOp(){ return demoData.operaciones[currentOpId] || Object.values(demoData.operaciones)[0]; }
+// ═══════════════════════════════════════════════════════════════════════════
+// LA OPERACIÓN ACTIVA — no se adivina
+// ═══════════════════════════════════════════════════════════════════════════
+// Acá vivía el fantasma. La versión anterior era:
+//
+//     return demoData.operaciones[currentOpId] || Object.values(demoData.operaciones)[0];
+//
+// Ese "|| la primera que haya" es una adivinanza, y en silencio: si currentOpId
+// no apuntaba a nada —porque se volvió atrás, porque venía de otra sesión,
+// porque la operación se borró hace un mes pero seguía en la caché del
+// dispositivo— la app agarraba CUALQUIER operación y dibujaba todo como si esa
+// fuera la activa. A Javier le apareció "Campamento Petrolero", borrada hacía
+// un mes, estando parado en otra empresa. Y con eso vienen los costos, las
+// recetas y los precios de esa otra operación, sin un solo aviso.
+//
+// Es la misma clase que el `currentOpId` de las recetas de Lucía: una función
+// que, cuando no sabe, inventa en vez de decir que no sabe.
+//
+// Ahora:
+//  - si currentOpId apunta a una operación real, esa es y no hay más que hablar;
+//  - si no apunta a nada y hay UNA sola operación, se adopta esa Y SE DEJA
+//    ESCRITO en currentOpId, para que todas las pantallas coincidan (mismo
+//    criterio que ya usaban getRecetas y _panelSinOperacion);
+//  - si no apunta a nada y hay VARIAS, devuelve null. Que la persona elija.
+//    Elegir por ella es exactamente lo que produjo el fantasma.
+//
+// Las pantallas ya saben qué hacer con null: van a _panelSinOperacion().
+function getOp(){
+  const ops = demoData.operaciones || {};
+  if(currentOpId && ops[currentOpId]) return ops[currentOpId];
+  const ids = Object.keys(ops);
+  if(ids.length === 1){
+    currentOpId = ids[0];
+    return ops[currentOpId];
+  }
+  // Ni una (nada que mostrar) ni varias (no es asunto del sistema decidir).
+  if(currentOpId) currentOpId = null;   // no dejar apuntando a un fantasma
+  return null;
+}
+
+// El id de la operación activa. Existe porque seis pantallas preguntaban por
+// `op.id`, un campo que solo está si alguien lo escribió adentro del documento:
+// al cargarse desde Firestore la operación se guarda como el documento, y si
+// ese campo falta la pantalla no da error, QUEDA VACÍA. Misma familia que el
+// fantasma: preguntar por algo que puede no estar, sin verificarlo.
+function opActivaId(){
+  return (getOp() && currentOpId) ? currentOpId : null;
+}
 
 // Nivel de acceso: 'cocina' ve solo lo operativo, sin precios de venta ni números del negocio
 // ═══════════════════════════════════════════════════════════════════════
@@ -3141,7 +3191,7 @@ function migrarPorcionesCP(){
 // qué hizo. No se corre en silencio: si tocó datos, la persona se entera.
 async function _migrarInsumosCPsiHaceFalta(){
   try{
-    if(!getOp() || !getOp().grupoId || esCentroProduccion()) return;
+    if(!getOp() || !getOp()?.grupoId || esCentroProduccion()) return;
     if(window._migradoCPen === currentOpId) return;
     window._migradoCPen = currentOpId;
     const n = migrarInsumosCPaIngredientes();
@@ -4825,7 +4875,13 @@ function toggleNavSeccion(si){
 
 // ── NAVEGACIÓN ──
 async function abrirOperacion(opId){
-  if(opId === currentOpId){ navigate('operacion'); return; }
+  // Atajo "ya estás parado ahí": tiene que validar igual. Si currentOpId era un
+  // fantasma y alguien tocaba esa misma operación, este return la dibujaba sin
+  // pasar por ninguna comprobación.
+  if(opId === currentOpId){
+    if(demoData.operaciones && demoData.operaciones[opId]){ navigate('operacion'); return; }
+    currentOpId = null;
+  }
   if(currentUser && currentUser.uid){
     try {
       showLoading('Cargando la operación…');
@@ -4879,6 +4935,18 @@ async function abrirOperacion(opId){
     }
   } else {
     currentOpId = opId;
+  }
+  // No abrir una operación que no existe. Un id puede llegar de un enlace
+  // viejo, de una entrada del historial o de la caché del dispositivo — así
+  // apareció "Campamento Petrolero", borrada hacía un mes. Antes de dibujar
+  // nada se comprueba que esté de verdad entre las operaciones cargadas.
+  if(!demoData.operaciones || !demoData.operaciones[currentOpId]){
+    console.warn('[Provatio] se intentó abrir una operación inexistente:', opId);
+    currentOpId = null;
+    showToast('Esa operación ya no existe o no la tenés asignada','error');
+    buildSidebar(currentUser?.rol||'cliente');
+    _panelSinOperacion();
+    return;
   }
   // Reconstruir sidebar para reflejar tipo de operación
   buildSidebar(currentUser?.rol||'cliente');
@@ -7761,8 +7829,10 @@ function nuevaReceta(){
   // modoRendimiento arranca en 'porcion' (Directo) para recetas del CP — es el
   // caso más simple (el peso de la porción ya se conoce, no hay que medir nada
   // después de cocinar). Fuera del CP no se usa, se deja sin definir.
+  const _opNueva = getOp();
+  if(!_opNueva){ showToast('Elegí primero con qué operación vas a trabajar','error'); _panelSinOperacion(); return; }
   _reiniciarAutoguardadoReceta();
-  recetaEditando = {id:uid(),opId:currentOpId,nombre:'',tipoServicio:getOp().tiposServicio?.[0]||'Principal',tipoPlato:getOp().tiposPlato?.[0]||'Principal',porciones:1,ingredientes:[],modoRendimiento:esCentroProduccion()?'porcion':undefined};
+  recetaEditando = {id:uid(),opId:currentOpId,nombre:'',tipoServicio:_opNueva.tiposServicio?.[0]||'Principal',tipoPlato:_opNueva.tiposPlato?.[0]||'Principal',porciones:1,ingredientes:[],modoRendimiento:esCentroProduccion()?'porcion':undefined};
   renderEditorReceta();
 }
 
@@ -8021,10 +8091,10 @@ function renderEditorReceta(){
         <option value="peso"${modoPeso?' selected':''}>👨‍🍳 Elaborado (por peso)</option>
       </select>` : ''}
       ${esCP ? '' : `<select onchange="recetaEditando.tipoServicio=this.value;programarAutoguardadoReceta()" style="width:150px">
-        ${(getOp().tiposServicio||['Almuerzo']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
+        ${(getOp()?.tiposServicio||['Almuerzo']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
       </select>
       <select onchange="recetaEditando.tipoPlato=this.value;programarAutoguardadoReceta()" style="width:130px">
-        ${(getOp().tiposPlato||['Principal']).map(s=>`<option${s===r.tipoPlato?' selected':''}>${s}</option>`).join('')}
+        ${(getOp()?.tiposPlato||['Principal']).map(s=>`<option${s===r.tipoPlato?' selected':''}>${s}</option>`).join('')}
       </select>`}
       <button class="btn btn-primary" onclick="guardarReceta()">${ico('save',13)} Guardar</button>
       <span id="rec-autoguardado" style="font-size:11px;font-weight:600;white-space:nowrap;flex:0 0 200px;width:200px;overflow:hidden;text-overflow:ellipsis"></span>
@@ -12903,7 +12973,7 @@ function renderDesperdicio(){
             ${window._despTipo==='receta' ? `
               <select id="desp-item" style="width:100%">
                 <option value="">— elegí el plato —</option>
-                ${demoData.recetas.filter(r=>r.opId===op.id).map(r=>`<option value="${esc(r.id)}">${esc(r.nombre)}</option>`).join('')}
+                ${demoData.recetas.filter(r=>r.opId===opActivaId()).map(r=>`<option value="${esc(r.id)}">${esc(r.nombre)}</option>`).join('')}
               </select>` : `
               <select id="desp-item" style="width:100%">
                 <option value="">— elegí el ingrediente —</option>
@@ -13552,7 +13622,7 @@ function renderResultado(){
   // Un dueño que no se paga a sí mismo cree que gana más de lo que gana.
   const tieneSueldoDueno = gastos.some(g=>/due[ñn]o/i.test(g.concepto||''));
 
-  const recetasConPrecio = demoData.recetas.filter(r=>r.opId===op.id && r.precioVenta>0);
+  const recetasConPrecio = demoData.recetas.filter(r=>r.opId===opActivaId() && r.precioVenta>0);
   let margenPctProm = null, margenPesosProm = null, ticketProm = null;
   if(recetasConPrecio.length){
     let sumMargenPct = 0, sumMargenPesos = 0, sumPV = 0;
@@ -13795,7 +13865,7 @@ function renderResultado(){
           </div>
           <div class="table-wrap" style="margin-bottom:16px">
             <table>
-              <thead><tr><th>Receta</th><th style="text-align:right">Precio venta</th><th style="text-align:right">Margen/porción</th><th style="text-align:right;width:110px">${getOp().tieneDelivery?'Ventas salón':'Unidades vendidas'}</th>${getOp().tieneDelivery?'<th style="text-align:right;width:110px;color:var(--dorado)">Ventas delivery</th>':''}</tr></thead>
+              <thead><tr><th>Receta</th><th style="text-align:right">Precio venta</th><th style="text-align:right">Margen/porción</th><th style="text-align:right;width:110px">${getOp()?.tieneDelivery?'Ventas salón':'Unidades vendidas'}</th>${getOp()?.tieneDelivery?'<th style="text-align:right;width:110px;color:var(--dorado)">Ventas delivery</th>':''}</tr></thead>
               <tbody>
                 ${(()=>{ const _hayDiarias = _mesTieneVentasDiarias(mesSel); return [...km.items].sort((a,b)=>{
                   const ord=['Entrada','Principal','Guarnición','Salsa','Postre','Infantil'];
@@ -13803,8 +13873,8 @@ function renderResultado(){
                   return (ta===-1?99:ta)-(tb===-1?99:tb) || a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'});
                 }).map(i=>{
                   const rec = demoData.recetas.find(r=>r.id===i.id);
-                  const tieneDelivery = getOp().tieneDelivery && rec && rec.delivery && rec.delivery.activa;
-                  const ventasMes = (getOp().ventasPorMes||{})[mesSel]||{};
+                  const tieneDelivery = getOp()?.tieneDelivery && rec && rec.delivery && rec.delivery.activa;
+                  const ventasMes = (getOp()?.ventasPorMes||{})[mesSel]||{};
                   return `<tr>
                   <td><strong>${esc(i.nombre)}</strong></td>
                   <td style="text-align:right">$${fmt(i.pv)}</td>
@@ -13813,7 +13883,7 @@ function renderResultado(){
                     ? `<span title="Sale de las ventas cargadas día por día — el dato exacto. No se edita acá para no pisarlo con una estimación.">${fmtD(i.unid,0)}</span>
                        <span style="display:block;font-size:10px;color:var(--gris-2)">de las ventas diarias</span>`
                     : `<input type="text" inputmode="decimal" min="0" value="${i.unid||''}" placeholder="0" style="width:90px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)">`}</td>
-                  ${getOp().tieneDelivery ? `<td style="text-align:right">${tieneDelivery ? `<input type="text" inputmode="decimal" min="0" value="${ventasMes[i.id+'_dlv']||''}" placeholder="0" style="width:90px;text-align:right;border-color:var(--dorado)" onchange="updVentaReceta('${mesSel}','${i.id}_dlv',this.value)">` : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>` : ''}
+                  ${getOp()?.tieneDelivery ? `<td style="text-align:right">${tieneDelivery ? `<input type="text" inputmode="decimal" min="0" value="${ventasMes[i.id+'_dlv']||''}" placeholder="0" style="width:90px;text-align:right;border-color:var(--dorado)" onchange="updVentaReceta('${mesSel}','${i.id}_dlv',this.value)">` : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>` : ''}
                 </tr>`;
                 }).join(''); })()}
               </tbody>
@@ -13921,8 +13991,19 @@ function delGastoFijo(id){
   op.gastosFijos = getGastosFijos().filter(g=>g.id!==id);
   renderResultado(); guardarEnFirestore();
 }
-function updDiasOperativos(v){ getOp().diasOperativos = Math.max(1, Math.min(31, v||26)); renderResultado(); guardarEnFirestore(); }
-function updVentasEstimadas(v){ getOp().ventasEstimadas = Math.max(0, v||0); renderResultado(); guardarEnFirestore(); }
+// El umbral vivía como asignación suelta adentro de un onchange. Si no hay
+// operación activa, eso reventaba; y una escritura al documento de la operación
+// merece una función con nombre, no una línea escondida en un atributo HTML.
+function updUmbralAlerta(v){
+  const op = getOp();
+  if(!op) return;
+  op.umbralAlerta = Math.max(1, Math.min(20, num(v) || 3));
+  renderDesvios();
+  guardarEnFirestore();
+}
+
+function updDiasOperativos(v){ const op=getOp(); if(!op) return; op.diasOperativos = Math.max(1, Math.min(31, v||26)); renderResultado(); guardarEnFirestore(); }
+function updVentasEstimadas(v){ const op=getOp(); if(!op) return; op.ventasEstimadas = Math.max(0, v||0); renderResultado(); guardarEnFirestore(); }
 
 // ── GRÁFICOS DE SALUD DEL NEGOCIO (SVG puro, descargables) ──
 const CHART_COLORS = ['#C8A96E','#2D5016','#8B1A1A','#5A5A52','#B08D57','#6B8E4E','#A65D5D','#8A8A80','#D4B870','#3D6B20'];
@@ -14176,7 +14257,7 @@ function clasificarMenu(mes){
   const op = getOp();
   const ventas = unidadesVendidasMes(mes);
   const items = demoData.recetas
-    .filter(r=>r.opId===op.id && r.precioVenta>0)
+    .filter(r=>r.opId===opActivaId() && r.precioVenta>0)
     .map(r=>{
       const {merc} = calcReceta(r, r.porciones||1);
       const unid = +ventas[r.id] || 0;
@@ -14204,7 +14285,7 @@ function expandirMatrizConDelivery(km, mes){
     if(!op || !op.tieneDelivery || !km || !km.listo) return km;
     const ventas = unidadesVendidasMes(mes);
     const extra = [];
-    (demoData.recetas||[]).filter(r=>r.opId===op.id && r.precioVenta>0 && r.delivery && r.delivery.activa).forEach(r=>{
+    (demoData.recetas||[]).filter(r=>r.opId===opActivaId() && r.precioVenta>0 && r.delivery && r.delivery.activa).forEach(r=>{
       const unidD = +ventas[r.id+'_dlv'] || 0;
       if(unidD<=0) return; // solo si tiene ventas delivery cargadas a mano
       const d = r.delivery;
@@ -15999,7 +16080,7 @@ function renderClientes(){
   // tipoBadge → usar tipoBadgeHtml global
 
   function recetasLabel(op){
-    const enMem = demoData.recetas.filter(r=>r.opId===op.id).length;
+    const enMem = demoData.recetas.filter(r=>r.opId===opActivaId()).length;
     if(enMem>0) return enMem+' recetas';
     const docRecs = op._datos&&op._datos.recetas ? op._datos.recetas.length : (op._meta&&op._meta.totalRecetas||0);
     return docRecs+' recetas';
@@ -17385,7 +17466,7 @@ function exportarSoloRecetas(){
   const blob = new Blob([JSON.stringify({version:'1.0',recetas}, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `provatio_recetas_${getOp().nombre.replace(/[^a-z0-9]/gi,'_').toLowerCase()}.json`;
+  a.download = `provatio_recetas_${String(getOp()?.nombre||'operacion').replace(/[^a-z0-9]/gi,'_').toLowerCase()}.json`;
   a.click();
   showToast(`${recetas.length} recetas exportadas`,'success');
 }
@@ -17580,8 +17661,8 @@ function confirmarExcelImport(){
           id: 'xr-'+Date.now()+'-'+Math.random().toString(36).substr(2,4),
           opId: currentOpId,
           nombre,
-          tipoServicio: String(row['TIPO DE SERVICIO']||getOp().tiposServicio?.[0]||'Principal').trim(),
-          tipoPlato: String(row['TIPO DE PLATO']||getOp().tiposPlato?.[0]||'Principal').trim(),
+          tipoServicio: String(row['TIPO DE SERVICIO']||getOp()?.tiposServicio?.[0]||'Principal').trim(),
+          tipoPlato: String(row['TIPO DE PLATO']||getOp()?.tiposPlato?.[0]||'Principal').trim(),
           ingredientes: [],
         };
       }
@@ -19481,7 +19562,7 @@ function renderDesvios(){
           <div class="metric-value">${op.umbralAlerta||3}%
             <input type="text" inputmode="decimal" value="${op.umbralAlerta||3}" min="1" max="20"
               style="width:60px;font-size:12px;margin-left:8px"
-              onchange="getOp().umbralAlerta=num(this.value);renderDesvios()">
+              onchange="updUmbralAlerta(this.value)">
           </div>
         </div>
       </div>
@@ -20066,14 +20147,14 @@ function getOnboardingContent(paso){
         <div style="display:grid;gap:14px">
           <div>
             <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Nombre de tu operación</label>
-            <input type="text" id="ob-nombre" value="${esc(getOp().nombre||'')}" placeholder="Ej: Restaurante El Olivo"
+            <input type="text" id="ob-nombre" value="${esc(getOp()?.nombre||'')}" placeholder="Ej: Restaurante El Olivo"
               style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:14px;font-family:'Inter',sans-serif">
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
               <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Tipo</label>
               <select id="ob-tipo" style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
-                ${['Restaurante','Catering','Viandas','Pastelería','Hotel','Comedor','Dark Kitchen','Centro de Producción','Otro'].map(t=>`<option${getOp().tipo===t?' selected':''}>${t}</option>`).join('')}
+                ${['Restaurante','Catering','Viandas','Pastelería','Hotel','Comedor','Dark Kitchen','Centro de Producción','Otro'].map(t=>`<option${getOp()?.tipo===t?' selected':''}>${t}</option>`).join('')}
               </select>
             </div>
   
@@ -20145,7 +20226,7 @@ function getOnboardingContent(paso){
             </div>
             <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px">por porción · mermas incluidas</div>
             <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:8px">
-              Sobre precio de venta $${fmt(getOp().precioVenta||0)}: ${fmtD(getOp().precioVenta?merc/(getOp().precioVenta)*100:0)}% de costo
+              Sobre precio de venta $${fmt(getOp()?.precioVenta||0)}: ${fmtD(getOp()?.precioVenta?merc/(getOp()?.precioVenta)*100:0)}% de costo
             </div>
           </div>
         `;
@@ -20185,7 +20266,7 @@ function getOnboardingContent(paso){
                 <div style="font-size:10px;color:var(--gris-2);margin-top:2px">COSTO/PORCIÓN</div>
               </div>
               <div style="text-align:center;background:var(--blanco);border-radius:8px;padding:12px">
-                <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--dorado)">${fmtD(getOp().precioVenta?merc/getOp().precioVenta*100:0)}%</div>
+                <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--dorado)">${fmtD(getOp()?.precioVenta?merc/getOp()?.precioVenta*100:0)}%</div>
                 <div style="font-size:10px;color:var(--gris-2);margin-top:2px">% COSTO</div>
               </div>
             </div>
@@ -20230,8 +20311,10 @@ function avanzarOnboarding(pasoActual){
     const nombre = document.getElementById('ob-nombre')?.value.trim();
     const tipo = document.getElementById('ob-tipo')?.value;
     if(!nombre){ showToast('Escribí el nombre de tu operación','error'); return; }
-    getOp().nombre = nombre;
-    getOp().tipo = tipo;
+    const _opOb = getOp();
+    if(!_opOb){ showToast('No hay una operación abierta','error'); return; }
+    _opOb.nombre = nombre;
+    _opOb.tipo = tipo;
   }
 
   if(pasoActual === 2 && demoData.ingredientes.filter(i=>i.precio>0).length < 3){
