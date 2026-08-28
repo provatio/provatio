@@ -5465,6 +5465,11 @@ async function crearEmpresaYOperacion(){
   const log = [];
   const paso = (t) => { log.push(t); logEl.innerHTML = log.map(x=>'<div style="padding:2px 0">'+esc(x)+'</div>').join(''); };
 
+  if(await _frenarSiYaTieneEmpresa(uid, 'Tu cuenta')){
+    btn.disabled = false; btn.textContent = 'Crear'; logEl.style.display = 'none';
+    return;
+  }
+
   try{
     const empresaId = 'emp-' + Date.now().toString(36);
     const opId = 'op-' + Date.now();
@@ -15682,6 +15687,12 @@ async function ejecutarCrearEmpresaParaCliente(uid, email, nombreCta){
   logEl.style.display='block'; btn.disabled=true; btn.textContent='Creando…';
   const log=[]; const paso=(t)=>{ log.push(t); logEl.innerHTML=log.map(x=>'<div style="padding:2px 0">'+esc(x)+'</div>').join(''); };
 
+  // Antes de crear: ¿esta persona ya tiene empresa? (ver _empresaExistenteDe)
+  if(await _frenarSiYaTieneEmpresa(uid, nombreCta || email)){
+    btn.disabled=false; btn.textContent='Crear empresa'; logEl.style.display='none';
+    return;
+  }
+
   try{
     const empresaId = 'emp-' + Date.now().toString(36);
     const opId = 'op-' + Date.now();
@@ -16567,6 +16578,50 @@ async function delOperacion(id){
 
 // Borra una empresa entera SIN dejar rastros: sus miembros, libera a los usuarios
 // que la tenían asignada, y borra el documento de la empresa. Todo desde la app.
+// ═══════════════════════════════════════════════════════════════════════════
+// UNA PERSONA, UNA EMPRESA — no crear la segunda sin darse cuenta
+// ═══════════════════════════════════════════════════════════════════════════
+// Los tres caminos que crean una empresa generaban un id nuevo y escribían,
+// sin fijarse si esa persona ya tenía una. Resultado real, encontrado en la
+// consola el 28/8: tres empresas llamadas "Catering de rodaje", creadas el
+// 10/8 a las 03:16:10, 03:16:19 y 03:22. Los nueve segundos entre las dos
+// primeras no son alguien decidiendo crear una empresa dos veces: es un
+// reintento después de que la primera pareciera fallar.
+//
+// Cada duplicado se lleva sus operaciones y sus miembros, pero el usuario
+// apunta a UNA sola: las otras quedan con datos adentro y sin nadie que las
+// mire. Y las tres aparecen en el panel de la plataforma como clientes
+// distintos, así que los números de adopción también mienten.
+async function _empresaExistenteDe(uid){
+  if(!uid) return null;
+  try{
+    const u = await db.collection('usuarios').doc(uid).get();
+    const eid = u.exists ? u.data().empresaId : null;
+    if(!eid) return null;
+    const emp = await db.collection('empresas').doc(eid).get();
+    if(!emp.exists) return null;          // apuntaba a una borrada: no cuenta
+    return { id: eid, nombre: emp.data().nombre || eid };
+  }catch(err){
+    // Si no se puede comprobar, NO se inventa que no existe: se avisa y se
+    // frena. Crear un duplicado es peor que pedir que se reintente.
+    console.warn('[Provatio] no se pudo verificar si ya tenía empresa', err);
+    return { id: null, nombre: null, indeterminado: true };
+  }
+}
+
+// Devuelve true si hay que FRENAR la creación.
+async function _frenarSiYaTieneEmpresa(uid, quien){
+  const ya = await _empresaExistenteDe(uid);
+  if(!ya) return false;
+  if(ya.indeterminado){
+    showToast('No pude verificar si ' + (quien||'esta cuenta') + ' ya tiene empresa. No creé nada — probá de nuevo.','error');
+    return true;
+  }
+  showToast('⚠ ' + (quien||'Esta cuenta') + ' ya tiene la empresa "' + ya.nombre + '". No creé una segunda: '
+          + 'si querés otra operación, agregala adentro de esa empresa.','error');
+  return true;
+}
+
 async function _borrarEmpresaCompleta(empresaId, empNombre){
   try{
     // 1) Liberar a todos los usuarios que apuntaban a esta empresa
@@ -16582,7 +16637,29 @@ async function _borrarEmpresaCompleta(empresaId, empNombre){
     for(const m of memSnap.docs){
       await db.collection('empresas').doc(empresaId).collection('miembros').doc(m.id).delete();
     }
-    // 3) Borrar el documento de la empresa
+    // 3) Borrar las operaciones Y lo que cuelga de cada una.
+    //    Firestore NO borra en cascada: borrar el documento de la empresa deja
+    //    sus subcolecciones vivas, huérfanas de un documento que ya no existe.
+    //    En la consola se ven en itálica, y sus datos se siguen pudiendo leer.
+    //    Ahí es donde sobreviven las operaciones "borradas".
+    const opsSnap = await db.collection('empresas').doc(empresaId).collection('operaciones').get();
+    for(const o of opsSnap.docs){
+      const _refOp = db.collection('empresas').doc(empresaId).collection('operaciones').doc(o.id);
+      // El archivo de pedidos cuelga de la operación: mismo problema un nivel más abajo.
+      try{
+        const arch = await _refOp.collection('pedidosArchivo').get();
+        for(const a of arch.docs) await _refOp.collection('pedidosArchivo').doc(a.id).delete();
+      }catch(_){}
+      await _refOp.delete();
+    }
+    // 4) Borrar el resumen público
+    try{
+      const resSnap = await db.collection('empresas').doc(empresaId).collection('resumen').get();
+      for(const r of resSnap.docs){
+        await db.collection('empresas').doc(empresaId).collection('resumen').doc(r.id).delete();
+      }
+    }catch(_){}
+    // 5) Recién ahora, el documento de la empresa
     await db.collection('empresas').doc(empresaId).delete();
 
     if(currentUser && currentUser.empresaId===empresaId){
