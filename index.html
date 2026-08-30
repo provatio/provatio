@@ -1786,6 +1786,21 @@ async function guardarEnFirestore(opts){
       ? db.collection('empresas').doc(getEmpresaId()).collection('operaciones')
       : db.collection('usuarios').doc(uid).collection('operaciones');
 
+    // Poka-yoke contra la operación fantasma: antes de escribir, preguntarle
+    // AL SERVIDOR si la operación sigue existiendo. La caché local de Firestore
+    // puede seguir mostrando una operación borrada hace semanas, y un set()
+    // sobre ella la recrea entera. Preferimos no guardar y avisar.
+    // Si no hay señal, el get contra el servidor falla y seguimos de largo: el
+    // guardado sin conexión es intencional y no se toca.
+    try{
+      const _existe = await _refOps.doc(currentOpId).get({ source: 'server' });
+      if(!_existe.exists){
+        if(!_silencioso) ocultarProgreso();
+        showToast('Esta operación ya no existe en la nube (fue eliminada). No se guardó nada. Cerrá sesión y volvé a entrar.', 'error');
+        return false;
+      }
+    }catch(e){ /* sin señal: no bloqueamos el guardado offline */ }
+
     await conReintento(() =>
       _refOps.doc(currentOpId).set(limpiarParaFirestore(opData)),
       4, 'guardar operación');
@@ -1803,8 +1818,16 @@ async function guardarEnFirestore(opts){
       // acá con nuestra copia en memoria (que puede ser vieja), pisaríamos el
       // pedido que otra sucursal confirmó recién — y desaparecería sin aviso.
       delete meta._pedidosSucursales;
+      // update() en vez de set({merge:true}) A PROPÓSITO: set con merge CREA el
+      // documento si no existe, y este loop escribe sobre TODAS las operaciones
+      // que hay en memoria. Si una de ellas es un fantasma (quedó en la caché
+      // local de Firestore después de borrarla), cada guardado la resucitaba
+      // como documento real. update() falla si el documento no existe, y el
+      // .catch() de abajo se lo come: el fantasma se muere solo.
+      // Las operaciones nuevas ya nacen escritas en crearOperacion(), así que
+      // este loop nunca necesitó crear nada.
       await conReintento(() =>
-        _refOps.doc(opId).set(limpiarParaFirestore(meta), {merge:true}),
+        _refOps.doc(opId).update(limpiarParaFirestore(meta)),
         2, 'meta op').catch(()=>{});
     }
 
