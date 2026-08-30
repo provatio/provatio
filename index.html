@@ -1953,7 +1953,14 @@ async function cargarDesdeFirestore(uid){
     demoData.operaciones = {};
 
     _docs.forEach(doc => {
-      demoData.operaciones[doc.id] = doc.data();
+      // El id se ESTAMPA adentro del objeto, no queda solo como llave del mapa.
+      // Sin esto, `op.id` es undefined para toda operación que no haya sido
+      // creada desde esta app (importadas, migradas, traídas de otra empresa),
+      // y las pantallas que preguntan por op.id no dan error: quedan vacías o
+      // mandan undefined a un botón. Se pisa cualquier `id` guardado adentro
+      // del documento a propósito: la verdad es el id del documento, no un
+      // campo que alguien pudo escribir mal.
+      demoData.operaciones[doc.id] = { ...doc.data(), id: doc.id };
     });
 
     if(!Object.keys(demoData.operaciones).length){
@@ -1967,7 +1974,7 @@ async function cargarDesdeFirestore(uid){
     // miembro sin locales asignados siga viendo el aviso correcto, y no crea
     // que tiene una operación por el solo hecho de existir un CP.
     _docsCP.forEach(doc => {
-      demoData.operaciones[doc.id] = { ...doc.data(), _soloProveedor: true };
+      demoData.operaciones[doc.id] = { ...doc.data(), id: doc.id, _soloProveedor: true };
     });
 
     // La operación activa al cargar: si la que estaba sigue existiendo, esa;
@@ -15308,7 +15315,7 @@ async function abrirOperacionAdmin(empresaId, opId){
     demoData.operaciones = {};
     let data = null;
     opsSnap.forEach(doc=>{
-      demoData.operaciones[doc.id] = doc.data();
+      demoData.operaciones[doc.id] = { ...doc.data(), id: doc.id };
       if(doc.id === opId) data = doc.data();
     });
     if(!data){ hideLoading && hideLoading(); showToast('No encontré la operación','error'); return; }
@@ -16187,7 +16194,11 @@ function renderClientes(){
   // tipoBadge → usar tipoBadgeHtml global
 
   function recetasLabel(op){
-    const enMem = demoData.recetas.filter(r=>r.opId===opActivaId()).length;
+    // OJO: cuenta las recetas DE ESTA FILA, no las de la operación abierta.
+    // Antes decía opActivaId() y todas las filas mostraban el mismo número.
+    // En memoria solo están cargadas las recetas de la operación activa, así
+    // que para las demás filas se cae al conteo del documento, más abajo.
+    const enMem = op.id ? demoData.recetas.filter(r=>r.opId===op.id).length : 0;
     if(enMem>0) return enMem+' recetas';
     const docRecs = op._datos&&op._datos.recetas ? op._datos.recetas.length : (op._meta&&op._meta.totalRecetas||0);
     return docRecs+' recetas';
@@ -19942,7 +19953,10 @@ async function eliminarUsuario(uid, email){
 }
 
 function modalAsignarOperacion(userId, email){
-  const ops = Object.values(demoData.operaciones);
+  // Entries, no values: el id sale de la llave del mapa, que es el id del
+  // documento. Es el dato que se va a escribir en `operacionesAsignadas` del
+  // miembro, y si sale mal esa persona queda sin ver NADA y sin mensaje.
+  const ops = Object.entries(demoData.operaciones).map(([id,o])=>({...o, id}));
   openModal(`
     <div class="modal-header">
       <span class="modal-title">Asignar operación</span>
