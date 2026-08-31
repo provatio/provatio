@@ -2113,7 +2113,16 @@ try{
 // ── ESTADO GLOBAL ──
 let currentUser = null;
 let currentOp = null;  // operación activa
-let currentOpId = 'op-patagonia';  // ID de operación activa
+// Arranca en null A PROPÓSITO. Antes arrancaba apuntando a 'op-patagonia', la
+// operación de ejemplo de más abajo, y como era la única que había en memoria,
+// la app la daba por activa mientras esperaba los datos de la nube. Eso es lo
+// que Javier veía como "Campamento Petrolero": no era un fantasma ni una
+// operación borrada, era la demo escrita en el código. Aparecía en el celular
+// más que en la computadora simplemente porque la conexión tarda más.
+// Con null, hasta que lleguen los datos de verdad no se muestra ninguna
+// operación — y de paso Guardar no puede escribir los ingredientes de ejemplo
+// adentro de una operación real, porque no hay operación activa donde meterlos.
+let currentOpId = null;  // ID de operación activa
 let vistaActual = null;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2524,17 +2533,13 @@ let demoData = {
     rol: 'admin',
     operacionId: 'op-patagonia'
   },
-  operaciones: {
-    'op-patagonia': {
-      id: 'op-patagonia',
-      nombre: 'Campamento Petrolero — Patagonia',
-      tipo: 'catering',
-      precioVenta: 22000,
-      umbralAlerta: 3,
-      tiposServicio: ['Operario', 'Sin Cubiertos', 'Saludable', 'Liviano'],
-      tiposPlato: ['Principal', 'Guarnición', 'Postre', 'Entrada'],
-    }
-  },
+  // VACÍO A PROPÓSITO. Acá vivía 'op-patagonia' — "Campamento Petrolero —
+  // Patagonia" —, la operación de ejemplo del desarrollo. No se puede dejar
+  // una operación inventada en el arranque: la app no tiene forma de
+  // distinguirla de una real, y termina mostrándola como si lo fuera.
+  // Las recetas de ejemplo de más abajo quedan huérfanas y por eso invisibles,
+  // que es exactamente lo que se busca.
+  operaciones: {},
   ingredientes: [
     {id:'i1',nombre:'Pollo muslo/pata deshuesado',cat:'Aves y granja',precio:4200,bulto:1,unidad:'kg'},
     {id:'i2',nombre:'Pechuga de pollo',cat:'Aves y granja',precio:4500,bulto:1,unidad:'kg'},
