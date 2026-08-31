@@ -17,7 +17,7 @@
 // cuando la red no contesta.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'provatio-v1';
+const CACHE = 'provatio-v2';
 const ESENCIALES = [
   '/',
   '/index.html',
