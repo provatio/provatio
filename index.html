@@ -19426,13 +19426,17 @@ function renderModalidades(){
     <div class="card" style="margin-top:16px">
       <h3 style="margin-top:0;font-size:15px">Qué habilita cada una</h3>
       <table class="table" style="font-size:13px">
-        <thead><tr><th>Modalidad</th><th>Pantallas que aparecen</th></tr></thead>
+        <thead><tr><th>Modalidad</th><th>Qué cambia</th></tr></thead>
         <tbody>
           <tr><td>🍽 Carta</td><td>Recetas con precio, rentabilidad, matriz de menú, informe de ventas</td></tr>
           <tr><td>📋 Cubierto contratado</td><td>Evento / Presupuesto</td></tr>
           <tr><td>🍲 Cubierto continuo</td><td>Buffet, Cierre de servicio, historial de consumo por cubierto</td></tr>
           <tr><td>🏭 Centro de producción</td><td>Catálogo, despacho a locales, precio de transferencia</td></tr>
-          <tr><td>🛵 Delivery <span style="color:var(--gris-2,#888);font-size:11px">(canal)</span></td><td>Versión delivery en cada receta, ventas separadas por canal, segunda matriz de menú, comparación salón/delivery</td></tr>
+          <tr><td>🛵 Delivery <span style="color:var(--gris-2,#888);font-size:11px">(canal)</span></td>
+              <td><strong>No agrega pantallas nuevas al menú</strong> — cambia las que ya están:
+              <em>Mis recetas</em> suma la versión delivery de cada plato (precio propio, comisión y packaging),
+              <em>Cargar ventas</em> separa las ventas por canal,
+              y <em>Salud del negocio</em> abre la matriz de menú en dos, una por canal, más la comparación entre ambos.</td></tr>
         </tbody>
       </table>
     </div>
