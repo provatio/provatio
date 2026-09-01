@@ -4755,6 +4755,7 @@ function buildSidebar(rol){
     {icon:'tag', label:'Subproductos', vista:'subproductos'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
+    {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
@@ -4806,6 +4807,7 @@ function buildSidebar(rol){
     // significan nada. Mismo criterio con el que se sacó Planificación.
     // Lo que sí necesita el CP es qué le compra cada local, para planificar
     // producción y compras: eso vive en "Lo que piden los locales".
+    ...(!isCP ? [{icon:'chart', label:'Cargar ventas', vista:'cargarVentas'}] : []),
     ...(!isCP ? [{icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'}] : []),
     ...(!isCP ? [{icon:'coin', label:'Salud del negocio', vista:'resultado'}] : []),
     ...(isCP ? [{icon:'chart', label:'📈 Lo que piden los locales', vista:'demandaCP'}] : []),
@@ -4846,6 +4848,7 @@ function buildSidebar(rol){
     {icon:'tag', label:'Subproductos', vista:'subproductos'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
+    {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
@@ -4890,6 +4893,7 @@ function buildSidebar(rol){
     {section:'Análisis'},
     // Ver la nota del menú de admin: en un CP, Rentabilidad y Salud del negocio
     // miden algo que ahí no existe. Se reemplazan por la demanda de los locales.
+    ...(!isCP ? [{icon:'chart', label:'Cargar ventas', vista:'cargarVentas'}] : []),
     ...(!isCP ? [{icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'}] : []),
     ...(!isCP ? [{icon:'coin', label:'Salud del negocio', vista:'resultado'}] : []),
     ...(isCP ? [{icon:'chart', label:'📈 Lo que piden los locales', vista:'demandaCP'}] : []),
@@ -13330,7 +13334,7 @@ function renderStock(){
       ${ico('bulb',14)} Cuando cargues una <strong>segunda toma de inventario</strong>, Provatio va a comparar
       contra esta y las compras del período para mostrarte el desvío.
     </div>` : '')}
-  `, `<button class="btn btn-secondary btn-sm" onclick="importarVentasDiarias()">${ico('chart',13)} Importar ventas diarias</button>`);
+  `, `<button class="btn btn-secondary btn-sm" onclick="navigate('cargarVentas')">${ico('chart',13)} Cargar ventas</button>`);
 }
 
 // Borrador en memoria mientras el usuario carga (para no perder si navega sin querer)
@@ -13597,7 +13601,11 @@ function _sumarConsumoDeVentas(out, ventasDia, factor){
   Object.keys(ventasDia||{}).forEach(recId=>{
     const unidades = (+ventasDia[recId] || 0) * factor;
     if(!unidades) return;
-    const rec = demoData.recetas.find(r=>r.id===recId.replace('_dlv',''));
+    // El canal no cambia lo que se cocina: un plato de delivery consume la misma
+    // mercadería que uno de salón, y uno sin clasificar también se cocinó. Para
+    // el stock los tres cuentan igual. (Para el margen no, y por eso allá el
+    // pendiente queda afuera hasta que alguien lo defina.)
+    const rec = demoData.recetas.find(r=>r.id===_recetaDeClave(recId));
     if(!rec || !rec.ingredientes) return;
     const porcionesRec = rec.porciones || 1;
     rec.ingredientes.forEach(ri=>{
@@ -13615,17 +13623,12 @@ function _sumarConsumoDeVentas(out, ventasDia, factor){
 // Consumo teórico (peso BRUTO en la unidad del ingrediente) en el período,
 // según las ventas cruzadas con las recetas.
 // Recorre día por día [desde, hasta]: si ese día tiene ventas diarias
-// cargadas (op.ventasPorDia, vía "Importar ventas diarias"), se usan tal
-// cual — es el dato exacto. Si no, se estima ese día repartiendo el total
-// del MES en partes iguales entre sus días (op.ventasPorMes, vía "Importar
-// ventas desde Excel" en Salud del negocio) — mejor aproximación que contar
-// el mes entero sin importar cuántos días del rango realmente lo tocan,
-// que es lo que hacía antes este cálculo.
+// cargadas (op.ventasPorDia, vía "Cargar ventas"), se usan tal cual — es el
+// dato exacto. Un día sin ventas cargadas no consume nada: no se estima.
 function _consumoTeoricoPeriodo(desde, hasta){
   const op = getOp();
   const out = {};
   const ventasPorDia = (op && op.ventasPorDia) || {};
-  const ventasPorMes = (op && op.ventasPorMes) || {};
 
   const dIni = new Date(desde+'T12:00:00');
   const dFin = new Date(hasta+'T12:00:00');
@@ -13633,12 +13636,7 @@ function _consumoTeoricoPeriodo(desde, hasta){
 
   for(let d = new Date(dIni); d <= dFin; d.setDate(d.getDate()+1)){
     const iso = d.toISOString().slice(0,10);
-    if(ventasPorDia[iso]){
-      _sumarConsumoDeVentas(out, ventasPorDia[iso], 1);
-    } else {
-      const mes = iso.slice(0,7);
-      if(ventasPorMes[mes]) _sumarConsumoDeVentas(out, ventasPorMes[mes], 1/_diasEnMes(mes));
-    }
+    if(ventasPorDia[iso]) _sumarConsumoDeVentas(out, ventasPorDia[iso], 1);
   }
   return out;
 }
@@ -13826,6 +13824,17 @@ function renderResultado(){
   // se llama distinto. Un EBITDA estimado presentado como EBITDA es el tipo de
   // número que un contador desarma en dos minutos.
   const totalManoObra = gastos.filter(_esManoObra).reduce((s,g)=>s+(+g.monto||0),0);
+  // Unidades del mes que se vendieron pero no se sabe por qué canal. No entran a
+  // los índices (en delivery habría que descontar comisión y packaging), así que
+  // se cuentan aparte para poder avisarlo.
+  let unidSinCanal = 0;
+  {
+    const _pd = op.ventasPorDia || {};
+    Object.keys(_pd).forEach(f=>{
+      if(f.slice(0,7) !== mesSel) return;
+      Object.entries(_pd[f]).forEach(([k,u])=>{ if(_canalDeClave(k)===CANAL_PEND) unidSinCanal += (+u||0); });
+    });
+  }
   let kpi = {listo:false, ventas:0, mercaderia:0, manoObra:totalManoObra,
              foodCostPct:null, primeCostPct:null, ebitda:null, ebitdaPct:null,
              desperdicio:0, desperdicioPct:null};
@@ -13857,7 +13866,8 @@ function renderResultado(){
 
   // Snapshot para el informe descargable
   const despLogMes = ((op.desperdiciosLog)||[]).filter(r => (r.fecha||'').slice(0,7) === mesSel);
-  window._saludCalc = {kpi, totalManoObra, despLogMes, totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, costoBuffets, nBuffets, matriz: km.matriz, kmListo: km.listo};
+  window._saludCalc = {kpi, unidSinCanal, totalManoObra, despLogMes,
+    matrizSalon: km.matrizSalon||[], matrizDlv: km.matrizDlv||[], totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, costoBuffets, nBuffets, matriz: km.matriz, kmListo: km.listo};
 
   const accionesInforme = (recetasConPrecio.length && totalFijos>0)
     ? `<button class="btn btn-secondary btn-sm" onclick="descargarInforme()">${ico('download',13)} Descargar informe</button>`
@@ -13868,6 +13878,12 @@ function renderResultado(){
       ${ico('bulb',14)} Este módulo mira el negocio completo: tus recetas pueden estar sanas una por una y aun así la operación perder plata si las ventas no cubren los gastos fijos. Acá está esa verdad.
     </div>
 
+    ${unidSinCanal>0 ? `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px"><strong>${fmt(unidSinCanal)} unidades del mes no tienen canal asignado.</strong>
+      Quedan fuera de los tres índices y de las dos matrices, así que lo que ves acá abajo todavía no refleja todo lo que se vendió.
+      En delivery hay comisión y packaging que descontar: contarlas como salón inflaría el margen. Clasificalas y los números pasan a coincidir con la realidad de tus ventas.</div>
+      <button class="btn btn-secondary btn-sm" onclick="navigate('cargarVentas')">Asignar canal</button>
+    </div>` : ''}
     ${_htmlKPIs(kpi, mesSel)}
 
     ${_htmlDesvioSalud()}
@@ -14053,7 +14069,7 @@ function renderResultado(){
         <div class="card-body">
           <div style="font-size:12px;color:var(--gris-2);margin-bottom:14px">Cargá las unidades vendidas de cada receta en <strong>${mesSel}</strong> y la matriz clasifica tu carta: qué platos sostienen el negocio, cuáles venden mucho pero pierden plata, y cuáles hay que sacar.</div>
           <div style="margin-bottom:14px">
-            <button class="btn btn-secondary btn-sm" onclick="importarVentasDesdeExcel('${escJs(mesSel)}')">${ico('chart',13)} Importar ventas desde Excel</button>
+            <button class="btn btn-secondary btn-sm" onclick="navigate('cargarVentas')">${ico('chart',13)} Cargar ventas</button>
             <span style="font-size:11px;color:var(--gris-3);margin-left:8px">Columnas: RECETA · UNIDADES VENDIDAS</span>
           </div>
           <div class="table-wrap" style="margin-bottom:16px">
@@ -14084,11 +14100,20 @@ function renderResultado(){
           </div>
           ${km.listo ? `
             ${(()=>{
-              const tipos = [...new Set(km.matriz.map(i=>i.tipoPlato))];
+              // Cada canal se clasifica contra sí mismo: mezclarlos hace que el
+              // delivery, que siempre tiene menos margen por la comisión y el
+              // packaging, caiga en perro o caballito por comparación injusta.
+              const _hayDlv = (km.matrizDlv||[]).length > 0;
+              const _canalVista = _hayDlv ? (window._matrizCanal || CANAL_SALON) : CANAL_SALON;
+              const _base = _canalVista===CANAL_DELIVERY ? (km.matrizDlv||[]) : (km.matrizSalon||km.matriz||[]);
+              const _umbralPop = _canalVista===CANAL_DELIVERY ? km.popThresholdDlv : km.popThreshold;
+              const _umbralMc  = _canalVista===CANAL_DELIVERY ? km.mcPromDlv : km.mcProm;
+              const _unidCanal = _canalVista===CANAL_DELIVERY ? km.totalUnidDlv : km.totalUnid;
+              const tipos = [...new Set(_base.map(i=>i.tipoPlato))];
               const fTipo = window._matrizTipo || 'todos';
               const orden = window._matrizOrden || 'contribucion';
               const vistaGraf = window._vistaGraf || 'matriz';
-              let vis = fTipo==='todos' ? [...km.matriz] : km.matriz.filter(i=>i.tipoPlato===fTipo);
+              let vis = fTipo==='todos' ? [..._base] : _base.filter(i=>i.tipoPlato===fTipo);
               const ordFn = {
                 contribucion:(a,b)=>b.contribucion-a.contribucion,
                 alfabetico:(a,b)=>a.nombre.localeCompare(b.nombre,'es',{sensitivity:'base'}),
@@ -14101,7 +14126,7 @@ function renderResultado(){
 
               // Generar el gráfico según la vista activa
               let grafHtml = '';
-              if(vistaGraf==='matriz')      grafHtml = chartMatriz(vis, km.popThreshold, km.mcProm);
+              if(vistaGraf==='matriz')      grafHtml = chartMatriz(vis, _umbralPop, _umbralMc);
               else if(vistaGraf==='contrib') grafHtml = chartContribucion(vis);
               else if(vistaGraf==='fc')      grafHtml = chartFoodCost(vis);
               else if(vistaGraf==='dona')    grafHtml = chartDona(vis);
@@ -14110,7 +14135,22 @@ function renderResultado(){
                 border-bottom:${vistaGraf===v?'2.5px solid var(--dorado)':'2px solid transparent'};
                 color:${vistaGraf===v?'var(--negro)':'var(--gris-2)'};background:none;border-top:none;border-left:none;border-right:none;`;
 
+              const _tabCanal = (c,label) => `cursor:pointer;padding:7px 18px;font-size:13px;font-weight:${_canalVista===c?'700':'400'};
+                border-radius:8px;border:1px solid ${_canalVista===c?'var(--dorado)':'var(--crema-2)'};
+                background:${_canalVista===c?'var(--crema)':'transparent'};color:var(--negro);margin-right:8px;`;
+
               return `
+              ${_hayDlv ? `
+              <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:14px">
+                <button style="${_tabCanal(CANAL_SALON)}" onclick="window._matrizCanal='${CANAL_SALON}';renderResultado()">Salón · ${fmt(km.totalUnid)} un</button>
+                <button style="${_tabCanal(CANAL_DELIVERY)}" onclick="window._matrizCanal='${CANAL_DELIVERY}';renderResultado()">Delivery · ${fmt(km.totalUnidDlv)} un</button>
+                <span style="font-size:11px;color:var(--gris-2);margin-left:6px">Cada canal se compara contra sí mismo</span>
+              </div>
+              ${_canalVista===CANAL_DELIVERY && _unidCanal < 100 ? `
+              <div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px">
+                Con ${fmt(_unidCanal)} unidades en el mes la clasificación es <strong>orientativa</strong>: un plato con pocas ventas puede salir estrella por azar. Se muestra igual, pero no tomes decisiones grandes con esto solo.
+              </div>` : ''}
+              ` : ''}
               <div style="display:flex;gap:0;border-bottom:1px solid var(--crema-2);margin-bottom:16px">
                 <button style="${tabStyle('matriz')}" onclick="window._vistaGraf='matriz';renderResultado()">⬡ Matriz</button>
                 <button style="${tabStyle('contrib')}" onclick="window._vistaGraf='contrib';renderResultado()">📊 Contribución</button>
@@ -14123,8 +14163,8 @@ function renderResultado(){
                 <div style="display:flex;align-items:center;gap:6px">
                   <label style="font-size:12px;color:var(--gris-2)">Tipo:</label>
                   <select onchange="window._matrizTipo=this.value;renderResultado()" style="padding:5px 10px;font-size:12px;width:auto">
-                    <option value="todos"${fTipo==='todos'?' selected':''}>Todos (${km.matriz.length})</option>
-                    ${tipos.map(t=>`<option value="${t}"${fTipo===t?' selected':''}>${t} (${km.matriz.filter(i=>i.tipoPlato===t).length})</option>`).join('')}
+                    <option value="todos"${fTipo==='todos'?' selected':''}>Todos (${_base.length})</option>
+                    ${tipos.map(t=>`<option value="${t}"${fTipo===t?' selected':''}>${t} (${_base.filter(i=>i.tipoPlato===t).length})</option>`).join('')}
                   </select>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px">
@@ -14167,6 +14207,8 @@ function renderResultado(){
           ` : `<div style="font-size:13px;color:var(--gris-2);background:var(--crema);border-radius:10px;padding:12px 14px">Cargá unidades vendidas en al menos <strong>2 recetas</strong> para que aparezca la matriz.</div>`}
         </div>
       </div>
+
+      ${_htmlCruceCanales(km)}
     `}
   `, accionesInforme);
 }
@@ -14416,24 +14458,38 @@ function unidadesVendidasMes(mes){
   const op = getOp();
   const out = {};
   if(!op || !mes) return out;
+  // UNA FUENTE POR MES, NUNCA LAS DOS MEZCLADAS.
+  //
+  // Antes esto sumaba el detalle diario de los días cargados MÁS la parte
+  // proporcional de un total mensual para los días que faltaban. El resultado
+  // era mitad medido y mitad estimado, presentado como un solo número — y ese
+  // número alimenta el food cost, el prime cost y el EBITDA.
+  //
+  // Ahora: si el mes tiene aunque sea un día cargado, manda el detalle diario y
+  // el mensual se ignora. Si no tiene ninguno, se usa el mensual tal cual, que
+  // también es un dato real (alguien lo escribió), solo que con menos detalle.
+  // Lo que no se hace nunca más es sumar los dos.
+  //
+  // Excepción: el delivery (claves terminadas en _dlv) solo se carga a mano por
+  // mes, no tiene equivalente diario. Se suma siempre, venga de donde venga el
+  // resto, porque si no desaparecería.
   const porDia = op.ventasPorDia || {};
   const porMes = (op.ventasPorMes || {})[mes] || {};
   const n = _diasEnMes(mes);
-  let diasConDato = 0;
+  let hayDiarias = false;
   for(let d = 1; d <= n; d++){
     const iso = mes + '-' + String(d).padStart(2, '0');
     if(!porDia[iso]) continue;
-    diasConDato++;
+    hayDiarias = true;
     Object.keys(porDia[iso]).forEach(id => {
       out[id] = (out[id] || 0) + (+porDia[iso][id] || 0);
     });
   }
-  const diasSin = n - diasConDato;
-  if(diasSin > 0){
-    Object.keys(porMes).forEach(id => {
-      out[id] = (out[id] || 0) + (+porMes[id] || 0) * diasSin / n;
-    });
-  }
+  Object.keys(porMes).forEach(id => {
+    const esDelivery = /_dlv$/.test(id);
+    if(hayDiarias && !esDelivery) return;   // manda el diario
+    out[id] = (out[id] || 0) + (+porMes[id] || 0);
+  });
   return out;
 }
 
@@ -14472,15 +14528,49 @@ function clasificarMenu(mes){
 }
 
 // Expande la matriz con líneas delivery — AISLADA, con guardas, no toca la carga
+// ══ LAS DOS MATRICES ═══════════════════════════════════════════════════════
+// Kasavana & Smith clasifica cada plato contra el PROMEDIO del menú. Mientras
+// salón y delivery estuvieron en una sola matriz, ese promedio no describía a
+// ninguno de los dos, y el error tenía dirección: al delivery se le descuentan
+// comisión y packaging, así que su margen siempre es más bajo, y comparado
+// contra los márgenes de salón caía casi siempre en perro o caballito. No
+// porque el plato fuera malo en su canal, sino porque se lo medía con la vara
+// del otro. Con la popularidad pasaba lo mismo si el delivery es una porción
+// chica del volumen.
+//
+// Ahora cada canal se clasifica contra sí mismo. `matriz` sigue siendo la lista
+// completa —la usan los totales del mes y los tres índices, que suman y no
+// clasifican— y se agregan `matrizSalon` y `matrizDlv`, cada una con sus
+// propios umbrales.
+function _clasificarSet(items){
+  const conVenta = items.filter(i=>i.unid>0);
+  if(conVenta.length < 2) return {matriz:[], listo:false, popThreshold:0, mcProm:0, totalUnid:0};
+  const totalUnid = conVenta.reduce((s,i)=>s+i.unid,0);
+  const popThreshold = (1/conVenta.length)*0.7;
+  const mcProm = conVenta.reduce((s,i)=>s+i.mc*i.unid,0)/totalUnid;
+  const matriz = conVenta.map(i=>{
+    const pop = i.unid/totalUnid;
+    const clase = (pop>=popThreshold) ? (i.mc>=mcProm?'estrella':'caballito') : (i.mc>=mcProm?'puzzle':'perro');
+    return {...i, pop, clase, contribucion:i.mc*i.unid, fc:i.costo/i.pv*100};
+  });
+  return {matriz, listo:true, popThreshold, mcProm, totalUnid};
+}
 function expandirMatrizConDelivery(km, mes){
   try {
     const op = getOp();
-    if(!op || !op.tieneDelivery || !km || !km.listo) return km;
+    if(!km) return km;
+    // La matriz de salón se reclasifica sola, sin el delivery adentro.
+    const salon = _clasificarSet((km.items||[]).map(i=>({...i, canal:CANAL_SALON})));
+    if(!op || !op.tieneDelivery){
+      return {...km, matriz:salon.matriz, matrizSalon:salon.matriz, matrizDlv:[],
+              listo:salon.listo, popThreshold:salon.popThreshold, mcProm:salon.mcProm,
+              totalUnid:salon.totalUnid, popThresholdDlv:0, mcPromDlv:0, totalUnidDlv:0};
+    }
     const ventas = unidadesVendidasMes(mes);
-    const extra = [];
+    const itemsD = [];
     (demoData.recetas||[]).filter(r=>r.opId===opActivaId() && r.precioVenta>0 && r.delivery && r.delivery.activa).forEach(r=>{
-      const unidD = +ventas[r.id+'_dlv'] || 0;
-      if(unidD<=0) return; // solo si tiene ventas delivery cargadas a mano
+      const unidD = +ventas[_claveVenta(r.id, CANAL_DELIVERY)] || 0;
+      if(unidD<=0) return;
       const d = r.delivery;
       const {merc} = calcReceta(r, r.porciones||1);
       let mercD = merc;
@@ -14494,24 +14584,21 @@ function expandirMatrizConDelivery(km, mes){
       }
       const pvD = +d.precioVenta || r.precioVenta;
       const costoD = mercD + (+d.packaging||0) + pvD*(+d.comision||0)/100;
-      extra.push({id:r.id+'_dlv', nombre:r.nombre+' (delivery)', tipoPlato:r.tipoPlato||'Sin tipo',
+      itemsD.push({id:_claveVenta(r.id, CANAL_DELIVERY), idReceta:r.id, canal:CANAL_DELIVERY,
+        nombre:r.nombre, tipoPlato:r.tipoPlato||'Sin tipo',
         pv:pvD, costo:costoD, mc:pvD-costoD, unid:unidD});
     });
-    if(!extra.length) return km;
-    // recalcular umbrales con el set completo
-    const todos = km.matriz.concat(extra);
-    const totalUnid = todos.reduce((s,i)=>s+i.unid,0);
-    const popThreshold = (1/todos.length)*0.7;
-    const mcProm = todos.reduce((s,i)=>s+i.mc*i.unid,0)/totalUnid;
-    const matriz = todos.map(i=>{
-      const pop = i.unid/totalUnid;
-      const clase = (pop>=popThreshold) ? (i.mc>=mcProm?'estrella':'caballito') : (i.mc>=mcProm?'puzzle':'perro');
-      return {...i, pop, clase, contribucion:i.mc*i.unid, fc:i.costo/i.pv*100};
-    });
-    return {...km, matriz, popThreshold, mcProm, totalUnid};
+    const dlv = _clasificarSet(itemsD);
+    return {...km,
+      matriz: salon.matriz.concat(dlv.matriz),   // solo para sumar totales
+      matrizSalon: salon.matriz, matrizDlv: dlv.matriz,
+      listo: salon.listo || dlv.listo,
+      popThreshold: salon.popThreshold, mcProm: salon.mcProm, totalUnid: salon.totalUnid,
+      popThresholdDlv: dlv.popThreshold, mcPromDlv: dlv.mcProm, totalUnidDlv: dlv.totalUnid,
+      listoSalon: salon.listo, listoDlv: dlv.listo};
   } catch(e){
-    console.warn('Delivery en matriz falló, se muestra solo salón:', e);
-    return km; // ante cualquier error, devolver la matriz original intacta
+    console.warn('Matriz por canal falló, se muestra la original:', e);
+    return {...km, matrizSalon:km.matriz||[], matrizDlv:[]};
   }
 }
 
@@ -14702,6 +14789,11 @@ function updVentaReceta(mes, recetaId, unidades){
 }
 
 // Importar unidades vendidas desde Excel — cruza por nombre de receta
+// SIN USO desde el 31/8/2026. Era la segunda puerta para cargar ventas (el
+// resumen mensual, desde Salud del negocio). Se dejó de llamar cuando la carga
+// pasó a ser una sola, por "Cargar ventas", con la fecha adentro del archivo.
+// No se borra todavía porque escribe en op.ventasPorMes, que sigue siendo la
+// única forma de cargar delivery. NO volver a cablearla sin resolver eso antes.
 function importarVentasDesdeExcel(mes){
   const input = document.createElement('input');
   input.type = 'file'; input.accept = '.xlsx,.xls';
@@ -14787,38 +14879,64 @@ function importarVentasDiarias(){
         const data = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
         const op = getOp();
         if(!op.ventasPorDia) op.ventasPorDia = {};
-        const norm = s => String(s||'').toLowerCase().trim().replace(/\s+/g,' ');
-        const recetasOp = getRecetas();
+        if(!op.ventasSinMatch) op.ventasSinMatch = [];
         const hoy = new Date().toISOString().slice(0,10);
-        const porDia = {}; // {fecha: {recetaId: unidades}} — soporta un archivo con varias fechas mezcladas
-        let ok=0, sinMatch=[];
+        // Si la operación no tiene delivery, no hay ambigüedad posible: todo es
+        // salón. "Pendiente" solo tiene sentido donde el delivery existe.
+        const hayDelivery = !!op.tieneDelivery;
+        const porDia = {};
+        let ok = 0, pendientes = 0;
+        const sinMatch = {};
         data.forEach(row=>{
           const nombre = row['RECETA']||row['Receta']||row['receta']||row['PLATO']||row['Plato']||row['PRODUCTO']||row['Producto']||row['producto'];
           const unid = parseFloat(row['UNIDADES VENDIDAS']||row['Unidades vendidas']||row['UNIDADES']||row['Unidades']||row['CANTIDAD']||row['Cantidad']||row['CANT']||row['Cant']||0);
           const fechaCol = row['FECHA']||row['Fecha']||row['fecha'];
           const fecha = _normalizarFechaImportada(fechaCol) || hoy;
+          const canalCol = _canalDesdeColumna(row['CANAL']||row['Canal']||row['canal']||row['ORIGEN']||row['Origen']);
           if(!nombre || !unid) return;
-          const receta = recetasOp.find(r=>norm(r.nombre)===norm(nombre))
-            || recetasOp.find(r=>norm(r.nombre).includes(norm(nombre)) || norm(nombre).includes(norm(r.nombre)));
-          if(receta){
-            if(!porDia[fecha]) porDia[fecha] = {};
-            porDia[fecha][receta.id] = (porDia[fecha][receta.id]||0) + Math.max(0,unid);
-            ok++;
-          } else sinMatch.push(nombre);
+          const res = _resolverNombreVenta(nombre);
+          if(!res){
+            // No se descarta en silencio: queda para que alguien lo asigne, y esa
+            // asignación se guarda como alias y no vuelve a preguntarse.
+            const k = _normNombre(nombre);
+            if(!sinMatch[k]) sinMatch[k] = {nombre:String(nombre).trim(), unidades:0, lineas:0, fechas:{}};
+            sinMatch[k].unidades += Math.max(0,unid);
+            sinMatch[k].lineas++;
+            sinMatch[k].fechas[fecha] = (sinMatch[k].fechas[fecha]||0) + Math.max(0,unid);
+            return;
+          }
+          // Prioridad del canal: la columna del archivo, después lo que dice el
+          // alias, y si nada lo aclara queda pendiente (salvo que no haya delivery).
+          let canal = canalCol || res.canal || (hayDelivery ? CANAL_PEND : CANAL_SALON);
+          if(canal===CANAL_PEND) pendientes += Math.max(0,unid);
+          const clave = _claveVenta(res.recetaId, canal);
+          if(!porDia[fecha]) porDia[fecha] = {};
+          porDia[fecha][clave] = (porDia[fecha][clave]||0) + Math.max(0,unid);
+          ok++;
         });
         const fechasCargadas = Object.keys(porDia).sort();
         fechasCargadas.forEach(fecha=>{
           if(!op.ventasPorDia[fecha]) op.ventasPorDia[fecha] = {};
           Object.assign(op.ventasPorDia[fecha], porDia[fecha]);
         });
+        // Los nombres sin match se acumulan para resolverlos en pantalla.
+        Object.values(sinMatch).forEach(sm=>{
+          const ya = op.ventasSinMatch.find(x=>_normNombre(x.nombre)===_normNombre(sm.nombre));
+          if(ya){
+            ya.unidades += sm.unidades; ya.lineas += sm.lineas;
+            Object.entries(sm.fechas).forEach(([f,u])=>{ ya.fechas[f] = (ya.fechas[f]||0)+u; });
+          } else op.ventasSinMatch.push(sm);
+        });
         guardarEnFirestore();
-        let msg = `${ok} línea${ok===1?'':'s'} de venta cargada${ok===1?'':'s'}`;
+        let msg = `${ok} línea${ok===1?'':'s'} cargada${ok===1?'':'s'}`;
         if(fechasCargadas.length===1) msg += ` para el ${fmtFechaCorta(fechasCargadas[0])}`;
         else if(fechasCargadas.length>1) msg += ` entre el ${fmtFechaCorta(fechasCargadas[0])} y el ${fmtFechaCorta(fechasCargadas[fechasCargadas.length-1])}`;
-        if(sinMatch.length) msg += ` · ${sinMatch.length} sin coincidencia`;
-        showToast(msg, ok?'success':'error');
-        if(sinMatch.length) console.log('Ventas diarias sin match:', sinMatch);
-        if(vistaActual==='stock') renderStock();
+        const nSin = Object.keys(sinMatch).length;
+        if(nSin) msg += ` · ${nSin} nombre${nSin===1?'':'s'} sin reconocer`;
+        if(pendientes) msg += ` · ${fmt(pendientes)} unidades sin canal`;
+        showToast(msg, ok||nSin ? 'success' : 'error');
+        if(vistaActual==='cargarVentas') renderCargarVentas();
+        else navigate('cargarVentas');
       } catch(err){
         showToast('Error al leer el archivo: '+err.message, 'error');
       }
@@ -14900,6 +15018,365 @@ function _htmlKPIs(k, mes){
       ${k.desperdicio>0 ? `Descuenta $${fmt(Math.round(k.desperdicio))} de desperdicio registrado (${k.desperdicioPct.toFixed(1)} % de las ventas).` : ''}
     </div>
   </div>`;
+}
+
+// ══ EL CANAL DE UNA VENTA ══════════════════════════════════════════════════
+// Una venta tiene cuatro datos: fecha, plato, CANAL y cantidad. El canal estuvo
+// mucho tiempo escondido adentro del identificador (la receta 'r1' y su versión
+// delivery 'r1_dlv' parecían dos recetas distintas). Se mantiene ese formato de
+// clave porque ya hay datos guardados así, pero ahora se lee y se escribe
+// SIEMPRE por estas funciones: el resto del sistema no vuelve a manipular el
+// sufijo a mano.
+//
+// Tres canales:
+//   salon      → clave = idReceta
+//   delivery   → clave = idReceta + '_dlv'   (tiene precio, comisión y packaging propios)
+//   pendiente  → clave = idReceta + '_pend'  (se vendió, no sabemos por dónde)
+//
+// "Pendiente" existe porque muchos resúmenes de caja no dicen el canal. Antes se
+// asumía salón en silencio, y un plato de delivery contado como salón miente en
+// el margen: le faltan la comisión de la app y el packaging. Ahora queda a la
+// vista hasta que alguien que conoce la operación lo decida.
+const CANAL_SALON='salon', CANAL_DELIVERY='delivery', CANAL_PEND='pendiente';
+function _claveVenta(recetaId, canal){
+  if(canal===CANAL_DELIVERY) return recetaId+'_dlv';
+  if(canal===CANAL_PEND)     return recetaId+'_pend';
+  return recetaId;
+}
+function _canalDeClave(clave){
+  if(/_dlv$/.test(clave))  return CANAL_DELIVERY;
+  if(/_pend$/.test(clave)) return CANAL_PEND;
+  return CANAL_SALON;
+}
+function _recetaDeClave(clave){ return String(clave||'').replace(/_(dlv|pend)$/,''); }
+function _nombreCanal(c){
+  return c===CANAL_DELIVERY ? 'Delivery' : c===CANAL_PEND ? 'Sin clasificar' : 'Salón';
+}
+
+// ── Alias del sistema de facturación ───────────────────────────────────────
+// Maxirest —o cualquier POS— nunca escribe los nombres igual que el cocinero.
+// Cada receta guarda con qué nombres aparece allá; la versión delivery guarda
+// los suyos. Así el nombre del archivo alcanza para saber plato Y canal, sin
+// necesidad de que el POS traiga una columna que casi nunca trae.
+//
+// Antes el importador, si no encontraba el nombre exacto, buscaba el más
+// parecido y cargaba ahí sin avisar. Eso es peor que no cargar: mete ventas en
+// la receta equivocada y nadie se entera. Ahora lo que no matchea queda a la
+// espera de que alguien lo asigne, y esa asignación se guarda como alias: el
+// trabajo se hace una vez.
+function _normNombre(x){ return String(x||'').toLowerCase().trim().replace(/\s+/g,' '); }
+function _resolverNombreVenta(nombre){
+  const n = _normNombre(nombre);
+  if(!n) return null;
+  const recetas = getRecetas();
+  for(const r of recetas){
+    const aliasD = (r.delivery && r.delivery.aliasPos) || [];
+    if(aliasD.some(a=>_normNombre(a)===n)) return {recetaId:r.id, canal:CANAL_DELIVERY, via:'alias'};
+  }
+  for(const r of recetas){
+    if((r.aliasPos||[]).some(a=>_normNombre(a)===n)) return {recetaId:r.id, canal:CANAL_SALON, via:'alias'};
+  }
+  const exacta = recetas.find(r=>_normNombre(r.nombre)===n);
+  if(exacta) return {recetaId:exacta.id, canal:null, via:'nombre'};
+  return null;
+}
+function _canalDesdeColumna(v){
+  const t = _normNombre(v);
+  if(!t) return null;
+  if(/deliv|pedidos ?ya|rappi|app|envio|env[ií]o|reparto/.test(t)) return CANAL_DELIVERY;
+  if(/sal[oó]n|mostrador|local|mesa|sal[oó]n comedor/.test(t)) return CANAL_SALON;
+  return null;
+}
+
+// El mismo plato visto en los dos canales. Es el cruce que dispara una decisión
+// concreta: "estrella en salón, perro en delivery" se contesta subiendo el
+// precio de la app, cambiando la guarnición o sacándolo del delivery. Ninguna
+// de las dos matrices por separado lo muestra.
+function _htmlCruceCanales(km){
+  const dlv = km.matrizDlv || [];
+  if(!dlv.length) return '';
+  const salon = km.matrizSalon || [];
+  const filas = [];
+  dlv.forEach(d=>{
+    const s_ = salon.find(x=>x.id === _recetaDeClave(d.id));
+    if(!s_) return;
+    filas.push({nombre:d.nombre, cs:s_.clase, cd:d.clase, mcS:s_.mc, mcD:d.mc,
+                uS:s_.unid, uD:d.unid, dif:d.mc - s_.mc});
+  });
+  if(!filas.length) return '';
+  filas.sort((a,b)=>a.dif-b.dif);
+  const pill = c => {
+    const col = {estrella:['#E4F3E6','#1B7A34'], caballito:['#FDF0D0','#6B4A08'],
+                 puzzle:['#E8EFF7','#1F4E79'], perro:['#FCE8E8','#C02626']}[c] || ['#F5F0E8','#5A5A52'];
+    const nom = {estrella:'Estrella', caballito:'Caballito', puzzle:'Puzzle', perro:'Perro'}[c] || c;
+    return `<span style="background:${col[0]};color:${col[1]};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${nom}</span>`;
+  };
+  return `<div class="card">
+    <div class="card-header"><span class="card-title">El mismo plato en los dos canales</span></div>
+    <div class="card-body" style="font-size:13px;color:var(--gris-1);border-bottom:1px solid var(--crema-2)">
+      Cuando un plato cambia de clase al pasar de un canal al otro, ahí hay una decisión esperando: el precio de la app, la guarnición, o sacarlo del delivery.
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Plato</th><th>Salón</th><th>Delivery</th><th style="text-align:right">Margen salón</th><th style="text-align:right">Margen delivery</th><th style="text-align:right">Diferencia</th></tr></thead>
+      <tbody>
+        ${filas.map(f=>`<tr${f.cs!==f.cd?' style="background:#FFFBF2"':''}>
+          <td><strong>${esc(f.nombre)}</strong><div style="font-size:11px;color:var(--gris-2)">${fmt(f.uS)} salón · ${fmt(f.uD)} delivery</div></td>
+          <td>${pill(f.cs)}</td><td>${pill(f.cd)}</td>
+          <td style="text-align:right">$${fmt(Math.round(f.mcS))}</td>
+          <td style="text-align:right">$${fmt(Math.round(f.mcD))}</td>
+          <td style="text-align:right;font-weight:700;color:${f.dif<0?'#C02626':'#1B7A34'}">${f.dif>=0?'+':'−'}$${fmt(Math.abs(Math.round(f.dif)))}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+// ══ CARGAR VENTAS ══════════════════════════════════════════════════════════
+// La única puerta para meter ventas al sistema. Antes había dos, en dos
+// pantallas distintas: el diario escondido en Control de stock y el mensual en
+// Salud del negocio. Dos caminos para el mismo dato terminan dando distinto.
+//
+// El archivo trae la fecha adentro, así que no hace falta elegir "diario" o
+// "mensual": si trae un día es el cierre de un turno, si trae treinta es el mes.
+// Lo decide el archivo, no el usuario.
+function renderCargarVentas(){
+  const op = getOp();
+  if(!op){ _panelSinOperacion(); return; }
+  if(!window._cvMes) window._cvMes = _mesLocal();
+  const mes = window._cvMes;
+  const porDia = op.ventasPorDia || {};
+  const n = _diasEnMes(mes);
+  const recetasOp = getRecetas();
+  const nombreRec = id => (recetasOp.find(r=>r.id===id)||{}).nombre || '—';
+
+  // Un día es "cargado" si tiene al menos una venta. Los que faltan se ven:
+  // un hueco a la vista se completa, un hueco invisible se estima.
+  const precioDe = (recId, canal) => {
+    const r = recetasOp.find(x=>x.id===recId);
+    if(!r) return 0;
+    if(canal===CANAL_DELIVERY && r.delivery && +r.delivery.precioVenta) return +r.delivery.precioVenta;
+    return +r.precioVenta || 0;
+  };
+  const dias = [];
+  const porCanal = {[CANAL_SALON]:{u:0,$:0}, [CANAL_DELIVERY]:{u:0,$:0}, [CANAL_PEND]:{u:0,$:0}};
+  const pendPorReceta = {};
+  for(let d=1; d<=n; d++){
+    const iso = mes+'-'+String(d).padStart(2,'0');
+    const v = porDia[iso] || null;
+    let unid=0, monto=0;
+    if(v) Object.entries(v).forEach(([clave,u])=>{
+      const canal = _canalDeClave(clave), recId = _recetaDeClave(clave);
+      const n_ = +u||0, $_ = precioDe(recId, canal)*n_;
+      unid += n_; monto += $_;
+      porCanal[canal].u += n_; porCanal[canal].$ += $_;
+      if(canal===CANAL_PEND) pendPorReceta[recId] = (pendPorReceta[recId]||0) + n_;
+    });
+    dias.push({d, iso, cargado: !!v, unid, monto, items: v ? Object.keys(v).length : 0});
+  }
+  const sinMatch = op.ventasSinMatch || [];
+  const hayDelivery = !!op.tieneDelivery;
+  const cargados = dias.filter(x=>x.cargado);
+  const totalUnid = cargados.reduce((s,x)=>s+x.unid,0);
+  const totalMonto = cargados.reduce((s,x)=>s+x.monto,0);
+  const hoyIso = new Date().toISOString().slice(0,10);
+  const diasPasados = dias.filter(x=>x.iso <= hoyIso);
+  const faltan = diasPasados.filter(x=>!x.cargado);
+
+  setContent('Cargar ventas', `
+    <div style="background:var(--crema);border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--gris-1)">
+      ${ico('bulb',14)} Todo lo que el sistema sabe de tus ventas entra por acá. De este dato salen el food cost, el prime cost, el EBITDA, la matriz de menú y el descuento de stock. El archivo puede traer un día o un mes entero: la fecha va adentro, en su propia columna.
+    </div>
+
+    ${sinMatch.length ? `
+    <div class="card" style="border:1px solid #D4B870">
+      <div class="card-header" style="background:#FDF0D0">
+        <span class="card-title" style="color:#6B4A08">${sinMatch.length} nombre${sinMatch.length===1?'':'s'} que no reconozco</span>
+      </div>
+      <div class="card-body" style="font-size:13px;color:var(--gris-1);border-bottom:1px solid var(--crema-2)">
+        Así los escribe tu sistema de facturación. Decime a qué receta corresponde cada uno y me lo guardo: <strong>no vuelvo a preguntarlo</strong>. Las ventas que están esperando entran solas.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nombre en el POS</th><th style="text-align:right;width:100px">Unidades</th><th>Es esta receta</th><th style="width:200px">Canal</th></tr></thead>
+          <tbody>
+            ${sinMatch.map((sm,ix)=>`<tr>
+              <td><strong>${esc(sm.nombre)}</strong><div style="font-size:11px;color:var(--gris-2)">${sm.lineas} línea${sm.lineas===1?'':'s'}</div></td>
+              <td style="text-align:right">${fmt(sm.unidades)}</td>
+              <td><select id="sm-rec-${ix}" style="width:100%;padding:5px 8px;font-size:12px">
+                <option value="">— elegir receta —</option>
+                ${recetasOp.map(r=>`<option value="${r.id}">${esc(r.nombre)}</option>`).join('')}
+              </select></td>
+              <td style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" onclick="asignarNombrePos('${escJs(sm.nombre)}',document.getElementById('sm-rec-${ix}').value,'${CANAL_SALON}')">Salón</button>
+                ${hayDelivery?`<button class="btn btn-secondary btn-sm" onclick="asignarNombrePos('${escJs(sm.nombre)}',document.getElementById('sm-rec-${ix}').value,'${CANAL_DELIVERY}')">Delivery</button>`:''}
+                <button class="btn btn-danger btn-sm" onclick="descartarNombrePos('${escJs(sm.nombre)}')" title="No cargar estas ventas">${ico('trash',13)}</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>` : ''}
+
+    ${Object.keys(pendPorReceta).length ? `
+    <div class="card" style="border:1px solid #D4B870">
+      <div class="card-header" style="background:#FDF0D0">
+        <span class="card-title" style="color:#6B4A08">Ventas sin canal asignado</span>
+      </div>
+      <div class="card-body" style="font-size:13px;color:var(--gris-1);border-bottom:1px solid var(--crema-2)">
+        El archivo no dice si se vendieron en salón o por delivery, y la diferencia no es menor: en delivery hay que descontar la comisión de la app y el packaging.
+        <strong>Hasta que lo definas, estas unidades no entran en el food cost ni en el EBITDA</strong> — preferimos un número incompleto y visible antes que uno completo y falso.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Receta</th><th style="text-align:right;width:110px">Unidades</th><th style="width:220px">¿Por dónde se vendió?</th></tr></thead>
+          <tbody>
+            ${Object.entries(pendPorReceta).map(([rid,u])=>`<tr>
+              <td><strong>${esc((recetasOp.find(r=>r.id===rid)||{}).nombre||'—')}</strong></td>
+              <td style="text-align:right">${fmt(u)}</td>
+              <td style="display:flex;gap:6px">
+                <button class="btn btn-secondary btn-sm" onclick="asignarCanalPendiente('${escJs(rid)}','${CANAL_SALON}')">Salón</button>
+                <button class="btn btn-secondary btn-sm" onclick="asignarCanalPendiente('${escJs(rid)}','${CANAL_DELIVERY}')">Delivery</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Formato del archivo</span>
+        <button class="btn btn-secondary btn-sm" onclick="descargarPlantillaVentas()">${ico('download',13)} Descargar plantilla</button>
+      </div>
+      <div class="card-body" style="font-size:13px;color:var(--gris-1)">
+        <strong>FECHA</strong>, <strong>RECETA</strong> y <strong>CANTIDAD</strong>. Una línea por plato y por día. Acepta Excel (.xlsx) y CSV.
+        ${hayDelivery ? `<br>Podés agregar una columna <strong>CANAL</strong> con "Salón" o "Delivery". Si no está, y el nombre no lo aclara, las ventas quedan sin clasificar y te las muestro acá arriba para que las asignes.` : ''}
+        <br>Los nombres no necesitan ser idénticos a los tuyos: la primera vez me decís cuál es cuál y me lo guardo.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Ventas cargadas</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="month" value="${mes}" onchange="window._cvMes=this.value;renderCargarVentas()" style="width:auto;padding:5px 10px;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="importarVentasDiarias()">${ico('chart',13)} Importar archivo</button>
+        </div>
+      </div>
+      <div class="card-body" style="border-bottom:1px solid var(--crema-2)">
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:150px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Días con ventas</div><div style="font-size:22px;font-weight:700">${cargados.length} <span style="font-size:13px;font-weight:400;color:var(--gris-2)">de ${n}</span></div></div>
+          <div style="flex:1;min-width:150px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Unidades</div><div style="font-size:22px;font-weight:700">${fmt(totalUnid)}</div></div>
+          <div style="flex:1;min-width:150px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Facturación</div><div style="font-size:22px;font-weight:700">$${fmt(Math.round(totalMonto))}</div></div>
+        </div>
+        ${(porCanal[CANAL_DELIVERY].u || porCanal[CANAL_PEND].u) ? `
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--crema-2);font-size:12px;color:var(--gris-1)">
+          <div><strong>Salón</strong> ${fmt(porCanal[CANAL_SALON].u)} un · $${fmt(Math.round(porCanal[CANAL_SALON].$))}</div>
+          <div style="color:var(--dorado)"><strong>Delivery</strong> ${fmt(porCanal[CANAL_DELIVERY].u)} un · $${fmt(Math.round(porCanal[CANAL_DELIVERY].$))}</div>
+          ${porCanal[CANAL_PEND].u?`<div style="color:#6B4A08"><strong>Sin clasificar</strong> ${fmt(porCanal[CANAL_PEND].u)} un</div>`:''}
+        </div>` : ''}
+      </div>
+      ${faltan.length ? `
+      <div style="background:#FDF0D0;color:#6B4A08;padding:12px 16px;font-size:13px;border-bottom:1px solid var(--crema-2)">
+        <strong>Faltan ${faltan.length} día${faltan.length===1?'':'s'} ya pasado${faltan.length===1?'':'s'}:</strong> ${faltan.slice(0,12).map(x=>x.d).join(', ')}${faltan.length>12?'…':''}.
+        Los días sin ventas no se estiman: no cuentan. Si el local no abrió, está bien así.
+      </div>` : ''}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th style="width:110px">Día</th><th style="text-align:right;width:110px">Platos</th><th style="text-align:right;width:120px">Unidades</th><th style="text-align:right;width:140px">Facturación</th><th style="width:90px"></th></tr></thead>
+          <tbody>
+            ${dias.map(x=>`<tr style="${x.cargado?'':'opacity:.45'}">
+              <td><strong>${String(x.d).padStart(2,'0')}</strong> <span style="font-size:11px;color:var(--gris-2)">${_diaSemanaCorto(x.iso)}</span></td>
+              <td style="text-align:right">${x.cargado?x.items:'—'}</td>
+              <td style="text-align:right">${x.cargado?fmt(x.unid):'—'}</td>
+              <td style="text-align:right">${x.cargado?'$'+fmt(Math.round(x.monto)):'—'}</td>
+              <td>${x.cargado?`<button class="btn btn-danger btn-sm" onclick="borrarVentasDia('${x.iso}')" title="Borrar las ventas de este día">${ico('trash',13)}</button>`:''}</td>
+            </tr>`).join('')}
+            <tr style="background:var(--crema)">
+              <td style="font-weight:700">Total del mes</td><td></td>
+              <td style="text-align:right;font-weight:700">${fmt(totalUnid)}</td>
+              <td style="text-align:right;font-weight:700">$${fmt(Math.round(totalMonto))}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+}
+function _diaSemanaCorto(iso){
+  const d = new Date(iso+'T12:00:00');
+  return isNaN(d) ? '' : ['dom','lun','mar','mié','jue','vie','sáb'][d.getDay()];
+}
+// Asignar canal a lo que quedó pendiente. Se aplica a TODAS las fechas de esa
+// receta: el canal es una característica del producto en el POS, no del día.
+function asignarCanalPendiente(recetaId, canal){
+  const op = getOp(); if(!op || !op.ventasPorDia) return;
+  const claveP = _claveVenta(recetaId, CANAL_PEND);
+  const claveD = _claveVenta(recetaId, canal);
+  let movidas = 0;
+  Object.keys(op.ventasPorDia).forEach(f=>{
+    const u = +op.ventasPorDia[f][claveP] || 0;
+    if(!u) return;
+    op.ventasPorDia[f][claveD] = (+op.ventasPorDia[f][claveD]||0) + u;
+    delete op.ventasPorDia[f][claveP];
+    movidas += u;
+  });
+  guardarEnFirestore(); renderCargarVentas();
+  showToast(fmt(movidas)+' unidades asignadas a '+_nombreCanal(canal), 'success');
+}
+// Enseñarle al sistema cómo llama el POS a una receta. Se guarda como alias y
+// las ventas que estaban esperando entran solas.
+function asignarNombrePos(nombrePos, recetaId, canal){
+  const op = getOp(); if(!op) return;
+  if(!recetaId){ showToast('Elegí una receta','error'); return; }
+  const receta = getRecetas().find(r=>r.id===recetaId);
+  if(!receta){ showToast('Receta no encontrada','error'); return; }
+  const pend = (op.ventasSinMatch||[]).find(x=>_normNombre(x.nombre)===_normNombre(nombrePos));
+  if(!pend) return;
+  if(canal===CANAL_DELIVERY){
+    if(!receta.delivery) receta.delivery = {activa:true};
+    if(!receta.delivery.aliasPos) receta.delivery.aliasPos = [];
+    if(!receta.delivery.aliasPos.some(a=>_normNombre(a)===_normNombre(nombrePos))) receta.delivery.aliasPos.push(pend.nombre);
+  } else {
+    if(!receta.aliasPos) receta.aliasPos = [];
+    if(!receta.aliasPos.some(a=>_normNombre(a)===_normNombre(nombrePos))) receta.aliasPos.push(pend.nombre);
+  }
+  if(!op.ventasPorDia) op.ventasPorDia = {};
+  const clave = _claveVenta(recetaId, canal);
+  Object.entries(pend.fechas||{}).forEach(([f,u])=>{
+    if(!op.ventasPorDia[f]) op.ventasPorDia[f] = {};
+    op.ventasPorDia[f][clave] = (+op.ventasPorDia[f][clave]||0) + (+u||0);
+  });
+  op.ventasSinMatch = (op.ventasSinMatch||[]).filter(x=>_normNombre(x.nombre)!==_normNombre(nombrePos));
+  guardarEnFirestore(); renderCargarVentas();
+  showToast('"'+pend.nombre+'" ahora es '+receta.nombre+' ('+_nombreCanal(canal).toLowerCase()+'). No vuelvo a preguntarlo.', 'success');
+}
+function descartarNombrePos(nombrePos){
+  const op = getOp(); if(!op) return;
+  if(!confirm('¿Descartar "'+nombrePos+'"? Las ventas de ese nombre no se van a cargar.')) return;
+  op.ventasSinMatch = (op.ventasSinMatch||[]).filter(x=>_normNombre(x.nombre)!==_normNombre(nombrePos));
+  guardarEnFirestore(); renderCargarVentas();
+}
+function borrarVentasDia(iso){
+  const op = getOp(); if(!op || !op.ventasPorDia) return;
+  if(!confirm('¿Borrar las ventas cargadas del '+fmtFechaCorta(iso)+'?')) return;
+  delete op.ventasPorDia[iso];
+  guardarEnFirestore(); renderCargarVentas();
+  showToast('Ventas del '+fmtFechaCorta(iso)+' borradas','success');
+}
+function descargarPlantillaVentas(){
+  const recetasOp = getRecetas().slice(0,3);
+  const hoy = new Date().toISOString().slice(0,10);
+  const conDelivery = !!(getOp()||{}).tieneDelivery;
+  const filas = conDelivery ? [['FECHA','RECETA','CANAL','CANTIDAD']] : [['FECHA','RECETA','CANTIDAD']];
+  const fila = (nom)=> conDelivery ? [hoy, nom, 'Salón', ''] : [hoy, nom, ''];
+  if(recetasOp.length) recetasOp.forEach(r=>filas.push(fila(r.nombre)));
+  else filas.push(fila('Nombre exacto de la receta'));
+  const ws = XLSX.utils.aoa_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ventas');
+  XLSX.writeFile(wb, 'plantilla-ventas.xlsx');
 }
 
 // Informe completo listo para imprimir / guardar como PDF
@@ -15000,6 +15477,42 @@ function descargarInforme(){
       </tbody>
     </table>
     <div class="sub" style="margin:-14px 0 22px">El EBITDA es el resultado de la operación antes de intereses, impuestos a las ganancias y amortizaciones. Incluye el sueldo del dueño si está cargado como gasto fijo.</div>
+
+    ${(()=>{
+      // Salón vs delivery. Solo se separa lo que se puede separar sin inventar:
+      // el food cost y el margen de contribución. El prime cost y el EBITDA no
+      // se parten por canal — la mano de obra es la misma cocina para los dos y
+      // repartirla sería una suposición disfrazada de dato.
+      const dlv = c.matriz.filter(i=>/_dlv$/.test(i.id));
+      if(!dlv.length) return '';
+      const sal = c.matriz.filter(i=>!/_dlv$/.test(i.id));
+      const agg = arr => {
+        const v = arr.reduce((s,i)=>s+i.pv*i.unid,0);
+        const m = arr.reduce((s,i)=>s+i.costo*i.unid,0);
+        const u = arr.reduce((s,i)=>s+i.unid,0);
+        const mc = arr.reduce((s,i)=>s+i.mc*i.unid,0);
+        return {u, v, m, mc, fc: v?m/v*100:0};
+      };
+      const A = agg(sal), B = agg(dlv);
+      const mcTot = A.mc + B.mc, uTot = A.u + B.u, vTot = A.v + B.v;
+      const fila = (t, a, b_) => `<tr><td>${t}</td><td class="num">${a}</td><td class="num">${b_}</td></tr>`;
+      return `<h2>Salón y delivery — ${c.mesSel}</h2>
+      <table style="margin-bottom:8px">
+        <thead><tr><th>Concepto</th><th class="num">Salón</th><th class="num">Delivery</th></tr></thead>
+        <tbody>
+          ${fila('Unidades vendidas', fmt(A.u), fmt(B.u))}
+          ${fila('% de las unidades', uTot?fmtD(A.u/uTot*100)+'%':'—', uTot?fmtD(B.u/uTot*100)+'%':'—')}
+          ${fila('Facturación', '$'+fmt(Math.round(A.v)), '$'+fmt(Math.round(B.v)))}
+          ${fila('% de la facturación', vTot?fmtD(A.v/vTot*100)+'%':'—', vTot?fmtD(B.v/vTot*100)+'%':'—')}
+          ${fila('Costo del producto', '$'+fmt(Math.round(A.m)), '$'+fmt(Math.round(B.m))+' <span style="color:#8A8A80">(incluye comisión y packaging)</span>')}
+          ${fila('Food cost', fmtD(A.fc)+'%', fmtD(B.fc)+'%')}
+          ${fila('Margen de contribución', '$'+fmt(Math.round(A.mc)), '$'+fmt(Math.round(B.mc)))}
+          <tr class="tot"><td>% del margen total</td><td class="num">${mcTot?fmtD(A.mc/mcTot*100)+'%':'—'}</td><td class="num">${mcTot?fmtD(B.mc/mcTot*100)+'%':'—'}</td></tr>
+        </tbody>
+      </table>
+      <div class="sub" style="margin-bottom:22px">Comparar la fila de unidades con la del margen es lo que muestra si el delivery está trabajando para el negocio o para la aplicación. El prime cost y el EBITDA no se abren por canal: la cocina es la misma para los dos y repartir la mano de obra sería una suposición, no un dato.</div>`;
+    })()}
+    ${c.unidSinCanal ? `<div class="sub" style="margin:-14px 0 22px;color:#6B4A08"><strong>${fmt(c.unidSinCanal)} unidades del mes quedaron sin canal asignado</strong> y no están incluidas en ninguno de los números de arriba.</div>` : ''}
     ` : `<div class="sub" style="margin-bottom:20px"><strong>Sin ventas reales cargadas para ${c.mesSel}.</strong> Los índices de food cost, prime cost y EBITDA necesitan las unidades vendidas del mes. Lo que sigue es una proyección sobre el margen promedio de las recetas.</div>`}
 
     <div class="mets">
@@ -15019,6 +15532,7 @@ function descargarInforme(){
 
     ${c.kmListo && g('chart-matriz') ? `
     <h2>Ingeniería de menú — Matriz de Kasavana &amp; Smith (${c.mesSel})</h2>
+    ${(c.matrizDlv||[]).length ? '<div class="sub" style="margin:-4px 0 12px">Cada canal se clasifica contra sí mismo. Mezclarlos hunde al delivery de forma automática: se le descuentan comisión y packaging, así que su margen siempre queda por debajo del promedio de salón.</div>' : ''}
     <div class="chart">${g('chart-matriz')}</div>
     <table style="margin-bottom:22px">
       <thead><tr><th>Receta</th><th>Clase</th><th class="num">Food cost</th><th class="num">Unidades</th><th class="num">Contribución del mes</th></tr></thead>
