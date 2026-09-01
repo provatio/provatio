@@ -13734,16 +13734,23 @@ function renderCompras(){
 }
 
 // ── SALUD DEL NEGOCIO — gastos fijos, punto de equilibrio y resultado estimado ──
+// ¿Este gasto fijo es mano de obra? Hace falta para el prime cost, que es
+// mercadería + personal. Se decide por el nombre del concepto, y el usuario lo
+// puede corregir con la casilla de la tabla (queda guardado en esManoObra).
+function _esManoObra(g){
+  if(g.esManoObra === true || g.esManoObra === false) return g.esManoObra;
+  return /sueldo|salario|personal|mano de obra|cargas|jornal|honorario/i.test(g.concepto||'');
+}
 function getGastosFijos(){
   const op = getOp();
   if(!op) return [];
   if(!op.gastosFijos) op.gastosFijos = [
     {id:uid(), concepto:'Alquiler', monto:0},
-    {id:uid(), concepto:'Sueldos y cargas', monto:0},
+    {id:uid(), concepto:'Sueldos y cargas', monto:0, esManoObra:true},
     {id:uid(), concepto:'Servicios (luz, gas, agua, internet)', monto:0},
     {id:uid(), concepto:'Impuestos y tasas', monto:0},
     {id:uid(), concepto:'Mantenimiento', monto:0},
-    {id:uid(), concepto:'Sueldo del dueño', monto:0},
+    {id:uid(), concepto:'Sueldo del dueño', monto:0, esManoObra:true},
     {id:uid(), concepto:'Otros', monto:0},
   ];
   return op.gastosFijos;
@@ -13803,8 +13810,54 @@ function renderResultado(){
   const totalUnidMes = km.listo ? km.matriz.reduce((s,i)=>s+(+i.unid||0),0) : 0;
   const promDiaActual = (km.listo && totalUnidMes>0 && dias>0) ? totalUnidMes/dias : null;
 
+  // ══ LOS TRES ÍNDICES DE SALUD ═════════════════════════════════════════
+  // Se calculan UNA sola vez, acá, y de acá los toman la pantalla y el informe.
+  // Nunca se recalculan en otro lado: si el mismo número se sacara dos veces,
+  // algún día darían distinto y el informe dejaría de servir.
+  //
+  // Los tres son anillos, no números sueltos: cada uno contiene al anterior.
+  //   Food cost  = mercadería / ventas          → ¿compro y produzco bien?
+  //   Prime cost = (mercadería + personal) / ventas → ¿la cocina es viable?
+  //   EBITDA     = lo que queda de la operación  → ¿el negocio gana plata?
+  //
+  // REGLA: solo se calculan con VENTAS REALES, es decir con las unidades
+  // vendidas cargadas en la matriz de menú del mes. Con ventas estimadas se
+  // devuelven en null y la pantalla muestra el proyectado, que es otra cosa y
+  // se llama distinto. Un EBITDA estimado presentado como EBITDA es el tipo de
+  // número que un contador desarma en dos minutos.
+  const totalManoObra = gastos.filter(_esManoObra).reduce((s,g)=>s+(+g.monto||0),0);
+  let kpi = {listo:false, ventas:0, mercaderia:0, manoObra:totalManoObra,
+             foodCostPct:null, primeCostPct:null, ebitda:null, ebitdaPct:null,
+             desperdicio:0, desperdicioPct:null};
+  if(km.listo && km.matriz.length){
+    const ventasReales = km.matriz.reduce((s,i)=>s + (+i.pv||0)*(+i.unid||0), 0);
+    const mercReal     = km.matriz.reduce((s,i)=>s + (+i.costo||0)*(+i.unid||0), 0);
+    // Desperdicio del mes, del registro de desperdicio (no es un estimado).
+    const _desp = ((op.desperdiciosLog)||[])
+      .filter(r => (r.fecha||'').slice(0,7) === mesSel)
+      .reduce((s,r)=>s + (+r.costo||0), 0);
+    if(ventasReales > 0){
+      // Los eventos suman su margen y los buffets restan su costo: son parte de
+      // la operación del mes aunque no pasen por la matriz de menú.
+      const ebitda = ventasReales - mercReal - totalFijos - _desp + margenEventos - costoBuffets;
+      kpi = {
+        listo: true,
+        ventas: ventasReales,
+        mercaderia: mercReal,
+        manoObra: totalManoObra,
+        foodCostPct:  mercReal/ventasReales*100,
+        primeCostPct: (mercReal+totalManoObra)/ventasReales*100,
+        ebitda,
+        ebitdaPct: ebitda/ventasReales*100,
+        desperdicio: _desp,
+        desperdicioPct: _desp/ventasReales*100,
+      };
+    }
+  }
+
   // Snapshot para el informe descargable
-  window._saludCalc = {totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, costoBuffets, nBuffets, matriz: km.matriz, kmListo: km.listo};
+  const despLogMes = ((op.desperdiciosLog)||[]).filter(r => (r.fecha||'').slice(0,7) === mesSel);
+  window._saludCalc = {kpi, totalManoObra, despLogMes, totalFijos, dias, gastos, margenPctProm, margenPesosProm, ticketProm, eqPesos, eqPorciones, ventasEst, resultadoEst, evIngresos, margenEventos, eqAjustado, mesSel, nEventos: eventosConf.length, costoBuffets, nBuffets, matriz: km.matriz, kmListo: km.listo};
 
   const accionesInforme = (recetasConPrecio.length && totalFijos>0)
     ? `<button class="btn btn-secondary btn-sm" onclick="descargarInforme()">${ico('download',13)} Descargar informe</button>`
@@ -13815,6 +13868,8 @@ function renderResultado(){
       ${ico('bulb',14)} Este módulo mira el negocio completo: tus recetas pueden estar sanas una por una y aun así la operación perder plata si las ventas no cubren los gastos fijos. Acá está esa verdad.
     </div>
 
+    ${_htmlKPIs(kpi, mesSel)}
+
     ${_htmlDesvioSalud()}
 
     <div class="card">
@@ -13824,15 +13879,17 @@ function renderResultado(){
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Concepto</th><th style="text-align:right;width:180px">Monto mensual ($)</th><th style="width:110px"></th></tr></thead>
+          <thead><tr><th>Concepto</th><th style="text-align:center;width:110px" title="Marcá los gastos que son sueldos, cargas u honorarios. Se usan para el prime cost.">Mano de obra</th><th style="text-align:right;width:180px">Monto mensual ($)</th><th style="width:110px"></th></tr></thead>
           <tbody>
             ${gastos.map(g=>`<tr>
               <td><input type="text" value="${(g.concepto||'').replace(/"/g,'&quot;')}" onchange="updGastoFijo('${g.id}','concepto',this.value)" style="border:none;background:transparent;padding:4px 0;font-weight:600"></td>
+              <td style="text-align:center"><input type="checkbox" ${_esManoObra(g)?'checked':''} onchange="updGastoFijo('${g.id}','esManoObra',this.checked)" title="Es sueldo, carga social u honorario"></td>
               <td style="text-align:right"><input type="text" inputmode="decimal" value="${g.monto||0}" onchange="updGastoFijo('${g.id}','monto',num(this.value))" style="width:150px;text-align:right"></td>
               <td><button class="btn btn-danger btn-sm" onclick="delGastoFijo('${escJs(g.id)}')">${ico('trash',13)}</button></td>
             </tr>`).join('')}
             <tr style="background:var(--crema)">
               <td style="font-weight:700">Total gastos fijos</td>
+              <td style="text-align:center;font-size:12px;color:var(--gris-2)">de los cuales<br><strong>$${fmt(totalManoObra)}</strong></td>
               <td style="text-align:right;font-weight:700;font-size:15px">$${fmt(totalFijos)}</td>
               <td></td>
             </tr>
@@ -14795,11 +14852,66 @@ function descargarGrafico(contId, nombre){
   img.src = 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml);
 }
 
+// ══ LOS TRES ÍNDICES ═══════════════════════════════════════════════════════
+// Una sola función, usada por la pantalla y por el informe. Recibe los números
+// ya calculados: no calcula nada, solo los dibuja.
+//
+// Los rangos son referencias de la industria gastronómica, no verdades: una
+// rotisería y un restaurante de autor no se miden con la misma vara. Por eso el
+// texto de abajo dice "referencia" y no "objetivo".
+function _kpiColor(v, bien, atencion){
+  if(v == null) return {bg:'#F5F0E8', bd:'#EDE8E0', tx:'#5A5A52'};
+  if(v <= bien)     return {bg:'#E4F3E6', bd:'#A9D8B2', tx:'#1B7A34'};
+  if(v <= atencion) return {bg:'#FDF0D0', bd:'#D4B870', tx:'#6B4A08'};
+  return {bg:'#FCE8E8', bd:'#EFB2B2', tx:'#C02626'};
+}
+function _kpiCard(label, valor, sufijo, detalle, col){
+  return `<div style="flex:1;min-width:190px;background:${col.bg};border:1px solid ${col.bd};border-radius:12px;padding:14px 16px">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${col.tx};opacity:.8;margin-bottom:6px">${label}</div>
+    <div style="font-size:26px;font-weight:700;color:${col.tx};line-height:1">${valor}${sufijo}</div>
+    <div style="font-size:11px;color:var(--gris-2);margin-top:6px">${detalle}</div>
+  </div>`;
+}
+function _htmlKPIs(k, mes){
+  if(!k || !k.listo){
+    return `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:12px;padding:16px 18px;margin-bottom:20px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">Los tres índices todavía no se pueden calcular</div>
+      <div style="font-size:13px">Necesitan las <strong>unidades vendidas del mes</strong> cargadas en la matriz de menú. Con ventas estimadas se puede proyectar un resultado —lo vas a ver más abajo— pero no son lo mismo: un food cost o un EBITDA solo valen si salen de lo que se vendió de verdad.
+      <a href="#" onclick="navigate('matriz');return false" style="color:inherit;text-decoration:underline">Cargar ventas del mes</a>.</div>
+    </div>`;
+  }
+  // Referencias habituales en gastronomía: food cost 28-35 %, prime cost 60-65 %.
+  const cFC = _kpiColor(k.foodCostPct, 32, 38);
+  const cPC = _kpiColor(k.primeCostPct, 62, 70);
+  // El EBITDA se lee al revés: más alto es mejor. Se invierte el signo.
+  const cEB = _kpiColor(k.ebitdaPct==null?null:-k.ebitdaPct, -12, -5);
+  return `<div style="margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:13px;font-weight:700;color:var(--gris-1)">Los tres índices de la operación · ${mes}</div>
+      <div style="font-size:11px;color:var(--gris-2)">Sobre ventas reales de $${fmt(k.ventas)}</div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      ${_kpiCard('Food cost', k.foodCostPct.toFixed(1), '%', 'Mercadería sobre ventas · referencia 28-35 %', cFC)}
+      ${_kpiCard('Prime cost', k.primeCostPct.toFixed(1), '%', 'Mercadería + personal · referencia 60-65 %', cPC)}
+      ${_kpiCard('EBITDA', (k.ebitdaPct>=0?'':'−')+Math.abs(k.ebitdaPct).toFixed(1), '%', 'Resultado operativo · $'+fmt(Math.round(k.ebitda)), cEB)}
+    </div>
+    <div style="font-size:11px;color:var(--gris-2);margin-top:8px;line-height:1.5">
+      Cada índice contiene al anterior. El EBITDA es el resultado de la operación —incluye el sueldo del dueño si está cargado— antes de intereses, impuestos a las ganancias y amortizaciones.
+      ${k.desperdicio>0 ? `Descuenta $${fmt(Math.round(k.desperdicio))} de desperdicio registrado (${k.desperdicioPct.toFixed(1)} % de las ventas).` : ''}
+    </div>
+  </div>`;
+}
+
 // Informe completo listo para imprimir / guardar como PDF
 function descargarInforme(){
   const op = getOp();
+  if(!op){ showToast('Abrí una operación primero','error'); return; }
+  // El informe copia lo que hay en pantalla en lugar de recalcular — por eso no
+  // puede contradecir a la app. Si el usuario lo pide desde otro lado, se dibuja
+  // Salud del negocio primero y recién después se arma el informe.
+  if(!window._saludCalc || !document.getElementById('chart-eq')) renderResultado();
   const c = window._saludCalc;
-  if(!op || !c){ showToast('Abrí Salud del negocio con datos cargados primero','error'); return; }
+  if(!c){ showToast('Faltan datos para armar el informe','error'); return; }
   const fecha = new Date().toLocaleDateString('es-AR', {day:'numeric', month:'long', year:'numeric'});
   const g = id => { const el = document.getElementById(id); return el ? el.innerHTML : ''; };
   const w = window.open('', '_blank');
@@ -14867,6 +14979,29 @@ function descargarInforme(){
     <h1>Informe de salud del negocio — ${op.nombre}</h1>
     <div class="sub">Tipo de operación: ${op.tipo || '—'} · Días operativos por mes: ${c.dias}</div>
 
+    ${c.kpi && c.kpi.listo ? `
+    <h2 style="margin-top:8px">Los tres índices de la operación — ${c.mesSel}</h2>
+    <div class="mets" style="grid-template-columns:repeat(3,1fr)">
+      <div class="met"><div class="l">Food cost</div><div class="v">${fmtD(c.kpi.foodCostPct)}%</div><div class="s">Mercadería sobre ventas · referencia 28-35 %</div></div>
+      <div class="met"><div class="l">Prime cost</div><div class="v">${fmtD(c.kpi.primeCostPct)}%</div><div class="s">Mercadería + personal · referencia 60-65 %</div></div>
+      <div class="met"><div class="l">EBITDA</div><div class="v">${c.kpi.ebitdaPct>=0?'':'−'}${fmtD(Math.abs(c.kpi.ebitdaPct))}%</div><div class="s">$${fmt(Math.round(c.kpi.ebitda))} en el mes</div></div>
+    </div>
+    <table style="margin-bottom:22px">
+      <thead><tr><th>Concepto</th><th class="num">Monto</th><th class="num">% de ventas</th></tr></thead>
+      <tbody>
+        <tr><td>Ventas reales del mes</td><td class="num">$${fmt(Math.round(c.kpi.ventas))}</td><td class="num">100,0%</td></tr>
+        <tr><td>− Mercadería</td><td class="num">$${fmt(Math.round(c.kpi.mercaderia))}</td><td class="num">${fmtD(c.kpi.foodCostPct)}%</td></tr>
+        ${c.kpi.desperdicio>0 ? `<tr><td>− Desperdicio registrado</td><td class="num">$${fmt(Math.round(c.kpi.desperdicio))}</td><td class="num">${fmtD(c.kpi.desperdicioPct)}%</td></tr>` : ''}
+        <tr><td>− Mano de obra</td><td class="num">$${fmt(Math.round(c.kpi.manoObra))}</td><td class="num">${fmtD(c.kpi.manoObra/c.kpi.ventas*100)}%</td></tr>
+        <tr><td>− Resto de gastos fijos</td><td class="num">$${fmt(Math.round(c.totalFijos-c.kpi.manoObra))}</td><td class="num">${fmtD((c.totalFijos-c.kpi.manoObra)/c.kpi.ventas*100)}%</td></tr>
+        ${c.margenEventos ? `<tr><td>${c.margenEventos>=0?'+':'−'} Margen de eventos</td><td class="num">$${fmt(Math.round(Math.abs(c.margenEventos)))}</td><td class="num">${fmtD(Math.abs(c.margenEventos)/c.kpi.ventas*100)}%</td></tr>` : ''}
+        ${c.costoBuffets ? `<tr><td>− Servicios de buffet</td><td class="num">$${fmt(Math.round(c.costoBuffets))}</td><td class="num">${fmtD(c.costoBuffets/c.kpi.ventas*100)}%</td></tr>` : ''}
+        <tr class="tot"><td>EBITDA</td><td class="num">$${fmt(Math.round(c.kpi.ebitda))}</td><td class="num">${fmtD(c.kpi.ebitdaPct)}%</td></tr>
+      </tbody>
+    </table>
+    <div class="sub" style="margin:-14px 0 22px">El EBITDA es el resultado de la operación antes de intereses, impuestos a las ganancias y amortizaciones. Incluye el sueldo del dueño si está cargado como gasto fijo.</div>
+    ` : `<div class="sub" style="margin-bottom:20px"><strong>Sin ventas reales cargadas para ${c.mesSel}.</strong> Los índices de food cost, prime cost y EBITDA necesitan las unidades vendidas del mes. Lo que sigue es una proyección sobre el margen promedio de las recetas.</div>`}
+
     <div class="mets">
       <div class="met"><div class="l">Margen de contribución</div><div class="v">${fmtD(c.margenPctProm*100)}%</div><div class="s">$${fmt(c.margenPesosProm)} por porción</div></div>
       <div class="met"><div class="l">Punto de equilibrio</div><div class="v">$${fmt(c.eqPesos)}</div><div class="s">venta mensual para empatar</div></div>
@@ -14897,6 +15032,21 @@ function descargarInforme(){
         </tr>`).join('')}
       </tbody>
     </table>
+    ` : ''}
+
+    ${c.despLogMes && c.despLogMes.length ? `
+    <h2>Desperdicio registrado — ${c.mesSel}</h2>
+    <table style="margin-bottom:8px">
+      <thead><tr><th>Fecha</th><th>Ítem</th><th>Motivo</th><th class="num">Cantidad</th><th class="num">Costo</th></tr></thead>
+      <tbody>
+        ${c.despLogMes.slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')).map(r=>`
+          <tr><td>${r.fecha||'—'}</td><td>${r.nombre||'—'}</td><td>${r.motivo||'—'}</td>
+              <td class="num">${fmt(r.cantidad||0)} ${r.unidad||''}</td>
+              <td class="num">$${fmt(Math.round(r.costo||0))}</td></tr>`).join('')}
+        <tr class="tot"><td colspan="4">Total del mes</td><td class="num">$${fmt(Math.round(c.despLogMes.reduce((s,r)=>s+(+r.costo||0),0)))}</td></tr>
+      </tbody>
+    </table>
+    <div class="sub" style="margin-bottom:22px">Agrupado por motivo: ${(()=>{ const m={}; c.despLogMes.forEach(r=>{ const k=r.motivo||'Sin motivo'; m[k]=(m[k]||0)+(+r.costo||0); }); return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,v])=>k+' $'+fmt(Math.round(v))).join(' · '); })()}</div>
     ` : ''}
 
     <h2>Detalle de gastos fijos</h2>
