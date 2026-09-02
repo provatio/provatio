@@ -8338,6 +8338,12 @@ function renderEditorReceta(){
       </div>
     </div>
 
+    ${!esNivelCocina() ? `
+    <div class="card">
+      <div class="card-header"><span class="card-title">Nombres en el sistema de facturación</span></div>
+      <div class="card-body">${_htmlAliasPos(r, CANAL_SALON)}</div>
+    </div>` : ''}
+
     ${((op.tieneDelivery || esDarkKitchen()) && !esNivelCocina()) ? renderVarianteDelivery(r, merc) : ''}
     </div>
   `);
@@ -8762,6 +8768,85 @@ function renderFichaPlato(id){
 }
 
 // ── VARIANTE DELIVERY: mismo plato, otro canal, otra realidad ──
+// ── ALIAS DEL SISTEMA DE FACTURACIÓN ───────────────────────────────────────
+// Con qué nombres aparece esta receta en el POS. Maxirest —o cualquier otro—
+// nunca los escribe igual que el cocinero, y el importador de ventas cruza por
+// nombre. Sin esto, el trabajo de emparejar hay que rehacerlo cada mes.
+// Se aprenden solos al importar (cuando aparece un nombre desconocido y alguien
+// lo asigna), pero también se editan acá a mano: si el POS cambia un nombre,
+// nadie tiene que esperar a que falle una importación para arreglarlo.
+function _htmlAliasPos(r, canal){
+  const lista = canal===CANAL_DELIVERY
+    ? ((r.delivery&&r.delivery.aliasPos)||[])
+    : (r.aliasPos||[]);
+  const idInput = canal===CANAL_DELIVERY ? 'alias-dlv-nuevo' : 'alias-salon-nuevo';
+  return `
+    <div style="margin-top:4px">
+      <div style="font-size:12px;color:var(--gris-2);margin-bottom:8px">
+        Cómo aparece este plato en tu sistema de facturación${canal===CANAL_DELIVERY?' cuando sale por delivery':''}.
+        Podés poner varios. Si no coincide ninguno, al importar ventas te lo voy a preguntar una vez y lo guardo acá solo.
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+        ${lista.length ? lista.map((a,i)=>`
+          <span style="display:inline-flex;align-items:center;gap:6px;background:var(--crema);border:1px solid var(--crema-2);border-radius:20px;padding:4px 6px 4px 12px;font-size:12px">
+            ${esc(a)}
+            <button onclick="quitarAliasPos('${canal}',${i})" title="Quitar"
+              style="border:none;background:transparent;cursor:pointer;color:var(--gris-2);font-size:14px;line-height:1;padding:0 4px">×</button>
+          </span>`).join('')
+        : '<span style="font-size:12px;color:var(--gris-3)">Sin nombres guardados todavía.</span>'}
+      </div>
+      <div style="display:flex;gap:8px;max-width:520px">
+        <input type="text" id="${idInput}" placeholder="Ej: ${canal===CANAL_DELIVERY?'Milanesa PedidosYa':'Mila c/ papas'}"
+          style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();agregarAliasPos('${canal}')}">
+        <button class="btn btn-secondary btn-sm" onclick="agregarAliasPos('${canal}')">Agregar</button>
+      </div>
+    </div>`;
+}
+function agregarAliasPos(canal){
+  const r = recetaEditando; if(!r) return;
+  const idInput = canal===CANAL_DELIVERY ? 'alias-dlv-nuevo' : 'alias-salon-nuevo';
+  const el = document.getElementById(idInput); if(!el) return;
+  const val = (el.value||'').trim();
+  if(!val){ showToast('Escribí el nombre tal como aparece en el POS','error'); return; }
+  // El mismo nombre no puede apuntar a dos lugares: si ya está en otra receta o
+  // en el otro canal, el importador no sabría cuál elegir.
+  const dueno = _duenoDelAlias(val, r.id, canal);
+  if(dueno){ showToast('"'+val+'" ya está usado en '+dueno+'. Un nombre del POS apunta a un solo lugar.','error'); return; }
+  if(canal===CANAL_DELIVERY){
+    if(!r.delivery) r.delivery = {activa:true};
+    if(!r.delivery.aliasPos) r.delivery.aliasPos = [];
+    r.delivery.aliasPos.push(val);
+  } else {
+    if(!r.aliasPos) r.aliasPos = [];
+    r.aliasPos.push(val);
+  }
+  el.value = '';
+  renderEditorReceta(); programarAutoguardadoReceta();
+}
+function quitarAliasPos(canal, ix){
+  const r = recetaEditando; if(!r) return;
+  const lista = canal===CANAL_DELIVERY ? ((r.delivery&&r.delivery.aliasPos)||[]) : (r.aliasPos||[]);
+  if(ix<0 || ix>=lista.length) return;
+  lista.splice(ix,1);
+  renderEditorReceta(); programarAutoguardadoReceta();
+}
+// ¿Este nombre ya está tomado? Devuelve dónde, o null.
+function _duenoDelAlias(nombre, exceptoId, exceptoCanal){
+  const n = _normNombre(nombre);
+  for(const x of getRecetas()){
+    if(_normNombre(x.nombre)===n && x.id!==exceptoId) return 'la receta "'+x.nombre+'"';
+    const mismaReceta = x.id===exceptoId;
+    if((x.aliasPos||[]).some(a=>_normNombre(a)===n)){
+      if(!(mismaReceta && exceptoCanal===CANAL_SALON)) return mismaReceta ? 'el salón de esta misma receta' : '"'+x.nombre+'" (salón)';
+    }
+    const ad = (x.delivery&&x.delivery.aliasPos)||[];
+    if(ad.some(a=>_normNombre(a)===n)){
+      if(!(mismaReceta && exceptoCanal===CANAL_DELIVERY)) return mismaReceta ? 'el delivery de esta misma receta' : '"'+x.nombre+'" (delivery)';
+    }
+  }
+  return null;
+}
+
 function renderVarianteDelivery(r, mercSalon){
   const d = r.delivery || {};
   const activa = !!d.activa;
@@ -8814,6 +8899,11 @@ function renderVarianteDelivery(r, mercSalon){
             <input type="text" inputmode="decimal" value="${d.packaging||''}" placeholder="0" min="0"
               style="width:100%;margin-top:4px" onchange="updDelivery('packaging',num(this.value))">
           </div>
+        </div>
+
+        <div style="border-top:1px solid var(--crema-2);padding-top:14px;margin-bottom:16px">
+          <div style="font-size:13px;font-weight:600;color:var(--gris-1);margin-bottom:8px">Nombres en el sistema de facturación — delivery</div>
+          ${_htmlAliasPos(r, CANAL_DELIVERY)}
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
