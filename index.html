@@ -4756,6 +4756,7 @@ function buildSidebar(rol){
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
+    {icon:'chart', label:'Análisis de ventas', vista:'analisisVentas'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
@@ -4808,6 +4809,7 @@ function buildSidebar(rol){
     // Lo que sí necesita el CP es qué le compra cada local, para planificar
     // producción y compras: eso vive en "Lo que piden los locales".
     ...(!isCP ? [{icon:'chart', label:'Cargar ventas', vista:'cargarVentas'}] : []),
+    ...(!isCP ? [{icon:'chart', label:'Análisis de ventas', vista:'analisisVentas'}] : []),
     ...(!isCP ? [{icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'}] : []),
     ...(!isCP ? [{icon:'coin', label:'Salud del negocio', vista:'resultado'}] : []),
     ...(isCP ? [{icon:'chart', label:'📈 Lo que piden los locales', vista:'demandaCP'}] : []),
@@ -4849,6 +4851,7 @@ function buildSidebar(rol){
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
+    {icon:'chart', label:'Análisis de ventas', vista:'analisisVentas'},
     {icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'},
     {icon:'coin', label:'Salud del negocio', vista:'resultado'},
     {icon:'trenddown', label:'Informe de ventas', vista:'desvios'},
@@ -4894,6 +4897,7 @@ function buildSidebar(rol){
     // Ver la nota del menú de admin: en un CP, Rentabilidad y Salud del negocio
     // miden algo que ahí no existe. Se reemplazan por la demanda de los locales.
     ...(!isCP ? [{icon:'chart', label:'Cargar ventas', vista:'cargarVentas'}] : []),
+    ...(!isCP ? [{icon:'chart', label:'Análisis de ventas', vista:'analisisVentas'}] : []),
     ...(!isCP ? [{icon:'trendup', label:'Rentabilidad', vista:'rentabilidad'}] : []),
     ...(!isCP ? [{icon:'coin', label:'Salud del negocio', vista:'resultado'}] : []),
     ...(isCP ? [{icon:'chart', label:'📈 Lo que piden los locales', vista:'demandaCP'}] : []),
@@ -5263,6 +5267,7 @@ function navigate(vista, params={}, opts={}){
     operacion: renderDashboardOperacion,
     resultado: renderResultado,
     cargarVentas: renderCargarVentas,
+    analisisVentas: renderAnalisisVentas,
     clientes: renderClientes,
     ingredientes: renderIngredientes,
     mermas: renderMermas,
@@ -14181,9 +14186,14 @@ function renderResultado(){
                   <td style="text-align:right">$${fmt(i.mc)}</td>
                   <td style="text-align:right">${_hayDiarias
                     ? `<span title="Sale de las ventas cargadas día por día — el dato exacto. No se edita acá para no pisarlo con una estimación.">${fmtD(i.unid,0)}</span>
-                       <span style="display:block;font-size:10px;color:var(--gris-2)">de las ventas diarias</span>`
+                       <span style="display:block;font-size:10px;color:var(--gris-2)">cargadas</span>`
                     : `<input type="text" inputmode="decimal" min="0" value="${i.unid||''}" placeholder="0" style="width:90px;text-align:right" onchange="updVentaReceta('${mesSel}','${i.id}',this.value)">`}</td>
-                  ${getOp()?.tieneDelivery ? `<td style="text-align:right">${tieneDelivery ? `<input type="text" inputmode="decimal" min="0" value="${ventasMes[i.id+'_dlv']||''}" placeholder="0" style="width:90px;text-align:right;border-color:var(--dorado)" onchange="updVentaReceta('${mesSel}','${i.id}_dlv',this.value)">` : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>` : ''}
+                  ${getOp()?.tieneDelivery ? `<td style="text-align:right">${tieneDelivery
+                    ? (_hayDiarias
+                        ? `<span title="Sale de las ventas cargadas día por día — el dato exacto. No se edita acá para no pisarlo.">${fmtD(_unidDeliveryMes(i.id, mesSel),0)}</span>
+                           <span style="display:block;font-size:10px;color:var(--gris-2)">cargadas</span>`
+                        : `<input type="text" inputmode="decimal" min="0" value="${ventasMes[i.id+'_dlv']||''}" placeholder="0" style="width:90px;text-align:right;border-color:var(--dorado)" onchange="updVentaReceta('${mesSel}','${i.id}_dlv',this.value)">`)
+                    : '<span style="color:var(--gris-3);font-size:12px">—</span>'}</td>` : ''}
                 </tr>`;
                 }).join(''); })()}
               </tbody>
@@ -14587,6 +14597,19 @@ function unidadesVendidasMes(mes){
 // ¿Este mes tiene ventas cargadas día por día? Si las tiene, el número que se
 // muestra NO se edita a mano: sale del detalle diario, y dejar un campo
 // editable al lado invitaría a pisar el dato bueno con uno estimado.
+// Unidades de delivery de una receta en un mes, tomadas del detalle diario.
+// La tabla necesita el mismo número que ya usan la matriz y los índices, y ese
+// número se arma en un solo lugar: acá.
+function _unidDeliveryMes(recetaId, mes){
+  const op = getOp(); if(!op || !op.ventasPorDia) return 0;
+  const clave = _claveVenta(recetaId, CANAL_DELIVERY);
+  let t = 0;
+  Object.keys(op.ventasPorDia).forEach(f=>{
+    if(f.slice(0,7) !== mes) return;
+    t += +op.ventasPorDia[f][clave] || 0;
+  });
+  return t;
+}
 function _mesTieneVentasDiarias(mes){
   const op = getOp();
   const porDia = (op && op.ventasPorDia) || {};
@@ -14646,6 +14669,31 @@ function _clasificarSet(items){
   });
   return {matriz, listo:true, popThreshold, mcProm, totalUnid};
 }
+// La economía de una receta en un canal: precio, costo y margen por porción.
+// Un solo lugar. La matriz de menú y el análisis de ventas leen de acá, así que
+// no pueden mostrar márgenes distintos para el mismo plato.
+function _econCanal(r, canal){
+  const {merc} = calcReceta(r, r.porciones||1);
+  if(canal !== CANAL_DELIVERY){
+    const pv = +r.precioVenta || 0;
+    return {pv, costo: merc, mc: pv - merc, existe: pv > 0};
+  }
+  const d = r.delivery;
+  if(!d || !d.activa) return {pv:0, costo:0, mc:0, existe:false};
+  let mercD = merc;
+  if(d.ingredientes && d.ingredientes.length){
+    mercD = 0;
+    d.ingredientes.forEach(ing=>{
+      if(ing.esCondimento){ mercD += 150*0.6; return; }
+      const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false, null, ing);
+      if(c && !c.error) mercD += c.costo_porcion;
+    });
+  }
+  const pv = +d.precioVenta || +r.precioVenta || 0;
+  const costo = mercD + (+d.packaging||0) + pv*(+d.comision||0)/100;
+  return {pv, costo, mc: pv - costo, existe: pv > 0};
+}
+
 function expandirMatrizConDelivery(km, mes){
   try {
     const op = getOp();
@@ -14662,22 +14710,10 @@ function expandirMatrizConDelivery(km, mes){
     (demoData.recetas||[]).filter(r=>r.opId===opActivaId() && r.precioVenta>0 && r.delivery && r.delivery.activa).forEach(r=>{
       const unidD = +ventas[_claveVenta(r.id, CANAL_DELIVERY)] || 0;
       if(unidD<=0) return;
-      const d = r.delivery;
-      const {merc} = calcReceta(r, r.porciones||1);
-      let mercD = merc;
-      if(d.ingredientes && d.ingredientes.length){
-        mercD = 0;
-        d.ingredientes.forEach(ing=>{
-          if(ing.esCondimento){ mercD += 150*0.6; return; }
-          const c = calcIngrediente(ing.ingId, ing.tecnica, ing.neto, r.porciones||1, false, null, ing);
-          if(c && !c.error) mercD += c.costo_porcion;
-        });
-      }
-      const pvD = +d.precioVenta || r.precioVenta;
-      const costoD = mercD + (+d.packaging||0) + pvD*(+d.comision||0)/100;
+      const e = _econCanal(r, CANAL_DELIVERY);
       itemsD.push({id:_claveVenta(r.id, CANAL_DELIVERY), idReceta:r.id, canal:CANAL_DELIVERY,
         nombre:r.nombre, tipoPlato:r.tipoPlato||'Sin tipo',
-        pv:pvD, costo:costoD, mc:pvD-costoD, unid:unidD});
+        pv:e.pv, costo:e.costo, mc:e.mc, unid:unidD});
     });
     const dlv = _clasificarSet(itemsD);
     return {...km,
@@ -15220,6 +15256,294 @@ function _htmlCruceCanales(km){
       </tbody>
     </table></div>
   </div>`;
+}
+
+// ══ ANÁLISIS DE VENTAS ═════════════════════════════════════════════════════
+// La grilla que pide un dueño o un gerente: platos en las filas, períodos en las
+// columnas, y el total al costado. Se puede bajar a Excel tal como se ve.
+//
+// Ordena por CONTRIBUCIÓN por defecto — margen por porción multiplicado por
+// unidades vendidas. No por margen (un plato puede dejar mucho y vender nada) ni
+// por volumen (puede vender todo el día y dejar monedas). La contribución es lo
+// que efectivamente sostiene el negocio, y es lo que hay que mirar antes de
+// tocar un precio o sacar un plato de la carta.
+//
+// Arriba de la tabla va una lectura en dos o tres líneas. Sin eso son números,
+// y números sueltos ya se los da el sistema de facturación: lo que falta no es
+// el dato, es saber qué se está mirando.
+
+function _isoSemana(iso){
+  // Lunes de la semana a la que pertenece esa fecha.
+  const d = new Date(iso+'T12:00:00');
+  const dow = (d.getDay()+6)%7;           // 0 = lunes
+  d.setDate(d.getDate()-dow);
+  return d.toISOString().slice(0,10);
+}
+function _rotuloPeriodo(clave, corte){
+  if(corte==='mes'){
+    const [a,m] = clave.split('-');
+    return ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][+m-1]+' '+a.slice(2);
+  }
+  if(corte==='semana') return 'sem '+fmtFechaCorta(clave);
+  return fmtFechaCorta(clave);
+}
+function _clavePeriodo(iso, corte){
+  if(corte==='mes')    return iso.slice(0,7);
+  if(corte==='semana') return _isoSemana(iso);
+  return iso;
+}
+
+// Arma la grilla completa. Devuelve filas por receta, columnas por período y
+// totales. No dibuja nada: solo calcula, para que la tabla y el Excel salgan
+// exactamente del mismo lugar.
+function _armarAnalisis(){
+  const op = getOp();
+  const cfg = window._an || {};
+  const desde = cfg.desde, hasta = cfg.hasta;
+  const corte = cfg.corte || 'mes';
+  const canal = cfg.canal || 'ambos';
+  const metrica = cfg.metrica || 'contribucion';
+  const recetas = getRecetas();
+  const porDia = (op && op.ventasPorDia) || {};
+
+  const econ = {};
+  const econDe = (rid, can) => {
+    const k = rid+'|'+can;
+    if(!(k in econ)){
+      const r = recetas.find(x=>x.id===rid);
+      econ[k] = r ? _econCanal(r, can) : {pv:0,costo:0,mc:0,existe:false};
+    }
+    return econ[k];
+  };
+
+  const periodos = new Set();
+  const filas = {};      // recetaId → {nombre, celdas:{periodo:{u,fact,contrib}}, tot:{...}}
+  let sinCanal = 0;
+
+  Object.keys(porDia).sort().forEach(iso=>{
+    if(desde && iso < desde) return;
+    if(hasta && iso > hasta) return;
+    Object.entries(porDia[iso]).forEach(([clave, u])=>{
+      const unid = +u || 0; if(!unid) return;
+      const can = _canalDeClave(clave);
+      const rid = _recetaDeClave(clave);
+      if(can === CANAL_PEND){ sinCanal += unid; return; }
+      if(canal !== 'ambos' && can !== canal) return;
+      const r = recetas.find(x=>x.id===rid); if(!r) return;
+      const e = econDe(rid, can);
+      const per = _clavePeriodo(iso, corte);
+      periodos.add(per);
+      if(!filas[rid]) filas[rid] = {id:rid, nombre:r.nombre, tipoPlato:r.tipoPlato||'Sin tipo',
+                                    celdas:{}, u:0, fact:0, contrib:0, costo:0};
+      const f = filas[rid];
+      if(!f.celdas[per]) f.celdas[per] = {u:0, facturacion:0, contribucion:0};
+      const c = f.celdas[per];
+      c.u += unid; c.facturacion += e.pv*unid; c.contribucion += e.mc*unid;
+      f.u += unid; f.fact += e.pv*unid; f.contrib += e.mc*unid; f.costo += e.costo*unid;
+    });
+  });
+
+  const cols = [...periodos].sort();
+  const rows = Object.values(filas).sort((a,b)=>{
+    if(metrica==='unidades')     return b.u - a.u;
+    if(metrica==='facturacion')  return b.fact - a.fact;
+    return b.contrib - a.contrib;
+  });
+  const tot = rows.reduce((s,f)=>({u:s.u+f.u, fact:s.fact+f.fact, contrib:s.contrib+f.contrib, costo:s.costo+f.costo}),
+                          {u:0,fact:0,contrib:0,costo:0});
+  const totCol = {};
+  cols.forEach(p=>{
+    totCol[p] = rows.reduce((s,f)=>{
+      const c = f.celdas[p]; if(!c) return s;
+      return {u:s.u+c.u, facturacion:s.facturacion+c.facturacion, contribucion:s.contribucion+c.contribucion};
+    }, {u:0,facturacion:0,contribucion:0});
+  });
+  return {rows, cols, tot, totCol, corte, canal, metrica, sinCanal, desde, hasta};
+}
+
+// La lectura: qué está mirando la persona. No decide por ella — nombra lo que
+// hay. Es la diferencia entre esta pantalla y exportar una planilla.
+function _lecturaAnalisis(a){
+  if(!a.rows.length) return [];
+  const notas = [];
+  const tot = a.tot;
+  // ¿Cuántos platos hacen la mayor parte del margen?
+  const orden = [...a.rows].sort((x,y)=>y.contrib-x.contrib);
+  let acum = 0, n = 0;
+  for(const f of orden){ acum += f.contrib; n++; if(tot.contrib>0 && acum/tot.contrib >= 0.6) break; }
+  if(tot.contrib>0 && n <= Math.max(1, Math.round(a.rows.length*0.5))){
+    notas.push(`<strong>${n} plato${n===1?'':'s'}</strong> de ${a.rows.length} hacen el ${fmtD(acum/tot.contrib*100)}% de tu margen: ${orden.slice(0,n).map(f=>esc(f.nombre)).join(', ')}. Si vas a tocar algo, empezá por ahí.`);
+  }
+  // Vende mucho y contribuye poco, en proporción.
+  const porU = [...a.rows].sort((x,y)=>y.u-x.u);
+  const top = porU[0];
+  if(top && tot.u>0 && tot.contrib>0){
+    const pesoU = top.u/tot.u, pesoC = top.contrib/tot.contrib;
+    if(pesoU > pesoC*1.5)
+      notas.push(`<strong>${esc(top.nombre)}</strong> es el más pedido (${fmtD(pesoU*100)}% de las unidades) pero aporta el ${fmtD(pesoC*100)}% del margen. Candidato a revisar el precio o la porción, no a sacar.`);
+  }
+  // Food cost alto pero sostiene el negocio.
+  const caros = a.rows.filter(f=>f.fact>0 && f.costo/f.fact > 0.38);
+  const caroClave = caros.find(f=>tot.contrib>0 && f.contrib/tot.contrib > 0.12);
+  if(caroClave)
+    notas.push(`<strong>${esc(caroClave.nombre)}</strong> tiene un costo alto (${fmtD(caroClave.costo/caroClave.fact*100)}% de lo que factura) y aun así aporta el ${fmtD(caroClave.contrib/tot.contrib*100)}% del margen. No es un plato para sacar: mirá proveedor, gramaje o merma antes que el precio.`);
+  // El que menos aporta.
+  const ultimo = orden[orden.length-1];
+  if(a.rows.length >= 4 && ultimo && tot.contrib>0 && ultimo.contrib/tot.contrib < 0.03)
+    notas.push(`<strong>${esc(ultimo.nombre)}</strong> aporta el ${fmtD(ultimo.contrib/tot.contrib*100)}% del margen con ${fmt(ultimo.u)} unidades. Ocupa lugar en la carta y en la cabeza de la cocina.`);
+  return notas;
+}
+
+function renderAnalisisVentas(){
+  const op = getOp();
+  if(!op){ _panelSinOperacion(); return; }
+  if(!window._an){
+    const hoy = new Date().toISOString().slice(0,10);
+    const d = new Date(); d.setMonth(d.getMonth()-5); d.setDate(1);
+    window._an = {desde:d.toISOString().slice(0,10), hasta:hoy, corte:'mes',
+                  canal:'ambos', metrica:'contribucion'};
+  }
+  const cfg = window._an;
+  const a = _armarAnalisis();
+  const notas = _lecturaAnalisis(a);
+  const M = cfg.metrica;
+  const valor = c => !c ? '' : (M==='unidades' ? fmt(c.u)
+                     : M==='facturacion' ? '$'+fmt(Math.round(c.facturacion))
+                     : '$'+fmt(Math.round(c.contribucion)));
+  const totFila = f => M==='unidades' ? fmt(f.u)
+                     : M==='facturacion' ? '$'+fmt(Math.round(f.fact))
+                     : '$'+fmt(Math.round(f.contrib));
+  const btn = (campo,val,label) => `<button onclick="window._an.${campo}='${val}';renderAnalisisVentas()"
+    style="cursor:pointer;padding:6px 14px;font-size:12px;font-weight:${cfg[campo]===val?'700':'400'};
+    border:1px solid ${cfg[campo]===val?'var(--dorado)':'var(--crema-2)'};border-radius:8px;
+    background:${cfg[campo]===val?'var(--crema)':'transparent'};color:var(--negro);margin-right:6px">${label}</button>`;
+  const atajo = (label,meses) => `<button onclick="_anAtajo(${meses});"
+    style="cursor:pointer;padding:5px 12px;font-size:12px;border:1px solid var(--crema-2);
+    border-radius:8px;background:transparent;color:var(--gris-1);margin-right:6px">${label}</button>`;
+
+  setContent('Análisis de ventas', `
+    <div class="card">
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:6px">Qué mido</div>
+          ${btn('metrica','contribucion','Contribución')}${btn('metrica','unidades','Unidades')}${btn('metrica','facturacion','Facturación')}</div>
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:6px">Cómo lo corto</div>
+          ${btn('corte','dia','Por día')}${btn('corte','semana','Por semana')}${btn('corte','mes','Por mes')}</div>
+        ${op.tieneDelivery ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:6px">Canal</div>
+          ${btn('canal','ambos','Los dos')}${btn('canal',CANAL_SALON,'Salón')}${btn('canal',CANAL_DELIVERY,'Delivery')}</div>` : ''}
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:6px">Período</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="date" value="${cfg.desde||''}" onchange="window._an.desde=this.value;renderAnalisisVentas()" style="width:auto;padding:5px 10px;font-size:12px">
+            <span style="color:var(--gris-2);font-size:12px">a</span>
+            <input type="date" value="${cfg.hasta||''}" onchange="window._an.hasta=this.value;renderAnalisisVentas()" style="width:auto;padding:5px 10px;font-size:12px">
+            <span style="margin-left:8px">${atajo('Este mes',0)}${atajo('Mes anterior',1)}${atajo('Últimos 6 meses',6)}</span>
+          </div></div>
+      </div>
+    </div>
+
+    ${a.sinCanal ? `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px"><strong>${fmt(a.sinCanal)} unidades sin canal asignado</strong> quedan fuera de esta tabla.</div>
+      <button class="btn btn-secondary btn-sm" onclick="navigate('cargarVentas')">Asignar canal</button>
+    </div>` : ''}
+
+    ${notas.length ? `<div class="card" style="background:var(--crema);border:1px solid var(--crema-2)">
+      <div class="card-body">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:10px">Qué estás mirando</div>
+        <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7;color:var(--gris-1)">
+          ${notas.map(n=>`<li>${n}</li>`).join('')}
+        </ul>
+      </div>
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">${M==='unidades'?'Unidades vendidas':M==='facturacion'?'Facturación':'Contribución al margen'}
+          <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${a.rows.length} platos · ${a.cols.length} ${a.corte==='dia'?'días':a.corte==='semana'?'semanas':'meses'}</span></span>
+        <button class="btn btn-secondary btn-sm" onclick="descargarAnalisisExcel()">${ico('download',13)} Bajar a Excel</button>
+      </div>
+      ${a.rows.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="min-width:200px">Plato</th>
+            ${a.cols.map(c=>`<th style="text-align:right;white-space:nowrap">${_rotuloPeriodo(c,a.corte)}</th>`).join('')}
+            <th style="text-align:right;background:var(--crema);white-space:nowrap">Total</th>
+            <th style="text-align:right;background:var(--crema)">% del total</th>
+          </tr></thead>
+          <tbody>
+            ${a.rows.map(f=>{
+              const t = M==='unidades'?f.u:M==='facturacion'?f.fact:f.contrib;
+              const g = M==='unidades'?a.tot.u:M==='facturacion'?a.tot.fact:a.tot.contrib;
+              return `<tr>
+                <td><strong>${esc(f.nombre)}</strong><div style="font-size:11px;color:var(--gris-2)">${esc(f.tipoPlato)}</div></td>
+                ${a.cols.map(c=>`<td style="text-align:right">${valor(f.celdas[c]) || '<span style="color:var(--gris-3)">—</span>'}</td>`).join('')}
+                <td style="text-align:right;font-weight:700;background:var(--crema)">${totFila(f)}</td>
+                <td style="text-align:right;background:var(--crema)">${g>0?fmtD(t/g*100)+'%':'—'}</td>
+              </tr>`;
+            }).join('')}
+            <tr style="background:var(--crema);font-weight:700">
+              <td>Total</td>
+              ${a.cols.map(c=>`<td style="text-align:right">${valor(a.totCol[c])}</td>`).join('')}
+              <td style="text-align:right">${M==='unidades'?fmt(a.tot.u):M==='facturacion'?'$'+fmt(Math.round(a.tot.fact)):'$'+fmt(Math.round(a.tot.contrib))}</td>
+              <td style="text-align:right">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
+        Ordenado por contribución: margen por porción multiplicado por unidades vendidas. Es lo que efectivamente sostiene el negocio — un plato puede dejar mucho margen y vender poco, o venderse todo el día y dejar monedas.
+      </div>
+      ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
+        No hay ventas cargadas en ese período. Probá con otro rango o <a href="#" onclick="navigate('cargarVentas');return false" style="color:var(--dorado)">cargá ventas</a>.
+      </div>`}
+    </div>
+  `);
+}
+function _anAtajo(meses){
+  const hoy = new Date();
+  if(meses===0){
+    const d = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    window._an.desde = d.toISOString().slice(0,10);
+    window._an.hasta = hoy.toISOString().slice(0,10);
+    window._an.corte = 'dia';
+  } else if(meses===1){
+    const d = new Date(hoy.getFullYear(), hoy.getMonth()-1, 1);
+    const f = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+    window._an.desde = d.toISOString().slice(0,10);
+    window._an.hasta = f.toISOString().slice(0,10);
+    window._an.corte = 'dia';
+  } else {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth()-meses+1, 1);
+    window._an.desde = d.toISOString().slice(0,10);
+    window._an.hasta = hoy.toISOString().slice(0,10);
+    window._an.corte = 'mes';
+  }
+  renderAnalisisVentas();
+}
+// El Excel sale del MISMO cálculo que la pantalla. Si saliera de otro lado,
+// algún día la planilla y la tabla dirían cosas distintas.
+function descargarAnalisisExcel(){
+  const a = _armarAnalisis();
+  if(!a.rows.length){ showToast('No hay datos en ese período','error'); return; }
+  const op = getOp();
+  const M = a.metrica;
+  const val = c => !c ? '' : (M==='unidades' ? c.u : M==='facturacion' ? Math.round(c.facturacion) : Math.round(c.contribucion));
+  const filas = [['Plato','Tipo', ...a.cols.map(c=>_rotuloPeriodo(c,a.corte)), 'Total','% del total']];
+  const g = M==='unidades'?a.tot.u:M==='facturacion'?a.tot.fact:a.tot.contrib;
+  a.rows.forEach(f=>{
+    const t = M==='unidades'?f.u:M==='facturacion'?Math.round(f.fact):Math.round(f.contrib);
+    filas.push([f.nombre, f.tipoPlato, ...a.cols.map(c=>val(f.celdas[c])), t, g>0?+(t/g*100).toFixed(1):'']);
+  });
+  filas.push(['Total','', ...a.cols.map(c=>val(a.totCol[c])),
+              M==='unidades'?a.tot.u:Math.round(g), 100]);
+  const ws = XLSX.utils.aoa_to_sheet([
+    [`${op.nombre} — ${M==='unidades'?'Unidades vendidas':M==='facturacion'?'Facturación':'Contribución al margen'}`],
+    [`Del ${a.desde||'inicio'} al ${a.hasta||'hoy'} · por ${a.corte} · canal: ${a.canal==='ambos'?'salón y delivery':_nombreCanal(a.canal)}`],
+    [], ...filas]);
+  ws['!cols'] = [{wch:34},{wch:14}, ...a.cols.map(()=>({wch:13})), {wch:14},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Análisis');
+  XLSX.writeFile(wb, `analisis-ventas-${(a.desde||'').slice(0,7)}.xlsx`);
+  showToast('Planilla descargada','success');
 }
 
 // ══ CARGAR VENTAS ══════════════════════════════════════════════════════════
