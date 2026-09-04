@@ -15272,6 +15272,7 @@ function _htmlCruceCanales(km){
 // y números sueltos ya se los da el sistema de facturación: lo que falta no es
 // el dato, es saber qué se está mirando.
 
+function _plural(n, [uno, muchos]){ return n===1 ? uno : muchos; }
 function _isoSemana(iso){
   // Lunes de la semana a la que pertenece esa fecha.
   const d = new Date(iso+'T12:00:00');
@@ -15457,7 +15458,7 @@ function renderAnalisisVentas(){
     <div class="card">
       <div class="card-header">
         <span class="card-title">${M==='unidades'?'Unidades vendidas':M==='facturacion'?'Facturación':'Contribución al margen'}
-          <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${a.rows.length} platos · ${a.cols.length} ${a.corte==='dia'?'días':a.corte==='semana'?'semanas':'meses'}</span></span>
+          <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${a.rows.length} plato${a.rows.length===1?'':'s'} · ${a.cols.length} ${_plural(a.cols.length, a.corte==='dia'?['día','días']:a.corte==='semana'?['semana','semanas']:['mes','meses'])}</span></span>
         <button class="btn btn-secondary btn-sm" onclick="descargarAnalisisExcel()">${ico('download',13)} Bajar a Excel</button>
       </div>
       ${a.rows.length ? `
@@ -15490,7 +15491,11 @@ function renderAnalisisVentas(){
         </table>
       </div>
       <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2)">
-        Ordenado por contribución: margen por porción multiplicado por unidades vendidas. Es lo que efectivamente sostiene el negocio — un plato puede dejar mucho margen y vender poco, o venderse todo el día y dejar monedas.
+        ${M==='contribucion'
+          ? 'Ordenado por contribución: margen por porción multiplicado por unidades vendidas. Es lo que efectivamente sostiene el negocio — un plato puede dejar mucho margen y vender poco, o venderse todo el día y dejar monedas.'
+          : M==='unidades'
+          ? 'Ordenado por unidades vendidas. Muestra qué se pide más, no qué deja más: un plato muy pedido puede aportar poco margen. Para saber cuáles sostienen el negocio, mirá <strong>Contribución</strong>.'
+          : 'Ordenado por facturación. Es lo que entra por caja, antes de descontar el costo del plato. Dos platos que facturan lo mismo pueden dejar muy distinto — para eso está <strong>Contribución</strong>.'}
       </div>
       ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
         No hay ventas cargadas en ese período. Probá con otro rango o <a href="#" onclick="navigate('cargarVentas');return false" style="color:var(--dorado)">cargá ventas</a>.
