@@ -8275,6 +8275,18 @@ function renderEditorReceta(){
   // Subrecetas de ESTE plato a las que les falta el rendimiento. Mientras falte,
   // esa línea suma cero y el food cost del plato da más bajo de lo que es. Un
   // costo que da bien porque le falta la salsa es peor que uno que da mal.
+  // Una PREPARACIÓN no tiene porciones: tiene una olla. Se cargan las cantidades
+  // del lote entero —1 kg de tomate, medio de cebolla—, se cocina, se pesa el
+  // resultado y ese peso es el rendimiento. Antes el editor leía cada cantidad
+  // como "por porción" y la multiplicaba por las porciones de referencia: quien
+  // cargaba el lote con 10 porciones terminaba con diez veces el tomate y un
+  // costo diez veces más alto, sin ninguna señal de que algo estaba mal.
+  // Se fuerza a 1 para que la cantidad cargada sea la del lote y nada más.
+  if(r.esPreparacion && (+r.porciones||1) !== 1){
+    r.porciones = 1;
+    programarAutoguardadoReceta();
+  }
+  const esPrep = !!r.esPreparacion;
   const _subSinRend = (r.ingredientes||[])
     .filter(i => i && i.recetaId)
     .map(i => demoData.recetas.find(x=>x.id===i.recetaId))
@@ -8285,6 +8297,10 @@ function renderEditorReceta(){
 
   setContent(r.nombre||'Nueva receta', `
     <div class="editor-receta">
+    ${esPrep && !(+r.rendimientoG>0) ? `<div style="background:#EBF3FF;border:1px solid #A9C4E8;color:#1F4E79;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px">
+      <strong>Cargá las cantidades de la olla entera</strong>, no de una porción: 1 kg de tomate, 500 g de cebolla, lo que lleve la preparación completa.<br>
+      Después hacela, <strong>pesá el resultado ya terminado</strong> y cargá ese número en "Cuánto rinde". Recién ahí se puede saber cuánto cuesta el gramo — antes de cocinar no hay forma de saberlo, porque al cocinar se pierde o se gana peso.
+    </div>` : ''}
     ${_subSinRend.length ? `<div style="background:#FCE8E8;border:1px solid #EFB2B2;color:#C02626;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px">
       <strong>El costo de este plato está incompleto.</strong>
       ${_subSinRend.length===1
@@ -8360,21 +8376,28 @@ function renderEditorReceta(){
             : 'todavía se transfiere al costo'}</div>
         </div>
       ` : `
+        ${esPrep ? `
+        <div class="metric">
+          <div class="metric-label">Costo del lote</div>
+          <div class="metric-value">$${fmt(merc)}</div>
+          <div class="metric-sub">lo que sale hacer la olla entera</div>
+        </div>` : `
         <div class="metric">
           <div class="metric-label">Porciones de referencia</div>
           <input type="text" inputmode="decimal" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
             onchange="recetaEditando.porciones=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
-        </div>
+        </div>`}
         ${mostrarRendimiento ? `<div class="metric">
           <div class="metric-label">Cuánto rinde (g / ml)</div>
           <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
             title="Pesá o medí el resultado final de esta preparación, ya lista, tal como la definiste arriba (porciones de referencia) — no es la suma de los ingredientes crudos: al cocinar se pierde o se gana peso, y eso solo se sabe pesando."
             onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
-          <div class="metric-sub">${usadaComoInsumo
-            ? _recetasQueLaUsan.length + ' receta' + (_recetasQueLaUsan.length>1?'s la usan':' la usa') + ' por gramos'
-            : 'para poder usarla dentro de otra receta'}</div>
+          <div class="metric-sub">${(+r.rendimientoG>0)
+            ? '<span style="color:var(--azul);font-weight:700">$'+fmtD(merc/(+r.rendimientoG),3)+' por gramo</span>'
+              + (usadaComoInsumo ? ' · la usan ' + _recetasQueLaUsan.length + ' plato' + (_recetasQueLaUsan.length>1?'s':'') : '')
+            : 'pesá la olla terminada y cargá acá cuánto dio'}</div>
         </div>` : ''}
-        <div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>
+        ${esPrep ? '' : `<div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>`}
         <div class="metric"><div class="metric-label">${esCP ? "Margen sobre el costo" : "% sobre precio venta"}</div>
           ${esCP
             ? (()=>{ const _mg = metricaPrecioReceta(r, merc);
@@ -8416,7 +8439,7 @@ function renderEditorReceta(){
             <col style="width:90px"><col style="width:96px">
           </colgroup>
           <thead><tr>
-            <th>Ingrediente</th><th>Técnica</th><th style="text-align:right">Cantidad</th>
+            <th>Ingrediente</th><th>Técnica</th><th style="text-align:right">${esPrep?'Cantidad<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">de la olla entera</div>':'Cantidad'}</th>
             <th style="text-align:right">Merma</th><th style="text-align:right">Bruto/p</th>
             <th style="text-align:right">Costo/p</th><th style="text-align:right">Costo total</th>
             <th style="text-align:right">Kg total</th><th></th>
