@@ -2485,7 +2485,13 @@ function getIngredientesConCP(){
 // lista (un ingrediente borrado, o un insumo del CP que el CP dejó de
 // publicar), NO se muestra "— elegí —" como si el renglón estuviera vacío;
 // se muestra qué había, marcado, para que la persona vea que hay algo roto.
-function _opcionesIngrediente(selId){
+// El desplegable de ingredientes incluye también las PREPARACIONES propias, en
+// su propio grupo. Antes había dos botones distintos —"+ Ingrediente" y
+// "+ Subreceta"— y había que saber de antemano cuál de los dos correspondía. Un
+// cocinero no piensa "voy a agregar una subreceta": piensa "a la milanesa le va
+// salsa fileto". Una sola puerta, y la fila se acomoda sola según lo que elijas.
+function _opcionesIngrediente(selId, opciones){
+  const {conPreparaciones = false, excluirReceta = null} = opciones || {};
   const lista = getIngredientesConCP().slice()
     .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es',{sensitivity:'base'}));
   const html = lista.map(i=>{
@@ -2493,13 +2499,23 @@ function _opcionesIngrediente(selId){
     const avisoPrecio = i._sinPrecioCP ? ' ⚠ sin precio' : '';
     return `<option value="${esc(i.id)}"${i.id===selId?' selected':''}>${ico}${esc(i.nombre)}${avisoPrecio}</option>`;
   }).join('');
+  let preps = '';
+  if(conPreparaciones){
+    const lp = getRecetas().filter(x => esPreparacionReceta(x) && x.id !== excluirReceta)
+      .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es',{sensitivity:'base'}));
+    if(lp.length){
+      preps = `<optgroup label="Mis preparaciones">` + lp.map(x=>
+        `<option value="rec:${esc(x.id)}">${esc(x.nombre||'Sin nombre')}${(+x.rendimientoG>0)?'':' ⚠ sin rendimiento'}</option>`
+      ).join('') + `</optgroup>`;
+    }
+  }
   if(selId && !lista.some(i=>i.id===selId)){
     const perdido = getIngrediente(selId);
     return `<option value="">— elegí —</option>`
       + `<option value="${esc(selId)}" selected>⚠ ${esc((perdido&&perdido.nombre)||'ingrediente que ya no está')} — revisalo</option>`
-      + html;
+      + html + preps;
   }
-  return `<option value="">— elegí —</option>` + html;
+  return `<option value="">— elegí —</option>` + html + preps;
 }
 
 // Las técnicas que se le pueden aplicar a un ingrediente. "Sin merma" está
@@ -2724,7 +2740,15 @@ function escJs(s){
 }
 
 function fmt(n){ return Math.round(n||0).toLocaleString('es-AR'); }
-function fmtD(n,d=1){ return Number(n||0).toFixed(d); }
+// Decimales en notación argentina: coma decimal y punto para los miles.
+// toFixed() escribe SIEMPRE con punto decimal, que es la notación inglesa, y así
+// "5,18 por gramo" salía como "5.18" — que acá se lee cinco mil dieciocho. El
+// número siempre estuvo bien calculado; se leía mal.
+// Se usa solo para MOSTRAR: no alimenta ningún campo editable ni ninguna
+// exportación, así que no rompe nada que después haya que volver a leer.
+function fmtD(n,d=1){
+  return Number(n||0).toLocaleString('es-AR', {minimumFractionDigits:d, maximumFractionDigits:d});
+}
 function uid(){ return 'id-'+Date.now()+'-'+Math.random().toString(36).substr(2,6); }
 
 // ── HELPERS CON SCOPE POR OPERACIÓN ──
@@ -8107,7 +8131,7 @@ function renderEditorReceta(){
         <td data-col="tecnica" style="font-size:11px;color:var(--azul);white-space:nowrap">
           ${recBase
             ? (rendG>0
-                ? `$${fmt(costoXg)}/g`
+                ? `$${fmt(Math.round(costoXg*1000))}/kg`
                 // Sin rendimiento la subreceta cuesta cero y el plato miente. Se
                 // carga acá mismo: antes había que salir, abrir la otra receta —
                 // donde el campo recién aparecía DESPUÉS de usarla en algún lado—
@@ -8338,7 +8362,19 @@ function renderEditorReceta(){
         ${(getOp()?.tiposServicio||['Almuerzo']).map(s=>`<option${s===r.tipoServicio?' selected':''}>${s}</option>`).join('')}
       </select>
       <select onchange="recetaEditando.tipoPlato=this.value;programarAutoguardadoReceta()" style="width:130px">
-        ${(getOp()?.tiposPlato||['Principal']).map(s=>`<option${s===r.tipoPlato?' selected':''}>${s}</option>`).join('')}
+        ${(()=>{
+          // Las preparaciones suman "Salsa" y "Base / preparación" aunque la
+          // operación no los tenga configurados: una salsa no es una entrada ni
+          // una guarnición, y obligar a elegir mal ensucia la matriz de menú.
+          // Además se conserva el tipo ya guardado aunque no esté en la lista:
+          // antes el select mostraba el primero y al guardar lo pisaba en
+          // silencio.
+          const base = (getOp()?.tiposPlato||['Principal']).slice();
+          if(esPrep) ['Salsa','Base / preparación'].forEach(t=>{ if(!base.includes(t)) base.push(t); });
+          if(r.tipoPlato && !base.includes(r.tipoPlato)) base.unshift(r.tipoPlato);
+          if(!r.tipoPlato) base.unshift('');
+          return base.map(t=>`<option${t===(r.tipoPlato||'')?' selected':''} value="${esc(t)}">${t?esc(t):'— sin tipo —'}</option>`).join('');
+        })()}
       </select>`}
       <button class="btn btn-primary" onclick="guardarReceta()">${ico('save',13)} Guardar</button>
       <span id="rec-autoguardado" style="font-size:11px;font-weight:600;white-space:nowrap;flex:0 0 200px;width:200px;overflow:hidden;text-overflow:ellipsis"></span>
@@ -8393,7 +8429,8 @@ function renderEditorReceta(){
             title="Pesá o medí el resultado final de esta preparación, ya lista, tal como la definiste arriba (porciones de referencia) — no es la suma de los ingredientes crudos: al cocinar se pierde o se gana peso, y eso solo se sabe pesando."
             onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
           <div class="metric-sub">${(+r.rendimientoG>0)
-            ? '<span style="color:var(--azul);font-weight:700">$'+fmtD(merc/(+r.rendimientoG),3)+' por gramo</span>'
+            ? '<span style="color:var(--azul);font-weight:700">$'+fmtD(merc/(+r.rendimientoG),2)+' por gramo</span>'
+              + ' · $'+fmt(Math.round(merc/(+r.rendimientoG)*1000))+' el kilo'
               + (usadaComoInsumo ? ' · la usan ' + _recetasQueLaUsan.length + ' plato' + (_recetasQueLaUsan.length>1?'s':'') : '')
             : 'pesá la olla terminada y cargá acá cuánto dio'}</div>
         </div>` : ''}
@@ -9092,6 +9129,17 @@ function updPorcionesCP(idx, val){
 }
 
 function updIngReceta(idx,field,val){
+  // Si en el desplegable de ingredientes se eligió una preparación, la fila deja
+  // de ser un ingrediente y pasa a ser una subreceta. Se limpia lo que ya no
+  // aplica (técnica y merma no tienen sentido en una preparación: la merma ya
+  // está adentro de su propia receta).
+  if(field==='ingId' && typeof val === 'string' && val.startsWith('rec:')){
+    const linea = recetaEditando.ingredientes[idx];
+    delete linea.ingId; delete linea.tecnica; delete linea.esCondimento;
+    linea.recetaId = val.slice(4);
+    renderEditorReceta(); programarAutoguardadoReceta();
+    return;
+  }
   recetaEditando.ingredientes[idx][field]=val;
   if(field==='ingId'){
     recetaEditando.ingredientes[idx].tecnica='';
@@ -15262,13 +15310,13 @@ function _htmlKPIs(k, mes){
       <div style="font-size:11px;color:var(--gris-2)">Sobre ventas reales de $${fmt(k.ventas)}</div>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
-      ${_kpiCard('Food cost', k.foodCostPct.toFixed(1), '%', 'Mercadería sobre ventas · referencia 28-35 %', cFC)}
-      ${_kpiCard('Prime cost', k.primeCostPct.toFixed(1), '%', 'Mercadería + personal · referencia 60-65 %', cPC)}
-      ${_kpiCard('EBITDA', (k.ebitdaPct>=0?'':'−')+Math.abs(k.ebitdaPct).toFixed(1), '%', 'Resultado operativo · $'+fmt(Math.round(k.ebitda)), cEB)}
+      ${_kpiCard('Food cost', fmtD(k.foodCostPct,1), '%', 'Mercadería sobre ventas · referencia 28-35 %', cFC)}
+      ${_kpiCard('Prime cost', fmtD(k.primeCostPct,1), '%', 'Mercadería + personal · referencia 60-65 %', cPC)}
+      ${_kpiCard('EBITDA', (k.ebitdaPct>=0?'':'−')+fmtD(Math.abs(k.ebitdaPct),1), '%', 'Resultado operativo · $'+fmt(Math.round(k.ebitda)), cEB)}
     </div>
     <div style="font-size:11px;color:var(--gris-2);margin-top:8px;line-height:1.5">
       Cada índice contiene al anterior. El EBITDA es el resultado de la operación —incluye el sueldo del dueño si está cargado— antes de intereses, impuestos a las ganancias y amortizaciones.
-      ${k.desperdicio>0 ? `Descuenta $${fmt(Math.round(k.desperdicio))} de desperdicio registrado (${k.desperdicioPct.toFixed(1)} % de las ventas).` : ''}
+      ${k.desperdicio>0 ? `Descuenta $${fmt(Math.round(k.desperdicio))} de desperdicio registrado (${fmtD(k.desperdicioPct,1)} % de las ventas).` : ''}
     </div>
   </div>`;
 }
@@ -15435,7 +15483,7 @@ function renderSubrecetas(){
             <th>Preparación</th>
             <th style="text-align:right;width:120px">Rinde</th>
             <th style="text-align:right;width:130px">Costo del lote</th>
-            <th style="text-align:right;width:120px">Costo por gramo</th>
+            <th style="text-align:right;width:120px">Costo por kilo</th>
             <th>La usan</th>
             <th style="width:170px"></th>
           </tr></thead>
@@ -15446,7 +15494,7 @@ function renderSubrecetas(){
               </td>
               <td style="text-align:right">${rend>0?fmt(rend)+' g':'<span style="color:#C02626;font-size:12px">falta cargarlo</span>'}</td>
               <td style="text-align:right">$${fmt(merc)}</td>
-              <td style="text-align:right">${xg!==null?'<span class="calc">$'+fmtD(xg,3)+'/g</span>':'<span style="color:var(--gris-3)">—</span>'}</td>
+              <td style="text-align:right">${xg!==null?'<span class="calc">$'+fmt(Math.round(xg*1000))+'/kg</span>':'<span style="color:var(--gris-3)">—</span>'}</td>
               <td style="font-size:12px;color:var(--gris-1)">${usan.length
                 ? usan.map(x=>esc(x.nombre)).join(', ')
                 : '<span style="color:var(--gris-3)">Todavía no la usa ningún plato</span>'}</td>
@@ -18515,7 +18563,7 @@ async function procesarCartaPDF(file){
   const inp = document.getElementById('carta-file'); if(inp) inp.value = '';
   const mb = file.size / (1024*1024);
   if(mb > CARTA_MB_MAX){
-    showToast(`La carta pesa ${mb.toFixed(1)} MB y el máximo son ${CARTA_MB_MAX} MB. `
+    showToast(`La carta pesa ${fmtD(mb,1)} MB y el máximo son ${CARTA_MB_MAX} MB. `
             + `Probá sacando las páginas de vinos y las fotos sin precios.`, 'error');
     return;
   }
@@ -18731,7 +18779,7 @@ function renderRevisionCarta(){
       <div class="metric"><div class="metric-label">Recetas</div><div class="metric-value">${d.recs.length}</div><div class="metric-sub">de ${d.totalPlatos} platos leídos</div></div>
       <div class="metric"><div class="metric-label">Ingredientes</div><div class="metric-value">${ingArr.length}</div><div class="metric-sub">con precio estimado</div></div>
       <div class="metric"><div class="metric-label">Mermas</div><div class="metric-value">${d.merm.size}</div><div class="metric-sub">combinaciones de proceso</div></div>
-      <div class="metric"><div class="metric-label">Food cost promedio</div><div class="metric-value" style="color:${color(prom)}">${prom.toFixed(1)}%</div><div class="metric-sub">${rojos} plato(s) sobre 38%</div></div>
+      <div class="metric"><div class="metric-label">Food cost promedio</div><div class="metric-value" style="color:${color(prom)}">${fmtD(prom,1)}%</div><div class="metric-sub">${rojos} plato(s) sobre 38%</div></div>
     </div>
 
     ${(sinIng||sinMerma) ? `<div class="alert alert-warning" style="margin-bottom:16px">
@@ -18757,7 +18805,7 @@ function renderRevisionCarta(){
             <td style="text-align:right">${f.ok?'$'+fmt(f.cp):'<span style="color:#B8540A;font-size:12px">incompleta</span>'}</td>
             <td style="text-align:right">${f.pv>0?'$'+fmt(f.pv):'—'}</td>
             <td style="text-align:right;font-weight:700;color:${f.ok&&f.pv>0?color(f.pctCosto):'var(--gris-3)'}">
-              ${f.ok&&f.pv>0?f.pctCosto.toFixed(1)+'%':'—'}</td>
+              ${f.ok&&f.pv>0?fmtD(f.pctCosto,1)+'%':'—'}</td>
           </tr>`).join('')}
         </tbody>
       </table></div>
