@@ -2402,6 +2402,17 @@ function esCabeceraOp(op){
   return !!op && (op.tipo==='Centro de Producción' || op.tipo==='centroProduccion'
                   || op.proveeAlGrupo === true);
 }
+// ¿Esta operación recibe mercadería de un Centro de Producción?
+// Solo tiene sentido en una cadena: un local suelto compra todo a proveedores y
+// no tiene de dónde "traer". Se exige que el CP EXISTA de verdad —no alcanza con
+// que el vínculo esté escrito— porque una operación borrada puede dejar el
+// grupoId apuntando a la nada, y ahí el botón abriría un catálogo vacío.
+function operacionRecibeDeCP(){
+  const op = getOp();
+  if(!op) return false;
+  if(esCabeceraOp(op)) return false;              // el CP no se trae a sí mismo
+  return !!(op.grupoId && demoData.operaciones[op.grupoId]);
+}
 function esCentroProduccion(){
   return esCabeceraOp(getOp());
 }
@@ -7775,6 +7786,10 @@ function _pintarEstadoAutoguardado(){
 }
 
 // Salir del editor: si queda algo sin subir todavía, lo sube antes de cerrar.
+// SIN USO desde el 5/9/2026: era la del botón "← Volver" propio del editor, que
+// duplicaba el de la barra superior. No se borra porque es la salida ordenada
+// del editor —sube lo pendiente y limpia el borrador— y sirve si alguna vez hace
+// falta salir por código en vez de por el historial.
 async function salirEditorReceta(){
   if(_autoguardadoTimerCorto || _autoguardadoTimerMax){
     await _ejecutarAutoguardadoReceta();
@@ -8223,7 +8238,11 @@ function renderEditorReceta(){
   setContent(r.nombre||'Nueva receta', `
     <div class="editor-receta">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btn btn-secondary" onclick="salirEditorReceta()">← Volver</button>
+      <!-- Acá había un segundo "← Volver". La barra superior ya tiene el suyo, en
+           el mismo lugar en todas las pantallas y conectado al gesto atrás del
+           celular. Dos botones iguales a diez centímetros obligan a preguntarse
+           cuál de los dos usar. Lo que hacía este —subir lo tipeado antes de
+           salir— ya lo hace el manejador del botón atrás. -->
       ${demoData.recetas.some(x=>x.id===r.id) ? `<button class="btn btn-secondary" onclick="navigate('fichaPlato',{id:'${escJs(r.id)}'})">${ico('eye',13)} Ver ficha</button>` : ''}
       <input type="text" id="rec-nombre" value="${esc(r.nombre)}" placeholder="Nombre de la receta" style="flex:1;min-width:200px;font-size:15px;font-weight:600" onchange="recetaEditando.nombre=this.value;programarAutoguardadoReceta()">
       ${esNivelCocina() ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--crema);border:1.5px solid var(--dorado);border-radius:8px;padding:6px 12px;white-space:nowrap">
@@ -8331,7 +8350,7 @@ function renderEditorReceta(){
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
           <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" title="Una preparación tuya que ya cargaste como receta acá (un chimichurri, una salsa) y que este plato usa por gramos." onclick="agregarRecetaEnReceta()">+ Preparación mía</button>
-          ${esCP ? '' : `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" title="Lo que el Centro de Producción publica para los locales. Al traerlo queda en Mis ingredientes con su origen declarado." onclick="agregarProductoCP()">🏭 Traer del CP</button>`}
+          ${operacionRecibeDeCP() ? `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" title="Lo que el Centro de Producción publica para los locales. Al traerlo queda en Mis ingredientes con su origen declarado." onclick="agregarProductoCP()">🏭 Traer del CP</button>` : ''}
         </div>
       </div>
       <div class="table-wrap">
