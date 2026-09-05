@@ -3115,6 +3115,19 @@ function calcReceta(receta, porciones){
   return {merc, items, porciones};
 }
 
+// Carga el rendimiento de OTRA receta desde el plato que la usa. Es el mismo
+// dato que se edita en la ficha de esa receta — no hay un segundo lugar donde
+// viva, solo una segunda puerta para llegar.
+function updRendimientoDeSubreceta(recetaId, valor){
+  const base = demoData.recetas.find(x=>x.id===recetaId);
+  if(!base){ showToast('No encuentro esa receta','error'); return; }
+  const v = +valor || 0;
+  if(v <= 0){ showToast('Poné cuántos gramos rinde la preparación terminada','error'); return; }
+  base.rendimientoG = v;
+  guardarEnFirestore();
+  renderEditorReceta();
+  showToast(`"${base.nombre}" rinde ${fmt(v)} g. Ya se puede costear por gramo.`, 'success');
+}
 function agregarRecetaEnReceta(){
   recetaEditando.ingredientes.push({recetaId:'', neto:0});
   renderEditorReceta();
@@ -7889,8 +7902,15 @@ function _filaReceta(r, opts){
   const kg = esLote ? '<span style="font-size:11px;color:var(--gris-2)">/kg</span>' : '';
   const costo = costoComparableReceta(r, merc);
   const m = metricaPrecioReceta(r, merc);
+  // Si otras recetas la usan por gramos, conviene saberlo antes de tocarla:
+  // cambiarle un ingrediente mueve el costo de todos los platos que la llevan.
+  const _laUsan = getRecetas().filter(x => x.id!==r.id && (x.ingredientes||[]).some(i=>i.recetaId===r.id));
+  const _faltaRend = _laUsan.length > 0 && !(+r.rendimientoG > 0);
   return `<tr>
-    <td><strong>${esc(r.nombre)}</strong></td>
+    <td><strong>${esc(r.nombre)}</strong>
+      ${_laUsan.length ? `<span title="${_laUsan.map(x=>esc(x.nombre)).join(', ')}" style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:${_faltaRend?'#FCE8E8':'#EBF3FF'};color:${_faltaRend?'#C02626':'#1F4E79'}">${_faltaRend?'⚠ ':''}subreceta · ${_laUsan.length}</span>` : ''}
+      ${_faltaRend ? `<div style="font-size:11px;color:#C02626;margin-top:2px">Falta cuánto rinde: está sumando $0 en ${_laUsan.length===1?'ese plato':'esos platos'}</div>` : ''}
+    </td>
     <td>${badgeLinea(r.tipoServicio)}</td>
     <td style="text-align:right;white-space:nowrap">${costo>0?'$'+fmt(costo)+kg:'<span style="color:var(--gris-3)">—</span>'}</td>
     <td style="text-align:right;white-space:nowrap">${r.precioVenta?'$'+fmt(r.precioVenta)+kg:'<span style="color:var(--gris-3)">—</span>'}</td>
@@ -8082,7 +8102,21 @@ function renderEditorReceta(){
           </select>
         </td>
         <td data-col="tecnica" style="font-size:11px;color:var(--azul);white-space:nowrap">
-          ${recBase ? (rendG>0 ? `$${fmt(costoXg)}/g` : `<span style="color:var(--bordo)">⚠ Cargá rendimiento</span>`) : '—'}
+          ${recBase
+            ? (rendG>0
+                ? `$${fmt(costoXg)}/g`
+                // Sin rendimiento la subreceta cuesta cero y el plato miente. Se
+                // carga acá mismo: antes había que salir, abrir la otra receta —
+                // donde el campo recién aparecía DESPUÉS de usarla en algún lado—
+                // y volver. La preparación se podía usar pero no preparar.
+                : `<div style="color:var(--bordo);font-size:11px;line-height:1.4">
+                     ⚠ Falta el rendimiento<br>
+                     <input type="text" inputmode="decimal" placeholder="¿cuánto rinde en g?"
+                       style="width:130px;text-align:right;margin-top:4px;font-size:11px"
+                       title="Pesá la preparación terminada: cuántos gramos da la olla entera. De ahí sale el costo por gramo."
+                       onchange="updRendimientoDeSubreceta('${escJs(ing.recetaId)}', num(this.value))">
+                   </div>`)
+            : '—'}
         </td>
         <td data-col="cantidad"><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
         <td data-col="merma" style="text-align:right;color:var(--gris-2)">—</td>
@@ -8231,12 +8265,26 @@ function renderEditorReceta(){
     x.id !== r.id && (x.ingredientes||[]).some(i => i.recetaId === r.id));
   const usadaComoInsumo = _recetasQueLaUsan.length > 0;
   const mostrarRendimiento = esCP ? modoPeso : (usadaComoInsumo || r.rendimientoG > 0);
+  // Subrecetas de ESTE plato a las que les falta el rendimiento. Mientras falte,
+  // esa línea suma cero y el food cost del plato da más bajo de lo que es. Un
+  // costo que da bien porque le falta la salsa es peor que uno que da mal.
+  const _subSinRend = (r.ingredientes||[])
+    .filter(i => i && i.recetaId)
+    .map(i => demoData.recetas.find(x=>x.id===i.recetaId))
+    .filter(x => x && !(+x.rendimientoG > 0));
   const necesitaAvisoRendimiento = esCP
     ? (modoPeso && !(r.rendimientoG>0))
     : (usadaComoInsumo && !(r.rendimientoG>0));
 
   setContent(r.nombre||'Nueva receta', `
     <div class="editor-receta">
+    ${_subSinRend.length ? `<div style="background:#FCE8E8;border:1px solid #EFB2B2;color:#C02626;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px">
+      <strong>El costo de este plato está incompleto.</strong>
+      ${_subSinRend.length===1
+        ? `La subreceta <strong>${esc(_subSinRend[0].nombre)}</strong> todavía no tiene cargado cuánto rinde, así que está sumando $0.`
+        : `${_subSinRend.length} subrecetas (${_subSinRend.map(x=>esc(x.nombre)).join(', ')}) todavía no tienen cargado cuánto rinden, así que están sumando $0.`}
+      Cargalo en la fila azul de abajo y el número se corrige solo.
+    </div>` : ''}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <!-- Acá había un segundo "← Volver". La barra superior ya tiene el suyo, en
            el mismo lugar en todas las pantallas y conectado al gesto atrás del
@@ -8349,7 +8397,7 @@ function renderEditorReceta(){
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
-          <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" title="Una preparación tuya que ya cargaste como receta acá (un chimichurri, una salsa) y que este plato usa por gramos." onclick="agregarRecetaEnReceta()">+ Preparación mía</button>
+          <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" title="Otra receta tuya que este plato usa por gramos: una salsa fileto dentro de una bolognesa, un chimichurri, una masa. El costo sale del rendimiento de esa preparación." onclick="agregarRecetaEnReceta()">+ Subreceta</button>
           ${operacionRecibeDeCP() ? `<button class="btn btn-secondary btn-sm" style="border-color:#B8540A;color:#B8540A" title="Lo que el Centro de Producción publica para los locales. Al traerlo queda en Mis ingredientes con su origen declarado." onclick="agregarProductoCP()">🏭 Traer del CP</button>` : ''}
         </div>
       </div>
