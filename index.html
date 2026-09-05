@@ -6465,7 +6465,7 @@ function renderIngredientes(){
                   <td>${item.unidadTipo||item.unidad||'kg'}</td>
                   <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
                   <td style="text-align:right"><input type="text" inputmode="decimal" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',num(this.value))"></td>
-                  <td style="text-align:right"><span class="calc">$${fmt(Math.round(item.precio/(item.bulto||1)))}/${item.unidadMedida||'kg'}</span></td>
+                  <td style="text-align:right"><span class="calc">$${fmt(Math.round(item.precio/(item.bulto||1)))}/${_medidaSingular(item.unidadMedida||'kg')}</span></td>
                   <td style="text-align:center">
                     <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px" title="Marcar para controlar el stock de este producto (detectar faltantes)">
                       <input type="checkbox" ${item.controlaStock?'checked':''} onchange="updateIng('${item.id}','controlaStock',this.checked)" style="width:16px;height:16px;cursor:pointer">
@@ -6623,7 +6623,7 @@ function filtrarIngredientes(q){
               <td>${item.unidadTipo||item.unidad||'kg'}</td>
               <td style="text-align:right">${item.bulto} ${item.unidadMedida||'kg'}</td>
               <td style="text-align:right"><input type="text" inputmode="decimal" value="${item.precio}" style="width:120px;text-align:right" onchange="updateIng('${item.id}','precio',num(this.value))"></td>
-              <td style="text-align:right"><span class="calc">$${fmt(Math.round(item.precio/(item.bulto||1)))}/${item.unidadMedida||'kg'}</span></td>
+              <td style="text-align:right"><span class="calc">$${fmt(Math.round(item.precio/(item.bulto||1)))}/${_medidaSingular(item.unidadMedida||'kg')}</span></td>
               <td style="white-space:nowrap"><div style="display:flex;gap:6px">
                 <button class="btn btn-secondary btn-sm" data-ing-id="${item.id}" onclick="editarIng(this.dataset.ingId)">${ico('edit',13)} Editar</button>
                 <button class="btn btn-danger btn-sm" data-ing-id="${item.id}" onclick="delIng(this.dataset.ingId)">${ico('trash',13)} Eliminar</button>
@@ -7153,6 +7153,14 @@ function sincronizarUIIng(){
   calcularPrecioUnitario();
 }
 
+// Cuando se dice "por" algo, va en singular: $150 por unidad, no por unidades.
+// El valor guardado sigue siendo el mismo ('unidades'); esto es solo cómo se
+// lee. Se usa en todos los lugares donde aparece un precio por unidad de medida.
+function _medidaSingular(m){
+  return ({unidades:'unidad', litros:'litro', kg:'kg', g:'g', ml:'ml',
+           docenas:'docena', maples:'maple', bandejas:'bandeja',
+           bolsas:'bolsa', cajones:'cajón', paquetes:'paquete'})[m] || m;
+}
 function calcularPrecioUnitario(){
   const bulto = num(document.getElementById('ni-bulto')?.value||1);
   const precio = num(document.getElementById('ni-precio')?.value||0);
@@ -7167,7 +7175,7 @@ function calcularPrecioUnitario(){
   if(precio > 0 && bulto > 0){
     const pxu = precio / bulto;
     container.style.display = 'block';
-    valorEl.textContent = '$' + fmt(Math.round(pxu)) + ' / ' + medida;
+    valorEl.textContent = '$' + fmt(Math.round(pxu)) + ' / ' + _medidaSingular(medida);
     if(equivEl) equivEl.textContent = '1 ' + tipo + ' = ' + bulto + ' ' + medida;
   } else {
     container.style.display = 'none';
