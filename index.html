@@ -4776,7 +4776,7 @@ function buildSidebar(rol){
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
-    {icon:'tag', label:'Subproductos', vista:'subproductos'},
+    {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
@@ -4803,7 +4803,7 @@ function buildSidebar(rol){
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
-    {icon:'tag', label:'Subproductos', vista:'subproductos'},
+    {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
     // Inventariar y declarar desperdicio son actos de cocina, no de análisis:
     // uno se agacha a contar en la cámara y el otro se carga tras el servicio.
@@ -4857,6 +4857,7 @@ function buildSidebar(rol){
     {icon:'clipboard', label:'Mis ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
+    {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
@@ -4871,7 +4872,7 @@ function buildSidebar(rol){
     {icon:'clipboard', label:'Ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
-    {icon:'tag', label:'Subproductos', vista:'subproductos'},
+    {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
@@ -4895,7 +4896,7 @@ function buildSidebar(rol){
     {icon:'clipboard', label:'Mis ingredientes', vista:'ingredientes'},
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
-    {icon:'tag', label:'Subproductos', vista:'subproductos'},
+    {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     {icon:'users', label:'Comida de personal', vista:'personal'},
     ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
     ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
@@ -5291,6 +5292,7 @@ function navigate(vista, params={}, opts={}){
     operacion: renderDashboardOperacion,
     resultado: renderResultado,
     cargarVentas: renderCargarVentas,
+    subrecetas: renderSubrecetas,
     analisisVentas: renderAnalisisVentas,
     clientes: renderClientes,
     ingredientes: renderIngredientes,
@@ -6552,6 +6554,7 @@ function renderIngredientes(){
       </div>`;
     })()}
     <div id="ing-lista">${acordeon}</div>
+    ${_htmlDespiece()}
   `, `<button class="btn btn-primary btn-sm" onclick="modalNuevoIng()">+ Nuevo ingrediente</button>`);
 }
 
@@ -8264,7 +8267,11 @@ function renderEditorReceta(){
   const _recetasQueLaUsan = esCP ? [] : getRecetas().filter(x =>
     x.id !== r.id && (x.ingredientes||[]).some(i => i.recetaId === r.id));
   const usadaComoInsumo = _recetasQueLaUsan.length > 0;
-  const mostrarRendimiento = esCP ? modoPeso : (usadaComoInsumo || r.rendimientoG > 0);
+  // El campo "cuánto rinde" se muestra si la receta ES una preparación (se
+  // declaró como tal al crearla en Subrecetas), si alguien ya la usa por gramos,
+  // o si ya tiene el dato. Antes solo valían las dos últimas: había que usarla
+  // en un plato para recién después poder prepararla.
+  const mostrarRendimiento = esCP ? modoPeso : (r.esPreparacion || usadaComoInsumo || r.rendimientoG > 0);
   // Subrecetas de ESTE plato a las que les falta el rendimiento. Mientras falte,
   // esa línea suma cero y el food cost del plato da más bajo de lo que es. Un
   // costo que da bien porque le falta la salsa es peor que uno que da mal.
@@ -15354,6 +15361,104 @@ function _htmlCruceCanales(km){
   </div>`;
 }
 
+// ══ SUBRECETAS ═════════════════════════════════════════════════════════════
+// Una preparación es una receta que RINDE: sale de la olla medida en gramos y
+// otros platos la usan por gramo. Una salsa fileto, un chimichurri, una masa.
+//
+// No es un tipo aparte de receta, y por eso no hay dos listas separadas: rendir
+// y venderse son dos capacidades independientes, y las cuatro combinaciones
+// existen en una cocina real. Un puré puede rendir 3 kg, ir de guarnición dentro
+// de un plato Y venderse solo — en ese caso aparece acá y también en la matriz
+// de menú, porque cumple los dos roles. Obligar a elegir "¿es plato o es
+// preparación?" es una pregunta que en la cocina no tiene respuesta única.
+//
+// Esta pantalla es la misma lista de recetas, filtrada por las que rinden.
+function esPreparacionReceta(r){
+  return !!(r.esPreparacion || +r.rendimientoG > 0);
+}
+function recetasQueUsan(recetaId){
+  return getRecetas().filter(x => x.id!==recetaId && (x.ingredientes||[]).some(i=>i.recetaId===recetaId));
+}
+function renderSubrecetas(){
+  const op = getOp();
+  if(!op){ _panelSinOperacion(); return; }
+  const todas = getRecetas();
+  const preps = todas.filter(esPreparacionReceta)
+    .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+
+  const filas = preps.map(r=>{
+    const {merc} = calcReceta(r, r.porciones||1);
+    const rend = +r.rendimientoG || 0;
+    const xg = rend>0 ? merc/rend : null;
+    const usan = recetasQueUsan(r.id);
+    return {r, merc, rend, xg, usan};
+  });
+
+  setContent('Subrecetas', `
+    <div style="background:var(--crema);border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--gris-1)">
+      ${ico('bulb',14)} Preparaciones que otros platos usan por gramo: una salsa, un chimichurri, una masa. Lo que las define es que <strong>rinden</strong> — pesás la olla terminada y de ahí sale el costo por gramo.
+      Si además la vendés sola, ponele precio y va a aparecer también en la carta y en la matriz de menú: no hay que elegir.
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Mis preparaciones <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${preps.length}</span></span>
+        <button class="btn btn-primary btn-sm" onclick="nuevaSubreceta()">+ Nueva preparación</button>
+      </div>
+      ${filas.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Preparación</th>
+            <th style="text-align:right;width:120px">Rinde</th>
+            <th style="text-align:right;width:130px">Costo del lote</th>
+            <th style="text-align:right;width:120px">Costo por gramo</th>
+            <th>La usan</th>
+            <th style="width:170px"></th>
+          </tr></thead>
+          <tbody>
+            ${filas.map(({r,merc,rend,xg,usan})=>`<tr${rend<=0?' style="background:#FDF5F5"':''}>
+              <td><strong>${esc(r.nombre||'Sin nombre')}</strong>
+                ${r.precioVenta>0?`<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#E4F3E6;color:#1B7A34">también se vende · $${fmt(r.precioVenta)}</span>`:''}
+              </td>
+              <td style="text-align:right">${rend>0?fmt(rend)+' g':'<span style="color:#C02626;font-size:12px">falta cargarlo</span>'}</td>
+              <td style="text-align:right">$${fmt(merc)}</td>
+              <td style="text-align:right">${xg!==null?'<span class="calc">$'+fmtD(xg,3)+'/g</span>':'<span style="color:var(--gris-3)">—</span>'}</td>
+              <td style="font-size:12px;color:var(--gris-1)">${usan.length
+                ? usan.map(x=>esc(x.nombre)).join(', ')
+                : '<span style="color:var(--gris-3)">Todavía no la usa ningún plato</span>'}</td>
+              <td><div style="display:flex;gap:6px">
+                <button class="btn btn-secondary btn-sm" onclick="editarReceta('${escJs(r.id)}')">${ico('edit',13)} Editar</button>
+              </div></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${filas.some(f=>f.rend<=0)?`<div class="card-body" style="font-size:12px;color:#C02626;border-top:1px solid var(--crema-2)">
+        Las filas en rojo no tienen cargado cuánto rinden. Mientras falte, suman <strong>$0</strong> en los platos que las usan y el costo de esos platos da más bajo del real.
+      </div>`:''}
+      ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
+        Todavía no tenés preparaciones. Creá una con el botón de arriba, o abrí cualquier receta y cargale cuánto rinde: con eso ya aparece acá.
+      </div>`}
+    </div>
+  `);
+}
+function nuevaSubreceta(){
+  const r = {
+    id: proximoId('r','r',demoData.recetas),
+    opId: currentOpId,
+    nombre: '',
+    tipoServicio: (getOp()?.tiposServicio||[])[0] || '',
+    tipoPlato: '',
+    porciones: 1,
+    ingredientes: [],
+    esPreparacion: true,   // nace declarada: el rendimiento se ve desde el minuto uno
+    rendimientoG: 0,
+  };
+  recetaEditando = r;
+  renderEditorReceta();
+}
+
 // ══ ANÁLISIS DE VENTAS ═════════════════════════════════════════════════════
 // La grilla que pide un dueño o un gerente: platos en las filas, períodos en las
 // columnas, y el total al costado. Se puede bajar a Excel tal como se ve.
@@ -19113,6 +19218,29 @@ function confirmarExcelImport(){
 // MÓDULO 2 — SUBPRODUCTOS DE MERMA
 // ══════════════════════════════════════════════════════════════════════
 
+// ══ DESPIECE — MÉTODO DE FICHA ═════════════════════════════════════════════
+// Repartir el costo de un corte entero entre sus partes es un problema de costos
+// conjuntos: un solo insumo que da varios productos a la vez. La teoría reconoce
+// tres caminos y la gastronomía usa una variante del segundo.
+//
+//   POR PESO (lo que hacía Provatio hasta ahora): todas las partes valen lo
+//   mismo por kilo. Es objetivo pero deforma: el recorte para milanesas termina
+//   costando lo mismo que el ojo de bife, y ningún proveedor te lo vendería así.
+//
+//   POR FICHA DE DESPIECE (lo que hace ahora): vos le ponés valor de mercado a
+//   los subproductos —el hueso, la grasa, el recorte, los cortes secundarios—,
+//   se le resta al costo del corte entero, y lo que queda es el costo del corte
+//   principal. Apoya lo que no sabés sobre lo que sí sabés: cuánto vale un kilo
+//   de recorte lo sabés porque lo comprás suelto; el precio del ojo de bife
+//   dentro del tren es justamente la incógnita.
+//
+// El resultado es una convención, no una verdad: el frigorífico vendió el tren
+// por un precio único y el costo "real" de cada parte no existe como hecho.
+// Sirve para costear un plato. NO sirve para decidir si conviene comprar el
+// corte entero o comprado ya cortado: eso se compara total contra total.
+//
+// Si los subproductos no tienen valor cargado, se cae al método por peso, que
+// es lo que había antes. Nada de lo ya cargado se rompe.
 function calcSubproductos(corteId){
   const corte = demoData.cortesEnteros.find(c=>c.id===corteId);
   if(!corte) return null;
@@ -19121,20 +19249,39 @@ function calcSubproductos(corteId){
   if(!ing) return null;
   
   const precioXkg = ing.precio / (ing.bulto||1);
-  
-  // Calcular peso útil total (todo menos desperdicio)
-  const pesoUtil = corte.partes
-    .filter(p=>p.tipo!=='desperdicio')
-    .reduce((s,p)=>s+p.pct, 0);
-  
-  // Calcular costo prorrateado por parte
-  return corte.partes.map(p=>({
-    ...p,
-    costoXkg: p.tipo==='desperdicio' ? 0 : 
-              Math.round(precioXkg * 100 / pesoUtil), // precio/kg efectivo
-    costoRelativo: p.tipo==='desperdicio' ? 0 :
-                   Math.round(precioXkg * p.pct / pesoUtil * 10) / 10
-  }));
+  const partes = corte.partes || [];
+  const principales = partes.filter(p=>p.tipo==='principal');
+  const secundarios = partes.filter(p=>p.tipo==='subproducto');
+
+  // ¿Hay algún subproducto con valor de mercado cargado? Si no, método por peso.
+  const hayValores = secundarios.some(p => +p.valorXkg > 0);
+
+  if(!hayValores || !principales.length){
+    const pesoUtil = partes.filter(p=>p.tipo!=='desperdicio').reduce((s,p)=>s+p.pct, 0) || 1;
+    return partes.map(p=>({
+      ...p,
+      metodo: 'peso',
+      costoXkg: p.tipo==='desperdicio' ? 0 : Math.round(precioXkg * 100 / pesoUtil),
+      costoRelativo: p.tipo==='desperdicio' ? 0 : Math.round(precioXkg * p.pct / pesoUtil * 10) / 10
+    }));
+  }
+
+  // FICHA: sobre 100 kg de corte entero.
+  const costoTotal = precioXkg * 100;
+  const valorSecundarios = secundarios.reduce((s,p)=> s + (+p.valorXkg||0) * p.pct, 0);
+  const kgPrincipal = principales.reduce((s,p)=>s+p.pct, 0);
+  const costoPrincipalXkg = kgPrincipal > 0 ? (costoTotal - valorSecundarios) / kgPrincipal : 0;
+
+  return partes.map(p=>{
+    if(p.tipo==='desperdicio') return {...p, metodo:'ficha', costoXkg:0, costoRelativo:0};
+    if(p.tipo==='subproducto'){
+      const v = +p.valorXkg || 0;
+      return {...p, metodo:'ficha', costoXkg: Math.round(v), costoRelativo: Math.round(v*p.pct/100*10)/10};
+    }
+    return {...p, metodo:'ficha', costoXkg: Math.round(costoPrincipalXkg),
+            costoRelativo: Math.round(costoPrincipalXkg*p.pct/100*10)/10,
+            _alerta: costoPrincipalXkg <= 0};
+  });
 }
 
 function getCortesByIngrediente(ingId){
@@ -19142,6 +19289,75 @@ function getCortesByIngrediente(ingId){
 }
 
 // ── RENDER MÓDULO SUBPRODUCTOS ──
+// El despiece se muestra DENTRO de Ingredientes: el resultado de despiezar un
+// tren de bife son ingredientes con precio, y ese es el lugar donde alguien los
+// va a ir a buscar. Antes vivía en una sección propia llamada "Subproductos",
+// separada de todo lo que la usaba.
+// Es la operación inversa a una subreceta: allá muchos ingredientes dan una
+// preparación; acá un ingrediente da muchos.
+function _htmlDespiece(){
+  const cortes = demoData.cortesEnteros || [];
+  const bloques = cortes.map(corte=>{
+    const ing = getIngrediente(corte.ingredienteId);
+    if(!ing) return '';
+    const precioXkg = ing.precio/(ing.bulto||1);
+    const partes = calcSubproductos(corte.id) || [];
+    const porFicha = partes.some(p=>p.metodo==='ficha');
+    const principal = partes.find(p=>p.tipo==='principal');
+    const alerta = principal && principal._alerta;
+    return `
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-header">
+          <span class="card-title">${esc(corte.nombre)}
+            <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${esc(ing.nombre)} · $${fmt(precioXkg)}/kg</span></span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${porFicha?'#EBF3FF':'#F5F0E8'};color:${porFicha?'#1F4E79':'#5A5A52'}">
+              ${porFicha?'ficha de despiece':'reparto por peso'}</span>
+            <button class="btn btn-danger btn-sm" onclick="delCorte('${escJs(corte.id)}')">${ico('trash',13)}</button>
+          </div>
+        </div>
+        ${alerta?`<div style="background:#FCE8E8;color:#C02626;padding:10px 16px;font-size:12px;border-bottom:1px solid var(--crema-2)">
+          Los valores que le pusiste a los subproductos suman más que el corte entero, así que el principal queda en cero o negativo. Revisá los $/kg: probablemente alguno esté de más.
+        </div>`:''}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parte</th><th>Tipo</th><th style="text-align:right">Rinde</th>
+              <th style="text-align:right">Costo $/kg</th><th style="width:180px"></th></tr></thead>
+            <tbody>
+              ${partes.map(pp=>`<tr>
+                <td><strong>${esc(pp.nombre)}</strong></td>
+                <td style="font-size:12px;color:var(--gris-2)">${pp.tipo==='principal'?'Principal':pp.tipo==='subproducto'?'Subproducto':'Desperdicio'}</td>
+                <td style="text-align:right">${fmtD(pp.pct)}%</td>
+                <td style="text-align:right">${pp.tipo==='desperdicio'
+                  ? '<span style="color:var(--gris-3)">—</span>'
+                  : `<span class="calc">$${fmt(pp.costoXkg)}</span>${pp.tipo==='subproducto'&&pp.metodo==='ficha'?'<div style="font-size:10px;color:var(--gris-2)">valor que pusiste</div>':pp.tipo==='principal'&&pp.metodo==='ficha'?'<div style="font-size:10px;color:var(--azul)">despejado</div>':''}`}</td>
+                <td>${pp.tipo!=='desperdicio'?`<button class="btn btn-secondary btn-sm" onclick="crearIngDesdeSubproducto('${escJs(corte.id)}','${escJs(pp.nombre)}',${pp.costoXkg})">+ Usar como ingrediente</button>`:''}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card" style="margin-top:22px">
+      <div class="card-header">
+        <span class="card-title">Despiece de cortes enteros</span>
+        <button class="btn btn-secondary btn-sm" onclick="modalNuevoCorte()">+ Nuevo despiece</button>
+      </div>
+      <div class="card-body" style="font-size:13px;color:var(--gris-1);${cortes.length?'border-bottom:1px solid var(--crema-2)':''}">
+        Cuando comprás un corte entero y lo bajás vos, cada parte tiene un costo distinto.
+        Ponele a los subproductos —recorte, hueso, grasa— cuánto te costaría comprarlos sueltos, y Provatio despeja el costo real del corte principal.
+        Después cada parte se puede usar como ingrediente en cualquier receta.
+      </div>
+      ${cortes.length ? bloques : ''}
+    </div>`;
+}
+
+// SIN USO desde el 5/9/2026: era la pantalla propia de "Subproductos". El
+// despiece pasó a vivir dentro de Ingredientes, que es donde alguien lo busca
+// cuando quiere el precio de un pedazo de carne. Se deja porque contiene la
+// única vista completa del corte y puede servir de referencia.
 function renderSubproductos(){
   const cortes = demoData.cortesEnteros;
   
@@ -19236,8 +19452,11 @@ function modalNuevoCorte(){
     </div>
     <div class="modal-body">
       <div class="alert alert-info">
-        Definí el ingrediente base y sus partes. Los % deben sumar 100.
-        El sistema calcula el costo prorrateado de cada parte útil.
+        Definí el corte entero y en qué se despieza. Los % deben sumar 100.<br><br>
+        A cada <strong>subproducto</strong> ponele cuánto te costaría comprar ese kilo suelto en el mercado —el recorte, el hueso, la grasa que vendés—.
+        Provatio se lo descuenta al costo del corte entero y <strong>despeja el costo real del corte principal</strong>.
+        Es lo que hace una ficha de despiece: apoyar lo que no sabés sobre lo que sí sabés.<br><br>
+        <span style="color:#6B4A08">Si no cargás ningún valor, el costo se reparte por peso y todas las partes salen al mismo $/kg — más simple, pero el hueso termina costando lo mismo que el lomo.</span>
       </div>
       <div class="form-group">
         <label>Ingrediente base</label>
@@ -19256,7 +19475,7 @@ function modalNuevoCorte(){
       </div>
       
       <div id="nc-partes">
-        <div class="nc-parte" style="display:grid;grid-template-columns:1fr 120px 140px auto;gap:8px;margin-bottom:8px;align-items:center">
+        <div class="nc-parte" style="display:grid;grid-template-columns:1fr 90px 130px 150px auto;gap:8px;margin-bottom:8px;align-items:center">
           <input type="text" placeholder="Nombre de la parte" value="Corte limpio principal">
           <input type="text" inputmode="decimal" placeholder="%" value="50" min="1" max="99">
           <select>
@@ -19264,9 +19483,10 @@ function modalNuevoCorte(){
             <option value="subproducto">Subproducto</option>
             <option value="desperdicio">Desperdicio</option>
           </select>
+          <input type="text" inputmode="decimal" placeholder="lo calcula solo" disabled title="El costo del corte principal se despeja: es lo que queda del corte entero después de descontar el valor de los subproductos.">
           <button class="btn btn-icon btn-sm" onclick="this.closest('.nc-parte').remove()">✕ Quitar</button>
         </div>
-        <div class="nc-parte" style="display:grid;grid-template-columns:1fr 120px 140px auto;gap:8px;margin-bottom:8px;align-items:center">
+        <div class="nc-parte" style="display:grid;grid-template-columns:1fr 90px 130px 150px auto;gap:8px;margin-bottom:8px;align-items:center">
           <input type="text" placeholder="Nombre de la parte" value="Recortes / subproducto">
           <input type="text" inputmode="decimal" placeholder="%" value="45" min="1" max="99">
           <select>
@@ -19274,9 +19494,10 @@ function modalNuevoCorte(){
             <option value="subproducto" selected>Subproducto</option>
             <option value="desperdicio">Desperdicio</option>
           </select>
+          <input type="text" inputmode="decimal" placeholder="$/kg de mercado" title="Cuánto te costaría comprar ese kilo suelto.">
           <button class="btn btn-icon btn-sm" onclick="this.closest('.nc-parte').remove()">✕ Quitar</button>
         </div>
-        <div class="nc-parte" style="display:grid;grid-template-columns:1fr 120px 140px auto;gap:8px;margin-bottom:8px;align-items:center">
+        <div class="nc-parte" style="display:grid;grid-template-columns:1fr 90px 130px 150px auto;gap:8px;margin-bottom:8px;align-items:center">
           <input type="text" placeholder="Nombre de la parte" value="Desperdicio (grasa/nervios)">
           <input type="text" inputmode="decimal" placeholder="%" value="5" min="0" max="50">
           <select>
@@ -19284,6 +19505,7 @@ function modalNuevoCorte(){
             <option value="subproducto">Subproducto</option>
             <option value="desperdicio" selected>Desperdicio</option>
           </select>
+          <input type="text" placeholder="—" disabled>
           <button class="btn btn-icon btn-sm" onclick="this.closest('.nc-parte').remove()">✕ Quitar</button>
         </div>
       </div>
@@ -19313,6 +19535,7 @@ function agregarParteCorte(){
       <option value="subproducto">Subproducto</option>
       <option value="desperdicio">Desperdicio</option>
     </select>
+    <input type="text" inputmode="decimal" placeholder="$/kg de mercado" title="Solo para subproductos: cuánto te costaría comprar ese kilo suelto.">
     <button class="btn btn-icon btn-sm" onclick="this.closest('.nc-parte').remove();actualizarTotalPartes()">✕ Quitar</button>
   `;
   document.getElementById('nc-partes').appendChild(div);
@@ -19351,8 +19574,11 @@ function guardarNuevoCorte(){
     const nombre_p = inputs[0].value.trim();
     const pct = parseFloat(inputs[1].value||0);
     const tipo = sel.value;
+    // inputs[2] es el valor de mercado del subproducto ($/kg). Solo se guarda
+    // para subproductos: en el principal se despeja y en el desperdicio es cero.
+    const valorXkg = (tipo==='subproducto' && inputs[2]) ? (parseFloat(inputs[2].value||0)||0) : 0;
     if(nombre_p && pct>0){ 
-      partes.push({nombre:nombre_p, pct, tipo});
+      partes.push({nombre:nombre_p, pct, tipo, ...(valorXkg>0?{valorXkg}:{})});
       total += pct;
     }
   });
@@ -19368,7 +19594,7 @@ function guardarNuevoCorte(){
   });
   
   closeModal();
-  renderSubproductos();
+  renderIngredientes();
   showToast('Corte guardado correctamente','success');
   guardarEnFirestore();
 }
@@ -19382,7 +19608,8 @@ async function editarCorte(id){
 async function delCorte(id){
   if(!await pedirConfirmacionSimple('¿Eliminar este corte?')) return;
   demoData.cortesEnteros = demoData.cortesEnteros.filter(c=>c.id!==id);
-  renderSubproductos();
+  guardarEnFirestore();
+  renderIngredientes();
   showToast('Corte eliminado');
 }
 
