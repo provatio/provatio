@@ -14087,9 +14087,30 @@ function renderResultado(){
         </div>
       </div>` : ''}
 
-      <div class="card">
-        <div class="card-header"><span class="card-title">Simulador de resultado mensual</span></div>
-        <div class="card-body">
+      <!-- El simulador contesta una pregunta distinta de la del resto de la
+           pantalla: no "qué pasó" sino "qué pasaría si". Es útil —nadie sube un
+           precio ni suma un empleado sin hacerse esa cuenta— pero trabaja con el
+           margen PROMEDIO de las recetas, no con lo que se vendió de verdad.
+           Por eso cambia de lugar según el mes: sin ventas cargadas es lo único
+           que puede orientar y va abierto; con ventas, se pliega y queda para el
+           que lo busque. Un número supuesto no puede competir en la misma
+           pantalla con uno medido: el que mira se confunde, y con razón. -->
+      <details class="card" ${kpi.listo?'':'open'} style="padding:0">
+        <summary style="cursor:pointer;list-style:none;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span>
+            <span class="card-title">${kpi.listo ? '¿Y si vendo distinto?' : 'Simulador de resultado mensual'}</span>
+            <span style="display:block;font-size:12px;color:var(--gris-2);margin-top:3px">
+              ${kpi.listo
+                ? 'Ejercicio sobre supuestos, aparte de los números reales de arriba. Tocá para abrir.'
+                : 'Todavía no hay ventas cargadas para este mes: esto es una estimación sobre el margen promedio de tus recetas.'}
+            </span>
+          </span>
+          ${kpi.listo?'<span style="font-size:12px;color:var(--gris-2)">Supuesto</span>':''}
+        </summary>
+        <div class="card-body" style="border-top:1px solid var(--crema-2)">
+          ${kpi.listo ? `<div style="background:var(--crema);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--gris-1)">
+            Nada de lo que pongas acá toca los índices, la matriz ni el informe. Es un ejercicio: lo real del mes es lo de arriba.
+          </div>` : ''}
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
             <label style="font-size:13px;font-weight:600">Si este mes vendés</label>
             <input type="text" inputmode="decimal" value="${ventasEst}" style="width:180px;text-align:right;font-size:15px;font-weight:700" onchange="updVentasEstimadas(num(this.value))" placeholder="0">
@@ -14137,7 +14158,7 @@ function renderResultado(){
                 <div style="font-size:18px;font-weight:700;color:${resultadoEst>=0?'#1B7A34':'#C02626'}">${resultadoEst>=0?'+':'−'}$${fmt(Math.abs(resultadoEst))}</div>
               </div>
             </div>
-            <div style="font-size:12px;color:var(--gris-2);margin-top:12px">Cálculo sobre el margen de contribución promedio de tus recetas. Cuando carguemos ventas reales por plato (próxima fase), este número va a ser exacto en lugar de estimado.</div>
+            <div style="font-size:12px;color:var(--gris-2);margin-top:12px">Cálculo sobre el margen de contribución <strong>promedio</strong> de tus recetas: supone que se vende de todo en la misma proporción, cosa que nunca pasa. ${kpi.listo?'El resultado medido plato por plato es el de arriba.':'Cuando cargues las ventas del mes, el resultado real reemplaza a esta estimación.'}</div>
 
             ${ventasEst>0 ? `
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;margin-bottom:6px">
@@ -14155,7 +14176,7 @@ function renderResultado(){
             <div id="chart-casc" style="overflow-x:auto">${chartCascada(ventasEst, margenPctProm, totalFijos, margenEventos)}</div>
           ` : `<div style="font-size:13px;color:var(--gris-2)">Escribí un monto de ventas (o de eventos) para simular el resultado del mes.</div>`}
         </div>
-      </div>
+      </details>
 
       <div class="card">
         <div class="card-header">
