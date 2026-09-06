@@ -8496,6 +8496,8 @@ function renderEditorReceta(){
       </div>
     </div>
 
+    ${esPrep ? _htmlProducciones(r) : ''}
+
     ${!esNivelCocina() ? `
     <div class="card">
       <div class="card-header"><span class="card-title">Nombres en el sistema de facturación</span></div>
@@ -15451,6 +15453,148 @@ function _htmlCruceCanales(km){
         </tr>`).join('')}
       </tbody>
     </table></div>
+  </div>`;
+}
+
+// ══ REGISTRO DE PRODUCCIONES ═══════════════════════════════════════════════
+// Cada vez que se hace una preparación se anota cuánto entró a la olla y cuánto
+// salió. Con eso se ve si el rendimiento es consistente o si se mueve, y cuando
+// se mueve hay una razón: cambió el proveedor, cambió el tiempo de cocción, o la
+// hizo otra persona. Por eso cada registro guarda quién la hizo y una nota.
+//
+// Se compara el PORCENTAJE, no los gramos: una olla de 1,5 kg y otra de 3 kg no
+// se pueden comparar en gramos de salida, pero sí en cuánto quedó de lo que
+// entró. Así el dato sirve aunque las tandas sean de distinto tamaño.
+//
+// El rendimiento que usa el COSTEO no se toca solo. Si cambiara con cada
+// medición, el costo de todos los platos que llevan esa salsa se movería sin que
+// nadie lo haya decidido. El sistema muestra el promedio y ofrece adoptarlo;
+// la decisión es de quien maneja la cocina.
+function _pesoQueEntra(r){
+  // Gramos netos que van a la olla. Las líneas de subreceta también pesan.
+  return (r.ingredientes||[]).reduce((s,ln)=>{
+    if(!ln || ln.esCondimento) return s;
+    return s + (+ln.neto || 0);
+  }, 0);
+}
+function _statsProducciones(r){
+  const regs = (r.producciones||[]).filter(x=>+x.entraG>0 && +x.saleG>0);
+  if(!regs.length) return {n:0, regs:[]};
+  const ultimas = regs.slice(-10);
+  const pcts = ultimas.map(x=> x.saleG / x.entraG * 100);
+  const prom = pcts.reduce((a,b)=>a+b,0)/pcts.length;
+  const min = Math.min(...pcts), max = Math.max(...pcts);
+  // Desvío estándar: cuánto se aparta cada tanda del promedio.
+  const desv = Math.sqrt(pcts.reduce((a,b)=>a+(b-prom)**2,0)/pcts.length);
+  return {n:ultimas.length, regs:ultimas, pcts, prom, min, max, desv, amplitud:max-min};
+}
+function registrarProduccion(){
+  const r = recetaEditando; if(!r) return;
+  const entra = num((document.getElementById('prod-entra')||{}).value);
+  const sale  = num((document.getElementById('prod-sale')||{}).value);
+  const quien = ((document.getElementById('prod-quien')||{}).value||'').trim();
+  const nota  = ((document.getElementById('prod-nota')||{}).value||'').trim();
+  if(!(entra>0) || !(sale>0)){ showToast('Cargá cuánto entró y cuánto salió, en gramos','error'); return; }
+  if(sale > entra*1.2){ showToast('Sale más de lo que entró: revisá los números','error'); return; }
+  if(!r.producciones) r.producciones = [];
+  r.producciones.push({fecha:new Date().toISOString().slice(0,10), entraG:entra, saleG:sale, quien, nota});
+  renderEditorReceta(); programarAutoguardadoReceta();
+  showToast('Producción registrada: rindió '+fmtD(sale/entra*100,1)+'%','success');
+}
+function borrarProduccion(ix){
+  const r = recetaEditando; if(!r || !r.producciones) return;
+  r.producciones.splice(ix,1);
+  renderEditorReceta(); programarAutoguardadoReceta();
+}
+function adoptarRendimientoPromedio(){
+  const r = recetaEditando; if(!r) return;
+  const st = _statsProducciones(r);
+  if(!st.n) return;
+  const entra = _pesoQueEntra(r);
+  const nuevo = Math.round(entra * st.prom/100);
+  if(!(nuevo>0)) return;
+  r.rendimientoG = nuevo;
+  renderEditorReceta(); programarAutoguardadoReceta();
+  showToast('Rendimiento actualizado a '+fmt(nuevo)+' g, el promedio de las últimas '+st.n,'success');
+}
+function _htmlProducciones(r){
+  const entraActual = _pesoQueEntra(r);
+  const st = _statsProducciones(r);
+  const rendActual = +r.rendimientoG || 0;
+  const pctActual = entraActual>0 && rendActual>0 ? rendActual/entraActual*100 : null;
+  const sugerido = st.n ? Math.round(entraActual * st.prom/100) : 0;
+  // Con menos de tres tandas el promedio no dice gran cosa: se avisa.
+  const pocasTandas = st.n>0 && st.n<3;
+  const inconsistente = st.n>=3 && st.amplitud>10;
+  return `
+  <div class="card">
+    <div class="card-header"><span class="card-title">Cuánto rinde de verdad</span></div>
+    <div class="card-body">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+        <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Entra a la olla</div>
+          <div style="font-size:20px;font-weight:700">${fmt(entraActual)} g</div>
+          <div style="font-size:11px;color:var(--gris-2)">suma de los ingredientes netos</div>
+        </div>
+        <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Sale de la olla</div>
+          <div style="font-size:20px;font-weight:700">${rendActual>0?fmt(rendActual)+' g':'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">el rendimiento que usa el costeo</div>
+        </div>
+        <div style="flex:1;min-width:150px;background:${pctActual!==null?'#FDF0D0':'var(--crema)'};border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${pctActual!==null?'#6B4A08':'var(--gris-2)'}">Se pierde</div>
+          <div style="font-size:20px;font-weight:700;color:${pctActual!==null?'#6B4A08':'inherit'}">${pctActual!==null?fmtD(100-pctActual,1)+'%':'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">${pctActual!==null?fmt(entraActual-rendActual)+' g de agua y evaporación':'falta el rendimiento'}</div>
+        </div>
+      </div>
+
+      ${st.n ? `
+      <div style="border-top:1px solid var(--crema-2);padding-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+          <strong style="font-size:13px">Últimas ${st.n} producción${st.n===1?'':'es'}</strong>
+          <span style="font-size:12px;color:var(--gris-1)">Promedio <strong>${fmtD(st.prom,1)}%</strong> · entre ${fmtD(st.min,1)}% y ${fmtD(st.max,1)}%</span>
+        </div>
+        ${pocasTandas?`<div style="font-size:12px;color:#6B4A08;background:#FDF0D0;border-radius:8px;padding:8px 12px;margin-bottom:10px">Con ${st.n} tanda${st.n===1?'':'s'} el promedio todavía no dice mucho. Anotá tres o cuatro antes de sacar conclusiones.</div>`:''}
+        ${inconsistente?`<div style="font-size:12px;color:#6B4A08;background:#FDF0D0;border-radius:8px;padding:8px 12px;margin-bottom:10px">
+          Hay <strong>${fmtD(st.amplitud,1)} puntos</strong> de diferencia entre la mejor y la peor tanda. Eso no es azar: suele ser cambio de proveedor, distinto tiempo de cocción, o que la hizo otra persona. Mirá la columna de quién y las notas.</div>`:''}
+        <div class="table-wrap"><table>
+          <thead><tr><th style="width:110px">Fecha</th><th style="text-align:right">Entró</th><th style="text-align:right">Salió</th>
+            <th style="text-align:right">Rindió</th><th style="text-align:right">vs promedio</th><th>Quién</th><th>Nota</th><th style="width:50px"></th></tr></thead>
+          <tbody>
+            ${st.regs.map((x,i)=>{
+              const pct = x.saleG/x.entraG*100;
+              const dif = pct - st.prom;
+              return `<tr>
+                <td>${fmtFechaCorta(x.fecha)}</td>
+                <td style="text-align:right">${fmt(x.entraG)} g</td>
+                <td style="text-align:right">${fmt(x.saleG)} g</td>
+                <td style="text-align:right"><strong>${fmtD(pct,1)}%</strong></td>
+                <td style="text-align:right;color:${Math.abs(dif)<2?'var(--gris-2)':dif<0?'#C02626':'#1B7A34'}">${dif>=0?'+':'−'}${fmtD(Math.abs(dif),1)}</td>
+                <td style="font-size:12px">${esc(x.quien||'—')}</td>
+                <td style="font-size:12px;color:var(--gris-1)">${esc(x.nota||'')}</td>
+                <td><button class="btn btn-icon btn-sm" title="Borrar este registro" onclick="borrarProduccion(${(r.producciones||[]).length - st.n + i})">✕</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+        ${sugerido>0 && Math.abs(sugerido-rendActual) > Math.max(5, rendActual*0.03) ? `
+        <div style="margin-top:12px;background:#EBF3FF;border:1px solid #A9C4E8;border-radius:8px;padding:10px 14px;font-size:13px;color:#1F4E79;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px">Según estas tandas, esta olla rinde <strong>${fmt(sugerido)} g</strong> y el costeo está usando ${fmt(rendActual)} g.</div>
+          <button class="btn btn-secondary btn-sm" onclick="adoptarRendimientoPromedio()">Usar ${fmt(sugerido)} g</button>
+        </div>` : ''}
+      </div>` : ''}
+
+      <div style="border-top:1px solid var(--crema-2);margin-top:14px;padding-top:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">Anotar una producción</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="text" inputmode="decimal" id="prod-entra" value="${entraActual||''}" placeholder="entró (g)" style="width:120px;text-align:right" title="Gramos que pusiste en la olla. Viene con la suma de la receta, cambialo si esta vez hiciste más o menos.">
+          <input type="text" inputmode="decimal" id="prod-sale" placeholder="salió (g)" style="width:120px;text-align:right" title="Pesá el resultado terminado.">
+          <input type="text" id="prod-quien" placeholder="quién la hizo" style="width:150px">
+          <input type="text" id="prod-nota" placeholder="nota (proveedor, cocción, lo que sea)" style="flex:1;min-width:200px">
+          <button class="btn btn-secondary btn-sm" onclick="registrarProduccion()">Anotar</button>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 
