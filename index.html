@@ -2505,7 +2505,7 @@ function _opcionesIngrediente(selId, opciones){
       .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'','es',{sensitivity:'base'}));
     if(lp.length){
       preps = `<optgroup label="Mis preparaciones">` + lp.map(x=>
-        `<option value="rec:${esc(x.id)}">${esc(x.nombre||'Sin nombre')}${(+x.rendimientoG>0)?'':' ⚠ sin rendimiento'}</option>`
+        `<option value="rec:${esc(x.id)}">${esc(x.nombre||'Sin nombre')}${_prepTieneRendimiento(x)?'':' ⚠ sin rendimiento'}</option>`
       ).join('') + `</optgroup>`;
     }
   }
@@ -3116,13 +3116,16 @@ function calcReceta(receta, porciones){
     // Item tipo receta elaborada (sub-receta / elaboración propia)
     if(ing.recetaId){
       const recBase = getRecetas().find(x=>x.id===ing.recetaId);
-      const rendG   = recBase?.rendimientoG || 0;
+      // La preparación rinde en gramos (una salsa) o en unidades (una milanesa).
+      // La cuenta es la misma —costo del lote dividido lo que rinde, por la
+      // cantidad usada—; lo único que cambia es en qué se mide esa cantidad.
+      const enUnid  = _rindeEnUnidades(recBase);
+      const rendG   = recBase ? (enUnid ? (+recBase.rendimientoUnid||0) : (+recBase.rendimientoG||0)) : 0;
       if(recBase && rendG > 0){
-        const {merc: mercBase} = calcReceta(recBase, recBase.porciones||1);
-        const costoXg  = mercBase / rendG;
+        const costoXg  = _costoPorUnidadPrep(recBase);
         const costoItem = costoXg * (ing.neto||0);
         merc += costoItem;
-        return {...ing, calc:{costo_porcion: costoItem, costoXg, rendG, ok:true}};
+        return {...ing, calc:{costo_porcion: costoItem, costoXg, rendG, enUnid, ok:true}};
       }
       return {...ing, calc:{error:'Sin rendimiento cargado'}};
     }
@@ -3146,11 +3149,11 @@ function updRendimientoDeSubreceta(recetaId, valor){
   const base = demoData.recetas.find(x=>x.id===recetaId);
   if(!base){ showToast('No encuentro esa receta','error'); return; }
   const v = +valor || 0;
-  if(v <= 0){ showToast('Poné cuántos gramos rinde la preparación terminada','error'); return; }
-  base.rendimientoG = v;
+  if(v <= 0){ showToast('Poné cuánto rinde la preparación terminada','error'); return; }
+  if(_rindeEnUnidades(base)) base.rendimientoUnid = v; else base.rendimientoG = v;
   guardarEnFirestore();
   renderEditorReceta();
-  showToast(`"${base.nombre}" rinde ${fmt(v)} g. Ya se puede costear por gramo.`, 'success');
+  showToast(`"${base.nombre}" rinde ${fmt(v)} ${_rindeEnUnidades(base)?'unidades':'g'}. Ya se puede costear.`, 'success');
 }
 function agregarRecetaEnReceta(){
   recetaEditando.ingredientes.push({recetaId:'', neto:0});
@@ -8126,12 +8129,12 @@ function renderEditorReceta(){
     // ── ITEM TIPO RECETA (sub-receta / elaboración propia) ──────────────────
     if(ing.recetaId){
       const recBase = getRecetas().find(x=>x.id===ing.recetaId);
-      const rendG   = recBase?.rendimientoG || 0;
+      const enUnid  = _rindeEnUnidades(recBase);
+      const rendG   = recBase ? (enUnid ? (+recBase.rendimientoUnid||0) : (+recBase.rendimientoG||0)) : 0;
       const gramosUsados = ing.neto || 0;
       let costoItem = null, costoTotal = null, costoXg = null;
       if(recBase && rendG > 0){
-        const {merc: mercBase} = calcReceta(recBase, recBase.porciones||1);
-        costoXg   = mercBase / rendG;
+        costoXg   = _costoPorUnidadPrep(recBase);
         costoItem = costoXg * gramosUsados;
         costoTotal = costoItem * porciones;
         merc += costoItem;
@@ -8142,27 +8145,27 @@ function renderEditorReceta(){
         <td data-col="ingrediente">
           <select onchange="updIngReceta(${idx},'recetaId',this.value)" style="min-width:180px">
             <option value="">— elegí receta —</option>
-            ${recetasDisp.map(x=>`<option value="${esc(x.id)}"${x.id===ing.recetaId?' selected':''}>${esc(x.nombre)}${x.rendimientoG?' ('+x.rendimientoG+'g)':' ⚠ sin rendimiento'}</option>`).join('')}
+            ${recetasDisp.map(x=>`<option value="${esc(x.id)}"${x.id===ing.recetaId?' selected':''}>${esc(x.nombre)}${_prepTieneRendimiento(x)?' ('+(_rindeEnUnidades(x)?fmt(x.rendimientoUnid)+' u':fmt(x.rendimientoG)+' g')+')':' ⚠ sin rendimiento'}</option>`).join('')}
           </select>
         </td>
         <td data-col="tecnica" style="font-size:11px;color:var(--azul);white-space:nowrap">
           ${recBase
             ? (rendG>0
-                ? `$${fmt(Math.round(costoXg*1000))}/kg`
+                ? (enUnid ? `$${fmt(costoXg)} c/u` : `$${fmtD(costoXg,2)}/g`)
                 // Sin rendimiento la subreceta cuesta cero y el plato miente. Se
                 // carga acá mismo: antes había que salir, abrir la otra receta —
                 // donde el campo recién aparecía DESPUÉS de usarla en algún lado—
                 // y volver. La preparación se podía usar pero no preparar.
                 : `<div style="color:var(--bordo);font-size:11px;line-height:1.4">
                      ⚠ Falta el rendimiento<br>
-                     <input type="text" inputmode="decimal" placeholder="¿cuánto rinde en g?"
+                     <input type="text" inputmode="decimal" placeholder="${enUnid?'¿cuántas unidades?':'¿cuánto rinde en g?'}"
                        style="width:130px;text-align:right;margin-top:4px;font-size:11px"
                        title="Pesá la preparación terminada: cuántos gramos da la olla entera. De ahí sale el costo por gramo."
                        onchange="updRendimientoDeSubreceta('${escJs(ing.recetaId)}', num(this.value))">
                    </div>`)
             : '—'}
         </td>
-        <td data-col="cantidad"><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="g/ml" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
+        <td data-col="cantidad"><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="${enUnid?'unidades':'g/ml'}" title="${enUnid?'Cuántas unidades de esta preparación lleva el plato.':'Cuántos gramos de esta preparación lleva el plato.'}" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
         <td data-col="merma" style="text-align:right;color:var(--gris-2)">—</td>
         <td data-col="bruto" style="text-align:right;color:var(--gris-2)">—</td>
         <td data-col="costo" style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:''}</td>
@@ -8452,8 +8455,21 @@ function renderEditorReceta(){
           <input type="text" inputmode="decimal" value="${porciones}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
             onchange="recetaEditando.porciones=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
         </div>`}
-        ${mostrarRendimiento ? `<div class="metric">
-          <div class="metric-label">Cuánto rinde (g / ml)</div>
+        ${mostrarRendimiento ? (_rindeEnUnidades(r) ? `<div class="metric">
+          <div class="metric-label">Cuántas unidades salen
+            <button onclick="cambiarRindeEn('g')" style="border:none;background:transparent;color:var(--azul);font-size:10px;cursor:pointer;text-decoration:underline;padding:0 0 0 6px">pasar a gramos</button>
+          </div>
+          <input type="text" inputmode="decimal" value="${r.rendimientoUnid||''}" placeholder="ej: 60" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+            title="Cuántas piezas deberían salir de este lote. Es el rendimiento esperado: después, al producir, se cuentan las que salieron de verdad y ahí se ve si se cortaron más grandes o si faltó alguna."
+            onchange="recetaEditando.rendimientoUnid=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+          <div class="metric-sub">${(+r.rendimientoUnid>0)
+            ? '<span style="color:var(--azul);font-weight:700">$'+fmt(_costoPorUnidadPrep(r))+' cada una</span>'
+              + (usadaComoInsumo ? ' · la usan ' + _recetasQueLaUsan.length + ' plato' + (_recetasQueLaUsan.length>1?'s':'') : '')
+            : 'cuántas piezas debería dar este lote'}</div>
+        </div>` : `<div class="metric">
+          <div class="metric-label">Cuánto rinde (g / ml)
+            ${esPrep?`<button onclick="cambiarRindeEn('unidades')" style="border:none;background:transparent;color:var(--azul);font-size:10px;cursor:pointer;text-decoration:underline;padding:0 0 0 6px">rinde en unidades</button>`:''}
+          </div>
           <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
             title="Pesá o medí el resultado final de esta preparación, ya lista, tal como la definiste arriba (porciones de referencia) — no es la suma de los ingredientes crudos: al cocinar se pierde o se gana peso, y eso solo se sabe pesando."
             onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
@@ -8462,7 +8478,7 @@ function renderEditorReceta(){
               + ' · $'+fmt(Math.round(merc/(+r.rendimientoG)*1000))+' el kilo'
               + (usadaComoInsumo ? ' · la usan ' + _recetasQueLaUsan.length + ' plato' + (_recetasQueLaUsan.length>1?'s':'') : '')
             : 'pesá la olla terminada y cargá acá cuánto dio'}</div>
-        </div>` : ''}
+        </div>`) : ''}
         ${esPrep ? (+r.precioVenta>0 ? `
         <div class="metric">
           <div class="metric-label">Porción que vendés (g)</div>
@@ -15526,6 +15542,34 @@ function _htmlCruceCanales(km){
 // medición, el costo de todos los platos que llevan esa salsa se movería sin que
 // nadie lo haya decidido. El sistema muestra el promedio y ofrece adoptarlo;
 // la decisión es de quien maneja la cocina.
+// ── EN QUÉ RINDE UNA PREPARACIÓN ───────────────────────────────────────────
+// Hay dos formas y son distintas de verdad:
+//
+//   EN GRAMOS   — una salsa, un puré, una crema. Se usa por gramo dentro de un
+//                 plato y se cuenta pesando.
+//   EN UNIDADES — milanesas, medallones, empanadas, tapas, porciones de tarta.
+//                 Nadie pone "190 g de milanesa" en un plato: pone una. Y en el
+//                 stock no se cuentan kilos, se cuentan piezas.
+//
+// El peso de una milanesa terminada no es el de la carne: es la carne más el
+// huevo más el pan rallado, todo lo que quedó pegado, dividido por las piezas
+// que salieron. Por eso el conteo va DESPUÉS de producir, nunca antes.
+function _rindeEnUnidades(r){ return !!(r && r.rindeEn === 'unidades'); }
+function _unidadRinde(r){ return _rindeEnUnidades(r) ? 'unidades' : 'g'; }
+// Cuánto cuesta una unidad de la preparación (o un gramo, según cómo rinda).
+function _costoPorUnidadPrep(r){
+  const {merc} = calcReceta(r, r.porciones||1);
+  if(_rindeEnUnidades(r)){
+    const u = +r.rendimientoUnid || 0;
+    return u > 0 ? merc / u : 0;
+  }
+  const g = +r.rendimientoG || 0;
+  return g > 0 ? merc / g : 0;
+}
+function _prepTieneRendimiento(r){
+  return _rindeEnUnidades(r) ? (+r.rendimientoUnid > 0) : (+r.rendimientoG > 0);
+}
+
 function _pesoQueEntra(r){
   // Gramos netos que van a la olla. Las líneas de subreceta también pesan.
   return (r.ingredientes||[]).reduce((s,ln)=>{
@@ -15567,7 +15611,9 @@ function registrarProduccion(){
   const previo = _statsProducciones(r);           // lo de antes de esta tanda
   const pctNuevo = sale/entra*100;
   if(!r.producciones) r.producciones = [];
-  r.producciones.push({fecha:new Date().toISOString().slice(0,10), entraG:entra, saleG:sale, quien, nota});
+  const unidReales = num((document.getElementById('prod-unid')||{}).value);
+  r.producciones.push({fecha:new Date().toISOString().slice(0,10), entraG:entra, saleG:sale, quien, nota,
+                       ...(unidReales>0?{unid:unidReales}:{})});
 
   const entraReceta = _pesoQueEntra(r) || entra;
   const rendSegunEstaTanda = Math.round(entraReceta * pctNuevo/100);
@@ -15602,6 +15648,18 @@ function resolverDudaProduccion(adoptar){
     showToast('La tanda queda anotada y el costeo sigue igual.','success');
   }
   window._prodDuda = null;
+  renderEditorReceta(); programarAutoguardadoReceta();
+}
+// Cambiar cómo rinde una preparación. Se avisa si ya la usan platos, porque la
+// cantidad que tienen cargada cambia de significado: 80 pasa de ser 80 gramos a
+// ser 80 unidades, y eso multiplicaría el costo de esos platos por mil.
+function cambiarRindeEn(modo){
+  const r = recetaEditando; if(!r) return;
+  const usan = recetasQueUsan(r.id);
+  if(usan.length && !confirm(
+      'Esta preparación la usan '+usan.length+' plato'+(usan.length>1?'s':'')+': '+usan.map(x=>x.nombre).join(', ')+'.\n\n'+
+      'Al cambiar de '+(_rindeEnUnidades(r)?'unidades a gramos':'gramos a unidades')+', la cantidad que tienen cargada cambia de significado y vas a tener que revisarla en cada uno.\n\n¿Seguir?')) return;
+  r.rindeEn = modo === 'unidades' ? 'unidades' : 'g';
   renderEditorReceta(); programarAutoguardadoReceta();
 }
 function borrarProduccion(ix){
@@ -15688,6 +15746,7 @@ function _htmlProducciones(r){
           Hay <strong>${fmtD(st.amplitud,1)} puntos</strong> de diferencia entre la mejor y la peor tanda. Eso no es azar: suele ser cambio de proveedor, distinto tiempo de cocción, o que la hizo otra persona. Mirá la columna de quién y las notas.</div>`:''}
         <div class="table-wrap"><table>
           <thead><tr><th style="width:110px">Fecha</th><th style="text-align:right">Entró</th><th style="text-align:right">Salió</th>
+            ${_rindeEnUnidades(r)?'<th style="text-align:right">Unidades</th><th style="text-align:right">Peso c/u</th>':''}
             <th style="text-align:right">Rindió</th><th style="text-align:right">vs promedio</th><th>Quién</th><th>Nota</th><th style="width:50px"></th></tr></thead>
           <tbody>
             ${st.regs.map((x,i)=>{
@@ -15697,6 +15756,16 @@ function _htmlProducciones(r){
                 <td>${fmtFechaCorta(x.fecha)}</td>
                 <td style="text-align:right">${fmt(x.entraG)} g</td>
                 <td style="text-align:right">${fmt(x.saleG)} g</td>
+                ${_rindeEnUnidades(r)?(()=>{
+                  // El peso de cada pieza no es el de su ingrediente principal:
+                  // es todo lo que quedó pegado —carne, huevo, pan rallado—
+                  // dividido por las piezas que salieron. Por eso se cuenta
+                  // después de producir, no antes.
+                  const esperadas = +r.rendimientoUnid || 0;
+                  const dif = (x.unid && esperadas) ? x.unid - esperadas : null;
+                  return `<td style="text-align:right">${x.unid?`<strong>${fmt(x.unid)}</strong>${dif!==null&&dif!==0?`<div style="font-size:10px;color:${dif<0?'#C02626':'#1B7A34'}">${dif>0?'+':'−'}${fmt(Math.abs(dif))} vs ${fmt(esperadas)}</div>`:''}`:'<span style="color:var(--gris-3)">—</span>'}</td>
+                          <td style="text-align:right">${x.unid?fmtD(x.saleG/x.unid,0)+' g':'<span style="color:var(--gris-3)">—</span>'}</td>`;
+                })():''}
                 <td style="text-align:right"><strong>${fmtD(pct,1)}%</strong></td>
                 <td style="text-align:right;color:${Math.abs(dif)<2?'var(--gris-2)':dif<0?'#C02626':'#1B7A34'}">${dif>=0?'+':'−'}${fmtD(Math.abs(dif),1)}</td>
                 <td style="font-size:12px">${esc(x.quien||'—')}</td>
@@ -15718,6 +15787,7 @@ function _htmlProducciones(r){
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input type="text" inputmode="decimal" id="prod-entra" value="${entraActual||''}" placeholder="entró (g)" style="width:120px;text-align:right" title="Gramos que pusiste en la olla. Viene con la suma de la receta, cambialo si esta vez hiciste más o menos.">
           <input type="text" inputmode="decimal" id="prod-sale" placeholder="salió (g)" style="width:120px;text-align:right" title="Pesá el resultado terminado.">
+${_rindeEnUnidades(r)?`<input type="text" inputmode="decimal" id="prod-unid" placeholder="unidades" style="width:110px;text-align:right" title="Cuántas piezas salieron de verdad. Se cuentan al terminar: ahí se ve si se cortaron más grandes o si faltó alguna.">`:''}
           <input type="text" id="prod-quien" placeholder="quién la hizo" style="width:150px">
           <input type="text" id="prod-nota" placeholder="nota (proveedor, cocción, lo que sea)" style="flex:1;min-width:200px">
           <button class="btn btn-secondary btn-sm" onclick="registrarProduccion()">Anotar</button>
@@ -15754,10 +15824,11 @@ function renderSubrecetas(){
 
   const filas = preps.map(r=>{
     const {merc} = calcReceta(r, r.porciones||1);
-    const rend = +r.rendimientoG || 0;
-    const xg = rend>0 ? merc/rend : null;
+    const enUnid = _rindeEnUnidades(r);
+    const rend = enUnid ? (+r.rendimientoUnid||0) : (+r.rendimientoG||0);
+    const xg = rend>0 ? _costoPorUnidadPrep(r) : null;
     const usan = recetasQueUsan(r.id);
-    return {r, merc, rend, xg, usan};
+    return {r, merc, rend, xg, usan, enUnid};
   });
 
   setContent('Subrecetas', `
@@ -15769,7 +15840,10 @@ function renderSubrecetas(){
     <div class="card">
       <div class="card-header">
         <span class="card-title">Mis preparaciones <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${preps.length}</span></span>
-        <button class="btn btn-primary btn-sm" onclick="nuevaSubreceta()">+ Nueva preparación</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="nuevaSubreceta(false)" title="Salsas, purés, cremas: se usan por gramo dentro de un plato.">+ Rinde en gramos</button>
+          <button class="btn btn-primary btn-sm" onclick="nuevaSubreceta(true)" title="Milanesas, medallones, empanadas: se cuentan por pieza.">+ Rinde en unidades</button>
+        </div>
       </div>
       ${filas.length ? `
       <div class="table-wrap">
@@ -15778,7 +15852,7 @@ function renderSubrecetas(){
             <th>Preparación</th>
             <th style="text-align:right;width:120px">Rinde</th>
             <th style="text-align:right;width:130px">Costo del lote</th>
-            <th style="text-align:right;width:120px">Costo por kilo</th>
+            <th style="text-align:right;width:130px">Costo unitario</th>
             <th>La usan</th>
             <th style="width:170px"></th>
           </tr></thead>
@@ -15788,9 +15862,9 @@ function renderSubrecetas(){
                 ${r.precioVenta>0?`<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#E4F3E6;color:#1B7A34">también se vende · $${fmt(r.precioVenta)}</span>`:''}
                 ${_prepSinPorcionVenta(r)?`<div style="font-size:11px;color:#C02626;margin-top:2px">Tiene precio pero no está definido de cuántos gramos es la porción: el food cost de este plato no se puede calcular.</div>`:''}
               </td>
-              <td style="text-align:right">${rend>0?fmt(rend)+' g':'<span style="color:#C02626;font-size:12px">falta cargarlo</span>'}</td>
+              <td style="text-align:right">${rend>0?fmt(rend)+(enUnid?' un':' g'):'<span style="color:#C02626;font-size:12px">falta cargarlo</span>'}</td>
               <td style="text-align:right">$${fmt(merc)}</td>
-              <td style="text-align:right">${xg!==null?'<span class="calc">$'+fmt(Math.round(xg*1000))+'/kg</span>':'<span style="color:var(--gris-3)">—</span>'}</td>
+              <td style="text-align:right">${xg!==null?'<span class="calc">$'+(enUnid?fmt(xg)+' c/u':fmt(Math.round(xg*1000))+'/kg')+'</span>':'<span style="color:var(--gris-3)">—</span>'}</td>
               <td style="font-size:12px;color:var(--gris-1)">${usan.length
                 ? usan.map(x=>esc(x.nombre)).join(', ')
                 : '<span style="color:var(--gris-3)">Todavía no la usa ningún plato</span>'}</td>
@@ -15810,7 +15884,7 @@ function renderSubrecetas(){
     </div>
   `);
 }
-function nuevaSubreceta(){
+function nuevaSubreceta(enUnidades){
   const r = {
     id: proximoId('r','r',demoData.recetas),
     opId: currentOpId,
@@ -15821,6 +15895,7 @@ function nuevaSubreceta(){
     ingredientes: [],
     esPreparacion: true,   // nace declarada: el rendimiento se ve desde el minuto uno
     rendimientoG: 0,
+    rindeEn: enUnidades ? 'unidades' : 'g',
   };
   recetaEditando = r;
   renderEditorReceta();
