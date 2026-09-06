@@ -14,7 +14,7 @@
      ninguna tienda: el cliente entra a provatio.io y elige "Instalar".
      En iPhone hay que hacerlo desde Safari: Compartir → Agregar a inicio. -->
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#2B2927">
+<meta name="theme-color" content="#1A1A18">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -33,7 +33,7 @@
       if(!b){
         b = document.createElement('div');
         b.id = 'prov-err-banner';
-        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#C86D51;color:#fff;font-family:Arial;font-size:12px;padding:10px 14px;line-height:1.5;max-height:45vh;overflow:auto;box-shadow:0 2px 10px rgba(0,0,0,.4)';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#8B1A1A;color:#fff;font-family:Arial;font-size:12px;padding:10px 14px;line-height:1.5;max-height:45vh;overflow:auto;box-shadow:0 2px 10px rgba(0,0,0,.4)';
         document.body ? document.body.appendChild(b) : document.addEventListener('DOMContentLoaded', function(){ document.body.appendChild(b); });
       }
       var d = document.createElement('div');
@@ -71,57 +71,47 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 <style>
 /* ── TOKENS ── */
-/* ══ PALETA EN PRUEBA — lino, oliva y cobre ══════════════════════════════
-   Los nombres de las variables no cambian (--dorado, --crema, --bordo…), solo
-   sus valores. Así toda la app se repinta sin tocar una sola pantalla, y volver
-   atrás es cambiar este bloque y el link de fuentes de arriba.
-   El respaldo con la paleta anterior quedó en index-respaldo-paleta-vieja.html.
-   ═════════════════════════════════════════════════════════════════════════ */
 :root {
-  --negro:     #2B2927;   /* negro carbón, texto primario */
-  --dorado:    #4A5D4E;   /* acento primario — pasó de dorado a oliva profundo */
-  --dorado-c:  #E6EAE5;
-  --crema:     #F8F6F0;   /* lino cálido: fondo de la aplicación */
-  --crema-2:   #E2DFD8;   /* borde fino de tarjetas y tablas */
-  --oliva:     #4A5D4E;
-  --oliva-c:   #E6EAE5;
-  --bordo:     #C86D51;   /* cobre: alertas y todo lo que pide atención */
-  --bordo-c:   #F7E9E3;
-  --gris-1:    #3D3A36;
-  --gris-2:    #6B6660;
-  --gris-3:    #9C968E;
-  --gris-bg:   #F8F6F0;
+  --negro:     #1A1A18;
+  --dorado:    #C8A96E;
+  --dorado-c:  #F0E6D3;
+  --crema:     #F5F0E8;
+  --crema-2:   #EDE8E0;
+  --oliva:     #2D5016;
+  --oliva-c:   #E8EFE0;
+  --bordo:     #8B1A1A;
+  --bordo-c:   #F5E8E8;
+  --gris-1:    #2A2A22;
+  --gris-2:    #5A5A52;
+  --gris-3:    #8A8A80;
+  --gris-bg:   #F5F0E8;
   --blanco:    #FFFFFF;
 
-  /* Aliases: los usa medio sistema, se mantienen apuntando a la paleta nueva */
-  --azul:      #4A5D4E;
-  --azul-med:  #3C4C40;
-  --azul-clar: #E6EAE5;
-  --naranja:   #C86D51;
-  --naranja-c: #F7E9E3;
-  --verde:     #4A5D4E;
-  --verde-c:   #E6EAE5;
-  --rojo:      #C86D51;
-  --rojo-c:    #F7E9E3;
-  --radio:     6px;       /* esquinas más secas: menos "tarjeta de SaaS" */
-  --shadow:    none;      /* la separación la da el borde, no la sombra */
-  --shadow-md: 0 6px 24px rgba(43,41,39,.10);
+  /* Aliases para compatibilidad */
+  --azul:      #2D5016;
+  --azul-med:  #3D6B20;
+  --azul-clar: #E8EFE0;
+  --naranja:   #C8A96E;
+  --naranja-c: #F0E6D3;
+  --verde:     #2D5016;
+  --verde-c:   #E8EFE0;
+  --rojo:      #8B1A1A;
+  --rojo-c:    #F5E8E8;
+  --radio:     10px;
+  --shadow:    0 1px 4px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 20px rgba(0,0,0,.12);
 
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  /* Números de ancho fijo: en una tabla de costos las columnas se alinean solas
-     y el ojo compara de arriba abajo sin tener que leer cada cifra. */
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
+  font-family: 'Inter', system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
   font-size: 14px;
   color: var(--negro);
   background: var(--crema);
@@ -189,7 +179,7 @@ body {
 }
 
 .auth-headline {
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-size: 42px;
   font-weight: 700;
   color: var(--blanco);
@@ -217,7 +207,7 @@ body {
 }
 
 .auth-stat-num {
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-size: 28px;
   font-weight: 700;
   color: var(--dorado);
@@ -237,7 +227,7 @@ body {
   padding-top: 20px;
   border-top: 1px solid rgba(201,168,76,0.25);
   max-width: 280px;
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-style: italic;
   font-size: 15px;
   color: rgba(255,255,255,0.55);
@@ -261,7 +251,7 @@ body {
 }
 
 .auth-logo h1 {
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-size: 32px;
   font-weight: 700;
   color: var(--negro);
@@ -311,7 +301,7 @@ body {
   background: var(--blanco);
   color: var(--negro);
   font-size: 14px;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   transition: border-color .15s, box-shadow .15s;
 }
 
@@ -342,7 +332,7 @@ body {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   cursor: pointer;
   transition: all .15s;
   white-space: nowrap;
@@ -438,7 +428,7 @@ body {
 }
 
 .sidebar-logo h1 {
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-size: 22px;
   font-weight: 700;
   color: var(--blanco);
@@ -523,7 +513,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-size: 14px;
   font-weight: 700;
   color: var(--dorado);
@@ -556,7 +546,7 @@ body {
 }
 
 .topbar-title {
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-size: 17px;
   font-weight: 600;
   color: var(--negro);
@@ -613,15 +603,15 @@ body {
 .card {
   background: var(--blanco);
   border: 1px solid var(--crema-2);
-  border-radius: var(--radio);
+  border-radius: 12px;
   overflow: hidden;
   margin-bottom: 16px;
-  box-shadow: none;   /* separa el borde, no la sombra */
+  box-shadow: var(--shadow);
 }
 
 .card-header {
   padding: 14px 20px;
-  border-bottom: 1px solid #CFCAC1;
+  border-bottom: 1px solid #D5CFC6;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -664,7 +654,7 @@ body {
 }
 
 .metric-value { 
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-size: 24px; 
   font-weight: 700; 
   color: var(--negro); 
@@ -676,44 +666,24 @@ body {
 /* ── TABLES ── */
 .table-wrap { overflow-x: auto; }
 
-/* Tablas densas, para leerlas de pie y de reojo en una cocina: filas bajas,
-   números de ancho fijo alineados a la derecha, y separación por hairline en
-   vez de por espacio. La fila que se está mirando se tiñe de oliva claro. */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-thead tr { border-bottom: 1px solid #CFCAC1; }
-th {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--gris-2);
-  text-align: left;
-  padding: 7px 10px;
-  text-transform: uppercase;
-  letter-spacing: .06em;
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead tr { border-bottom: 2px solid var(--crema-2); }
+th { 
+  font-size: 10px; 
+  font-weight: 700; 
+  color: var(--gris-1); 
+  text-align: left; 
+  padding: 10px 12px; 
+  text-transform: uppercase; 
+  letter-spacing: .08em; 
   white-space: nowrap;
-  background: var(--crema);
-  border-bottom: 1px solid var(--crema-2);
+  background: var(--crema-2);
+  border-bottom: 1px solid #D5CFC6;
 }
-td {
-  padding: 7px 10px;
-  border-bottom: 1px solid #EFEDE7;
-  vertical-align: middle;
-  color: var(--negro);
-  line-height: 1.35;
-}
-/* Toda celda alineada a la derecha lleva números: se los tabula y se les da un
-   poco más de peso para que la columna se lea como una columna. */
-td[style*="text-align:right"], th[style*="text-align:right"] {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-}
+td { padding: 10px 12px; border-bottom: 1px solid #E8E4DC; vertical-align: middle; color: var(--negro); }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: rgba(74,93,78,0.06); }
-tr:nth-child(even) td { background: rgba(248,246,240,0.7); }
+tr:hover td { background: rgba(200,169,110,0.08); }
+tr:nth-child(even) td { background: rgba(245,240,232,0.5); }
 
 .cat-row td { 
   background: var(--crema-2); 
@@ -734,7 +704,7 @@ input[type=text], input[type=number], input[type=email], select, textarea {
   border: 1.5px solid var(--crema-2);
   border-radius: 8px;
   font-size: 13px;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
   color: var(--negro);
   background: var(--blanco);
   transition: border-color .15s, box-shadow .15s;
@@ -759,7 +729,7 @@ input:focus, select:focus, textarea:focus {
 .badge-sc { background: #F0D99A; color: #6B4A08; border: 1px solid #D4B870; }
 .badge-sa { background: #F0B8B8; color: #6B0808; border: 1px solid #D49090; }
 .badge-li { background: #D8D5CE; color: #3A3A32; border: 1px solid #B8B5AE; }
-.badge-gray { background: #EFEDE7; color: #4A4A42; border: 1px solid #C8C4BC; }
+.badge-gray { background: #E8E4DC; color: #4A4A42; border: 1px solid #C8C4BC; }
 
 /* ── SEMÁFORO ── */
 .sem { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; border: 1px solid transparent; white-space: nowrap; }
@@ -850,7 +820,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .modal-title { 
-  font-family: 'Lora', Georgia, serif;
+  font-family: 'Playfair Display', serif;
   font-size: 16px; 
   font-weight: 600; 
   color: var(--negro); 
@@ -868,7 +838,7 @@ input:focus, select:focus, textarea:focus {
 /* ── EMPTY STATE ── */
 .empty { text-align: center; padding: 56px 20px; color: var(--gris-2); }
 .empty-icon { font-size: 44px; margin-bottom: 14px; }
-.empty h3 { font-family: 'Lora', Georgia, serif; font-size: 18px; font-weight: 600; color: var(--negro); margin-bottom: 8px; }
+.empty h3 { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 600; color: var(--negro); margin-bottom: 8px; }
 .empty p { font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
 
 /* ── TABS ── */
@@ -931,7 +901,7 @@ input:focus, select:focus, textarea:focus {
 /* ── PRÓXIMAMENTE ── */
 .coming-soon { text-align: center; padding: 64px 20px; border: 2px dashed var(--crema-2); border-radius: 12px; }
 .coming-soon .cs-icon { font-size: 48px; margin-bottom: 18px; }
-.coming-soon h3 { font-family: 'Lora', Georgia, serif; font-size: 18px; font-weight: 600; color: var(--negro); margin-bottom: 10px; }
+.coming-soon h3 { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 600; color: var(--negro); margin-bottom: 10px; }
 .coming-soon p { font-size: 13px; color: var(--gris-2); max-width: 320px; margin: 0 auto; line-height: 1.6; }
 
 /* ── RESPONSIVE ── */
@@ -1080,7 +1050,7 @@ input:focus, select:focus, textarea:focus {
   <!-- Lado derecho — formulario -->
   <div class="auth-right">
     <div class="auth-logo">
-      <div style="margin-bottom:10px"><svg width="52" height="52" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#2B2927" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#4A5D4E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#2B2927" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#2B2927" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#4A5D4E"/></svg></div>
+      <div style="margin-bottom:10px"><svg width="52" height="52" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#1A1A18" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#1A1A18" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#1A1A18" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#C8A96E"/></svg></div>
       <h1>Provatio</h1>
       <p>Gestión de costos gastronómicos</p>
     </div>
@@ -1099,12 +1069,12 @@ input:focus, select:focus, textarea:focus {
       <div style="position:relative">
         <input type="password" id="auth-pass" placeholder="••••••••" style="padding-right:42px">
         <button type="button" onclick="togglePassVisible()" 
-          style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;color:#6B6660"
+          style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;color:#5A5A52"
           id="pass-toggle"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
     </div>
 
-    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:#6B6660;cursor:pointer;user-select:none">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:#5A5A52;cursor:pointer;user-select:none">
       <input type="checkbox" id="auth-recordar" style="width:16px;height:16px;cursor:pointer">
       Mantener sesión iniciada en esta computadora
     </label>
@@ -1137,28 +1107,28 @@ input:focus, select:focus, textarea:focus {
   <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo" style="display:flex;align-items:center;gap:12px">
-      <svg width="36" height="36" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#F8F6F0" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#4A5D4E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#F8F6F0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#F8F6F0" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#4A5D4E"/></svg>
+      <svg width="36" height="36" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#F5F0E8" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#F5F0E8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#F5F0E8" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#C8A96E"/></svg>
       <div>
         <h1>Provatio</h1>
         <p>provatio.io</p>
       </div>
     </div>
-    <div id="op-indicador" style="display:none;margin:0 16px 6px;padding:8px 12px;background:rgba(200,169,110,0.12);border-left:3px solid #4A5D4E;border-radius:0 6px 6px 0">
-      <div style="font-size:10px;color:#4A5D4E;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Operación activa</div>
-      <div id="op-indicador-nombre" style="font-size:13px;font-weight:700;color:#F8F6F0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+    <div id="op-indicador" style="display:none;margin:0 16px 6px;padding:8px 12px;background:rgba(200,169,110,0.12);border-left:3px solid #C8A96E;border-radius:0 6px 6px 0">
+      <div style="font-size:10px;color:#C8A96E;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Operación activa</div>
+      <div id="op-indicador-nombre" style="font-size:13px;font-weight:700;color:#F5F0E8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
       <div id="op-indicador-tipo" style="font-size:11px;color:#999;margin-top:1px"></div>
     </div>
-    <div id="cp-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 6px;padding:8px 12px;background:#1A3A1A;border:1.5px solid #4A5D4E;border-radius:8px">
+    <div id="cp-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 6px;padding:8px 12px;background:#1A3A1A;border:1.5px solid #2D5016;border-radius:8px">
       <span id="cp-badge-icono" style="font-size:18px">🏭</span>
       <div>
         <div id="cp-badge-titulo" style="font-size:11px;font-weight:700;color:#6ABF6A;letter-spacing:.5px;text-transform:uppercase">Centro de Producción</div>
         <div id="cp-badge-sub" style="font-size:10px;color:#888">Provee insumos a los locales</div>
       </div>
     </div>
-    <div id="dk-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 8px;padding:8px 12px;background:#111;border:1.5px solid #4A5D4E;border-radius:8px">
+    <div id="dk-badge" style="display:none;align-items:center;gap:8px;margin:0 16px 8px;padding:8px 12px;background:#111;border:1.5px solid #C8A96E;border-radius:8px">
       <span style="font-size:18px">🌑</span>
       <div>
-        <div style="font-size:11px;font-weight:700;color:#4A5D4E;letter-spacing:.5px">DARK KITCHEN</div>
+        <div style="font-size:11px;font-weight:700;color:#C8A96E;letter-spacing:.5px">DARK KITCHEN</div>
         <div style="font-size:10px;color:#888">Modo 100% delivery</div>
       </div>
     </div>
@@ -1200,7 +1170,7 @@ input:focus, select:focus, textarea:focus {
       </button>
     </div>
     <div class="content" id="main-content">
-      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#9C968E;margin-top:10px">versión 6-jul-2026-X</div></div>
+      <div class="loading"><div class="spinner"></div>Cargando...<div style="font-size:10px;color:#8A8A80;margin-top:10px">versión 6-jul-2026-X</div></div>
     </div>
   </main>
 </div>
@@ -1330,7 +1300,7 @@ function mostrarProgreso(texto){
   if(!box){
     box = document.createElement('div');
     box.id = 'prov-progreso';
-    box.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;background:#2B2927;color:#F8F6F0;padding:14px 22px;border-radius:10px;font-family:"Plus Jakarta Sans",Arial,sans-serif;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.4);min-width:260px;text-align:center';
+    box.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;background:#1A1A18;color:#F5F0E8;padding:14px 22px;border-radius:10px;font-family:Inter,Arial,sans-serif;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.4);min-width:260px;text-align:center';
     document.body.appendChild(box);
   }
   box.textContent = texto;
@@ -1350,7 +1320,7 @@ function _pintarEstadoConexion(estado){
     box = document.createElement('div');
     box.id = 'prov-conexion';
     box.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9998;'
-      + 'padding:7px 16px;border-radius:20px;font-family:"Plus Jakarta Sans",Arial,sans-serif;font-size:12.5px;'
+      + 'padding:7px 16px;border-radius:20px;font-family:Inter,Arial,sans-serif;font-size:12.5px;'
       + 'font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.18);text-align:center;color:#fff';
     document.body.appendChild(box);
   }
@@ -1358,7 +1328,7 @@ function _pintarEstadoConexion(estado){
     box.style.background = '#B8540A';
     box.textContent = '● Sin conexión — se está guardando en el teléfono';
   } else {
-    box.style.background = '#4A5D4E';
+    box.style.background = '#2D5016';
     box.textContent = '↻ Conexión recuperada — sincronizando…';
   }
 }
@@ -1538,7 +1508,7 @@ function modalMigrar(){
         <input type="text" id="mig-nombre" placeholder="ej: Parrillas de Marcelo" style="width:100%">
       </div>
       <div id="mig-log" style="margin-top:12px;font-size:12px;font-family:var(--mono,monospace);
-        background:var(--crema,#F8F6F0);padding:10px;border-radius:6px;max-height:220px;overflow:auto"></div>
+        background:var(--crema,#F5F0E8);padding:10px;border-radius:6px;max-height:220px;overflow:auto"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -3452,7 +3422,7 @@ function agregarProductoCP(){
         </div>`;
       }).join('');
     return `<div class="cp-grupo" data-cat="${esc(cat.toLowerCase())}">
-      <div onclick="toggleGrupoCP(${ci})" style="padding:8px 12px;background:#F8F6F0;cursor:pointer;user-select:none;display:flex;justify-content:space-between;font-weight:600;font-size:13px;border-bottom:1px solid #E5DED0">
+      <div onclick="toggleGrupoCP(${ci})" style="padding:8px 12px;background:#F5F0E8;cursor:pointer;user-select:none;display:flex;justify-content:space-between;font-weight:600;font-size:13px;border-bottom:1px solid #E5DED0">
         <span>${esc(cat)}</span>
         <span style="color:var(--gris-2);font-weight:400">${grupos[cat].length} <span id="cp-fl-${ci}">▶</span></span>
       </div>
@@ -3487,7 +3457,7 @@ function agregarProductoCP(){
         <input type="text" inputmode="decimal" id="cp-prod-neto" placeholder="ej: 200" min="0" style="width:100%">
       </div>
       <div class="form-group" id="cp-porcion-box" style="display:none">
-        <div style="font-size:12.5px;color:var(--gris-2);line-height:1.6;background:#F8F6F0;border-radius:8px;padding:10px 12px">
+        <div style="font-size:12.5px;color:var(--gris-2);line-height:1.6;background:#F5F0E8;border-radius:8px;padding:10px 12px">
           Este producto el CP lo despacha <strong>porcionado</strong>, así que la receta lo cuenta
           en porciones y no en gramos. Entra con <strong>1 porción</strong> y la cantidad la ajustás
           en la receta. El costo sale del precio de transferencia — no depende de ningún gramaje.
@@ -3993,7 +3963,7 @@ function mostrarModalPerfil(email, pass){
     justify-content:center;
     z-index:600;
     padding:20px;
-    font-family:'Plus Jakarta Sans',sans-serif;
+    font-family:'Inter',sans-serif;
   `;
   
   overlay.innerHTML = `
@@ -4001,7 +3971,7 @@ function mostrarModalPerfil(email, pass){
       
       <!-- Header -->
       <div style="padding:24px 28px 20px;border-bottom:1px solid var(--crema-2);background:var(--crema);border-radius:16px 16px 0 0">
-        <h2 style="font-family:'Lora',Georgia,serif;font-size:20px;font-weight:700;color:var(--negro);margin-bottom:4px">
+        <h2 style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--negro);margin-bottom:4px">
           Completá tu perfil
         </h2>
         <p style="font-size:13px;color:var(--gris-2)">
@@ -4018,14 +3988,14 @@ function mostrarModalPerfil(email, pass){
               Nombre completo *
             </label>
             <input type="text" id="p-nombre" placeholder="Ej: María González" 
-              style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif">
+              style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
           </div>
           <div>
             <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">
               Teléfono
             </label>
             <input type="tel" id="p-tel" placeholder="+54 11 1234-5678"
-              style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif">
+              style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
           </div>
         </div>
 
@@ -4034,7 +4004,7 @@ function mostrarModalPerfil(email, pass){
             <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">
               País *
             </label>
-            <select id="p-pais" style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif">
+            <select id="p-pais" style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
               ${PAISES.map(p=>`<option>${p}</option>`).join('')}
             </select>
           </div>
@@ -4043,7 +4013,7 @@ function mostrarModalPerfil(email, pass){
               Ciudad *
             </label>
             <input type="text" id="p-ciudad" placeholder="Buenos Aires"
-              style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif">
+              style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
           </div>
         </div>
 
@@ -4064,7 +4034,7 @@ function mostrarModalPerfil(email, pass){
         </div>
 
         <div style="background:var(--crema);border-radius:8px;padding:12px;margin-bottom:20px">
-          <p style="font-size:12px;color:#6B6660;line-height:1.5">
+          <p style="font-size:12px;color:#5A5A52;line-height:1.5">
             ${ico('mail',14)} <strong>${email}</strong> — Esta será tu dirección de acceso a Provatio.
           </p>
         </div>
@@ -4076,12 +4046,12 @@ function mostrarModalPerfil(email, pass){
       <!-- Footer -->
       <div style="padding:16px 28px 24px;display:flex;gap:10px">
         <button onclick="cancelarRegistro()" 
-          style="flex:1;padding:11px;background:transparent;color:var(--gris-2);border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+          style="flex:1;padding:11px;background:transparent;color:var(--gris-2);border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif">
           Cancelar
         </button>
         <button onclick="completarRegistro('${escJs(email)}','${pass}')"
           id="btn-completar"
-          style="flex:2;padding:12px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+          style="flex:2;padding:12px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif">
           Crear mi cuenta →
         </button>
       </div>
@@ -4508,7 +4478,7 @@ function renderFacturas(){
         <td style="text-align:right;color:var(--verde)">${aplicados} aplicados</td>
       </tr>`;
     }).join('');
-    return `<tr style="background:var(--crema,#F8F6F0)">
+    return `<tr style="background:var(--crema,#F5F0E8)">
       <td colspan="5" style="font-weight:700">${k} <span style="color:var(--gris-2);font-weight:400;font-size:12px">· ${fs.length} factura${fs.length>1?'s':''}</span></td>
       <td style="text-align:right;font-weight:700">$${fmt(totGrupo)}</td><td></td>
     </tr>` + filas;
@@ -5104,8 +5074,8 @@ function buildSidebar(rol){
     opInd.style.display = 'block';
     opInd.style.borderColor = badgeInfo.bg;
     opInd.style.background = badgeInfo.bg + '18'; // 10% opacity
-    if(opNombre){ opNombre.textContent = op.nombre || 'Sin nombre'; opNombre.style.color = '#F8F6F0'; }
-    if(opTipo){ opTipo.textContent = subtipo; opTipo.style.color = badgeInfo.bg === '#2B2927' ? '#4A5D4E' : badgeInfo.bg; }
+    if(opNombre){ opNombre.textContent = op.nombre || 'Sin nombre'; opNombre.style.color = '#F5F0E8'; }
+    if(opTipo){ opTipo.textContent = subtipo; opTipo.style.color = badgeInfo.bg === '#1A1A18' ? '#C8A96E' : badgeInfo.bg; }
   } else if(opInd){
     opInd.style.display = 'none';
   }
@@ -5519,7 +5489,7 @@ function renderArranque(){
       <div style="width:72px;height:72px;background:var(--dorado-c);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;border:2px solid var(--dorado)">
         <span style="font-size:32px">🎉</span>
       </div>
-      <h2 style="font-family:'Lora',Georgia,serif;font-size:26px;font-weight:700;color:var(--negro);margin-bottom:8px">
+      <h2 style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:var(--negro);margin-bottom:8px">
         ${esc(nombre)}, tu cuenta está activa
       </h2>
       <p style="font-size:14px;color:var(--gris-1);line-height:1.7;margin-bottom:28px">
@@ -5576,7 +5546,7 @@ function modalCrearMiOperacion(){
         </select>
       </div>
       <div id="ae-log" style="margin-top:12px;font-size:12px;font-family:var(--mono,monospace);
-        background:var(--crema,#F8F6F0);padding:10px;border-radius:6px;max-height:180px;overflow:auto;display:none"></div>
+        background:var(--crema,#F5F0E8);padding:10px;border-radius:6px;max-height:180px;overflow:auto;display:none"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -5965,7 +5935,7 @@ async function renderDashboardAdmin(){
 
   setContent('Panel general', `
     ${(!pendientes.length && !trabadas.length && !ausentes.length) ? `
-      <div style="background:#E6EAE5;color:#4A5D4E;border:1px solid #A9D8B2;border-radius:10px;padding:16px;margin-bottom:20px">
+      <div style="background:#E8EFE0;color:#2D5016;border:1px solid #A9D8B2;border-radius:10px;padding:16px;margin-bottom:20px">
         <strong>No hay nada pendiente.</strong> Ninguna cuenta esperando activación, ninguna trabada y ninguna ausente.
       </div>` : ''}
 
@@ -6298,22 +6268,22 @@ function renderDashboardOperacion(){
         ${cocina ? '' : `<button class="btn btn-secondary" onclick="navigate('evento')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
           <span style="opacity:.75">${ico('target', 26)}</span>
           <strong>Presupuesto de evento</strong>
-          <span style="font-size:12px;color:#6B6660">Cotizá en segundos</span>
+          <span style="font-size:12px;color:#5A5A52">Cotizá en segundos</span>
         </button>`}
         <button class="btn btn-secondary" onclick="navigate('semanal')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
           <span style="opacity:.75">${ico('calendar', 26)}</span>
           <strong>Planificación semanal</strong>
-          <span style="font-size:12px;color:#6B6660">Armá la semana</span>
+          <span style="font-size:12px;color:#5A5A52">Armá la semana</span>
         </button>
         <button class="btn btn-secondary" onclick="navigate('compras')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
           <span style="opacity:.75">${ico('cart', 26)}</span>
           <strong>Lista de compras</strong>
-          <span style="font-size:12px;color:#6B6660">Ver consolidación</span>
+          <span style="font-size:12px;color:#5A5A52">Ver consolidación</span>
         </button>
         <button class="btn btn-secondary" onclick="navigate('importExport')" style="padding:16px;flex-direction:column;gap:6px;height:auto">
           <span style="opacity:.75">${ico('updown', 26)}</span>
           <strong>Importar / Exportar</strong>
-          <span style="font-size:12px;color:#6B6660">Migrar datos</span>
+          <span style="font-size:12px;color:#5A5A52">Migrar datos</span>
         </button>
       </div>
     </div>
@@ -7447,7 +7417,7 @@ function renderMermas(){
                       <td style="padding:8px;text-align:right">
                         <input type="text" inputmode="decimal" value="${m.pct}" style="width:70px;text-align:right;padding:4px 8px;border:1.5px solid var(--crema-2);border-radius:6px;font-size:13px;color:${m.pct<0?'var(--oliva)':m.pct===0?'var(--gris-2)':'var(--negro)'}" onchange="updateMerma('${m.id}','pct',num(this.value))"> %
                       </td>
-                      <td style="padding:8px;font-size:12px;color:#6B6660">${m.pct<0?'Absorbe agua':m.pct===0?'Sin pérdida':'Pérdida en cocción'}</td>
+                      <td style="padding:8px;font-size:12px;color:#5A5A52">${m.pct<0?'Absorbe agua':m.pct===0?'Sin pérdida':'Pérdida en cocción'}</td>
                       <td style="padding:8px;text-align:right;white-space:nowrap"><div style="display:flex;gap:6px;justify-content:flex-end">
                         <button class="btn btn-secondary btn-sm" data-merma-id="${m.id}" onclick="editarMerma(this.dataset.mermaId)">${ico('edit',13)} Editar</button>
                         <button class="btn btn-danger btn-sm" data-merma-id="${m.id}" onclick="delMerma(this.dataset.mermaId)">${ico('trash',13)} Eliminar</button>
@@ -7645,7 +7615,7 @@ function filtrarMermas(q){
             <td style="text-align:right">
               <input type="text" inputmode="decimal" value="${m.pct}" style="width:70px;text-align:right" onchange="updateMerma('${m.id}','pct',num(this.value))"> %
             </td>
-            <td style="font-size:12px;color:#6B6660">${m.pct<0?'Absorbe agua':m.pct===0?'Sin pérdida':'Pérdida en cocción'}</td>
+            <td style="font-size:12px;color:#5A5A52">${m.pct<0?'Absorbe agua':m.pct===0?'Sin pérdida':'Pérdida en cocción'}</td>
             <td style="white-space:nowrap"><div style="display:flex;gap:6px">
               <button class="btn btn-secondary btn-sm" data-merma-id="${m.id}" onclick="editarMerma(this.dataset.mermaId)">${ico('edit',13)} Editar</button>
               <button class="btn btn-danger btn-sm" data-merma-id="${m.id}" onclick="delMerma(this.dataset.mermaId)">${ico('trash',13)} Eliminar</button>
@@ -8670,14 +8640,14 @@ function chartTortaCosto(items){
     const ly = 34+i*26;
     leyenda += `
       <rect x="290" y="${ly-10}" width="12" height="12" rx="3" fill="${CHART_COLORS[i%CHART_COLORS.length]}"/>
-      <text x="310" y="${ly}" font-family="Arial" font-size="12" fill="#3D3A36">${esc((it.nombre||'—').slice(0,32))}</text>
-      <text x="${W-20}" y="${ly}" font-family="Arial" font-size="12" fill="#6B6660" text-anchor="end">$${fmt(it.costo)} · ${fmtD(frac*100)}%</text>`;
+      <text x="310" y="${ly}" font-family="Arial" font-size="12" fill="#2A2A22">${esc((it.nombre||'—').slice(0,32))}</text>
+      <text x="${W-20}" y="${ly}" font-family="Arial" font-size="12" fill="#5A5A52" text-anchor="end">$${fmt(it.costo)} · ${fmtD(frac*100)}%</text>`;
     ang = a2;
   });
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
     ${arcos}
-    <text x="${cx}" y="${cy-4}" font-family="Georgia" font-size="18" font-weight="bold" fill="#2B2927" text-anchor="middle">$${fmt(total)}</text>
-    <text x="${cx}" y="${cy+16}" font-family="Arial" font-size="10" fill="#9C968E" text-anchor="middle">COSTO / PORCIÓN</text>
+    <text x="${cx}" y="${cy-4}" font-family="Georgia" font-size="18" font-weight="bold" fill="#1A1A18" text-anchor="middle">$${fmt(total)}</text>
+    <text x="${cx}" y="${cy+16}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="middle">COSTO / PORCIÓN</text>
     ${leyenda}
   </svg>`;
 }
@@ -12058,7 +12028,7 @@ function renderPedidoSugerido(){
       // ── Rechazos recientes: la cocina tiene que saber por qué ─────────
       if(rech.length){
         const ult = rech[rech.length-1];
-        html += `<div class="card" style="margin-bottom:14px;border:1.5px solid var(--bordo,#C86D51)">
+        html += `<div class="card" style="margin-bottom:14px;border:1.5px solid var(--bordo,#8B1A1A)">
           <div class="card-header" style="background:#FBF0F0">
             <span class="card-title">✕ Pedido rechazado — ${esc(ult.fecha||'')} ${esc(ult.hora||'')}</span>
           </div>
@@ -13925,7 +13895,7 @@ function _htmlFaltantes(conteosOrdenados, criticos){
       <td><strong>${esc(i.nombre)}</strong></td>
       <td style="text-align:right">${fmt1(ini)} ${esc(unidad)}</td>
       <td style="text-align:right;color:#2E7D32">+${fmt1(comp)}</td>
-      <td style="text-align:right;color:#6B6660">−${fmt1(cons)}</td>
+      <td style="text-align:right;color:#5A5A52">−${fmt1(cons)}</td>
       <td style="text-align:right">${fmt1(fin)} ${esc(unidad)}</td>
       <td style="text-align:right;font-weight:700;color:${color}">
         ${sinExplicar>0.05 ? '−'+fmt1(sinExplicar)+' '+esc(unidad) : '✓ OK'}
@@ -14643,7 +14613,7 @@ function updDiasOperativos(v){ const op=getOp(); if(!op) return; op.diasOperativ
 function updVentasEstimadas(v){ const op=getOp(); if(!op) return; op.ventasEstimadas = Math.max(0, v||0); renderResultado(); guardarEnFirestore(); }
 
 // ── GRÁFICOS DE SALUD DEL NEGOCIO (SVG puro, descargables) ──
-const CHART_COLORS = ['#4A5D4E','#4A5D4E','#C86D51','#6B6660','#B08D57','#6B8E4E','#A65D5D','#9C968E','#D4B870','#3C4C40'];
+const CHART_COLORS = ['#C8A96E','#2D5016','#8B1A1A','#5A5A52','#B08D57','#6B8E4E','#A65D5D','#8A8A80','#D4B870','#3D6B20'];
 function fmtCorto(v){
   if(Math.abs(v)>=1e6) return '$'+(v/1e6).toFixed(1).replace('.',',')+'M';
   if(Math.abs(v)>=1e3) return '$'+Math.round(v/1e3)+'k';
@@ -14664,48 +14634,48 @@ function chartEquilibrio(fijos, margenPct, eq, ventasEst){
   let grid='';
   for(let i=0;i<=4;i++){
     const vx = maxX*i/4, vy = maxY*i/4;
-    grid += `<line x1="${X(vx)}" y1="${mT}" x2="${X(vx)}" y2="${mT+ph}" stroke="#E2DFD8" stroke-width="1"/>`;
-    grid += `<line x1="${mL}" y1="${Y(vy)}" x2="${mL+pw}" y2="${Y(vy)}" stroke="#E2DFD8" stroke-width="1"/>`;
-    grid += `<text x="${X(vx)}" y="${mT+ph+18}" font-family="Arial" font-size="11" fill="#9C968E" text-anchor="middle">${fmtCorto(vx)}</text>`;
-    grid += `<text x="${mL-8}" y="${Y(vy)+4}" font-family="Arial" font-size="11" fill="#9C968E" text-anchor="end">${fmtCorto(vy)}</text>`;
+    grid += `<line x1="${X(vx)}" y1="${mT}" x2="${X(vx)}" y2="${mT+ph}" stroke="#EDE8E0" stroke-width="1"/>`;
+    grid += `<line x1="${mL}" y1="${Y(vy)}" x2="${mL+pw}" y2="${Y(vy)}" stroke="#EDE8E0" stroke-width="1"/>`;
+    grid += `<text x="${X(vx)}" y="${mT+ph+18}" font-family="Arial" font-size="11" fill="#8A8A80" text-anchor="middle">${fmtCorto(vx)}</text>`;
+    grid += `<text x="${mL-8}" y="${Y(vy)+4}" font-family="Arial" font-size="11" fill="#8A8A80" text-anchor="end">${fmtCorto(vy)}</text>`;
   }
 
   // Zonas de pérdida (antes del equilibrio) y ganancia (después)
   const zonas = `
-    <polygon points="${X(0)},${Y(fijos)} ${X(eq)},${Y(eqY)} ${X(0)},${Y(0)}" fill="#C86D51" opacity="0.06"/>
-    <polygon points="${X(eq)},${Y(eqY)} ${X(maxX)},${Y(maxX)} ${X(maxX)},${Y(fijos+cv*maxX)}" fill="#4A5D4E" opacity="0.08"/>`;
+    <polygon points="${X(0)},${Y(fijos)} ${X(eq)},${Y(eqY)} ${X(0)},${Y(0)}" fill="#8B1A1A" opacity="0.06"/>
+    <polygon points="${X(eq)},${Y(eqY)} ${X(maxX)},${Y(maxX)} ${X(maxX)},${Y(fijos+cv*maxX)}" fill="#2D5016" opacity="0.08"/>`;
 
   // Líneas de ingresos y costos
   const lineas = `
-    <line x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(maxX)}" stroke="#4A5D4E" stroke-width="2.5"/>
-    <line x1="${X(0)}" y1="${Y(fijos)}" x2="${X(maxX)}" y2="${Y(fijos+cv*maxX)}" stroke="#C86D51" stroke-width="2.5"/>
-    <line x1="${X(0)}" y1="${Y(fijos)}" x2="${X(maxX)}" y2="${Y(fijos)}" stroke="#4A5D4E" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+    <line x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(maxX)}" stroke="#2D5016" stroke-width="2.5"/>
+    <line x1="${X(0)}" y1="${Y(fijos)}" x2="${X(maxX)}" y2="${Y(fijos+cv*maxX)}" stroke="#8B1A1A" stroke-width="2.5"/>
+    <line x1="${X(0)}" y1="${Y(fijos)}" x2="${X(maxX)}" y2="${Y(fijos)}" stroke="#C8A96E" stroke-width="1.5" stroke-dasharray="5,4"/>`;
 
   // Punto de equilibrio
   const pe = `
-    <line x1="${X(eq)}" y1="${Y(eqY)}" x2="${X(eq)}" y2="${mT+ph}" stroke="#2B2927" stroke-width="1" stroke-dasharray="3,3"/>
-    <circle cx="${X(eq)}" cy="${Y(eqY)}" r="6" fill="#2B2927"/>
-    <circle cx="${X(eq)}" cy="${Y(eqY)}" r="3" fill="#4A5D4E"/>
-    <text x="${X(eq)}" y="${Y(eqY)-14}" font-family="Georgia" font-size="13" font-weight="bold" fill="#2B2927" text-anchor="middle">Equilibrio: ${fmtCorto(eq)}</text>`;
+    <line x1="${X(eq)}" y1="${Y(eqY)}" x2="${X(eq)}" y2="${mT+ph}" stroke="#1A1A18" stroke-width="1" stroke-dasharray="3,3"/>
+    <circle cx="${X(eq)}" cy="${Y(eqY)}" r="6" fill="#1A1A18"/>
+    <circle cx="${X(eq)}" cy="${Y(eqY)}" r="3" fill="#C8A96E"/>
+    <text x="${X(eq)}" y="${Y(eqY)-14}" font-family="Georgia" font-size="13" font-weight="bold" fill="#1A1A18" text-anchor="middle">Equilibrio: ${fmtCorto(eq)}</text>`;
 
   // Marca de ventas estimadas si existen
   const marca = (ventasEst>0 && ventasEst<=maxX) ? `
-    <line x1="${X(ventasEst)}" y1="${mT}" x2="${X(ventasEst)}" y2="${mT+ph}" stroke="#4A5D4E" stroke-width="2" stroke-dasharray="6,4"/>
+    <line x1="${X(ventasEst)}" y1="${mT}" x2="${X(ventasEst)}" y2="${mT+ph}" stroke="#C8A96E" stroke-width="2" stroke-dasharray="6,4"/>
     <text x="${X(ventasEst)}" y="${mT-8}" font-family="Arial" font-size="11" font-weight="bold" fill="#B08D57" text-anchor="middle">Tu estimación</text>` : '';
 
   // Leyenda
   const leg = `
-    <line x1="${mL}" y1="${H-10}" x2="${mL+22}" y2="${H-10}" stroke="#4A5D4E" stroke-width="2.5"/>
-    <text x="${mL+28}" y="${H-6}" font-family="Arial" font-size="11" fill="#6B6660">Ingresos</text>
-    <line x1="${mL+105}" y1="${H-10}" x2="${mL+127}" y2="${H-10}" stroke="#C86D51" stroke-width="2.5"/>
-    <text x="${mL+133}" y="${H-6}" font-family="Arial" font-size="11" fill="#6B6660">Costos totales</text>
-    <line x1="${mL+245}" y1="${H-10}" x2="${mL+267}" y2="${H-10}" stroke="#4A5D4E" stroke-width="1.5" stroke-dasharray="5,4"/>
-    <text x="${mL+273}" y="${H-6}" font-family="Arial" font-size="11" fill="#6B6660">Gastos fijos</text>`;
+    <line x1="${mL}" y1="${H-10}" x2="${mL+22}" y2="${H-10}" stroke="#2D5016" stroke-width="2.5"/>
+    <text x="${mL+28}" y="${H-6}" font-family="Arial" font-size="11" fill="#5A5A52">Ingresos</text>
+    <line x1="${mL+105}" y1="${H-10}" x2="${mL+127}" y2="${H-10}" stroke="#8B1A1A" stroke-width="2.5"/>
+    <text x="${mL+133}" y="${H-6}" font-family="Arial" font-size="11" fill="#5A5A52">Costos totales</text>
+    <line x1="${mL+245}" y1="${H-10}" x2="${mL+267}" y2="${H-10}" stroke="#C8A96E" stroke-width="1.5" stroke-dasharray="5,4"/>
+    <text x="${mL+273}" y="${H-6}" font-family="Arial" font-size="11" fill="#5A5A52">Gastos fijos</text>`;
 
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
     ${grid}${zonas}${lineas}${pe}${marca}${leg}
-    <text x="${X(eq*0.4)}" y="${Y(eq*0.55)}" font-family="Arial" font-size="11" fill="#C86D51" opacity="0.7" text-anchor="middle">zona de pérdida</text>
-    <text x="${X(Math.min(eq*1.35, maxX*0.9))}" y="${Y(Math.min(eq*1.28, maxX*0.85))}" font-family="Arial" font-size="11" fill="#4A5D4E" opacity="0.7" text-anchor="middle">zona de ganancia</text>
+    <text x="${X(eq*0.4)}" y="${Y(eq*0.55)}" font-family="Arial" font-size="11" fill="#8B1A1A" opacity="0.7" text-anchor="middle">zona de pérdida</text>
+    <text x="${X(Math.min(eq*1.35, maxX*0.9))}" y="${Y(Math.min(eq*1.28, maxX*0.85))}" font-family="Arial" font-size="11" fill="#2D5016" opacity="0.7" text-anchor="middle">zona de ganancia</text>
   </svg>`;
 }
 
@@ -14725,14 +14695,14 @@ function chartDonaGastos(gastos){
     const ly = 34+i*26;
     leyenda += `
       <rect x="290" y="${ly-10}" width="12" height="12" rx="3" fill="${CHART_COLORS[i%CHART_COLORS.length]}"/>
-      <text x="310" y="${ly}" font-family="Arial" font-size="12" fill="#3D3A36">${(g.concepto||'Sin nombre').slice(0,32)}</text>
-      <text x="${W-20}" y="${ly}" font-family="Arial" font-size="12" fill="#6B6660" text-anchor="end">$${fmt(g.monto)} · ${fmtD(frac*100)}%</text>`;
+      <text x="310" y="${ly}" font-family="Arial" font-size="12" fill="#2A2A22">${(g.concepto||'Sin nombre').slice(0,32)}</text>
+      <text x="${W-20}" y="${ly}" font-family="Arial" font-size="12" fill="#5A5A52" text-anchor="end">$${fmt(g.monto)} · ${fmtD(frac*100)}%</text>`;
     ang = a2;
   });
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
     ${arcos}
-    <text x="${cx}" y="${cy-4}" font-family="Georgia" font-size="18" font-weight="bold" fill="#2B2927" text-anchor="middle">$${fmt(total)}</text>
-    <text x="${cx}" y="${cy+16}" font-family="Arial" font-size="10" fill="#9C968E" text-anchor="middle">FIJOS / MES</text>
+    <text x="${cx}" y="${cy-4}" font-family="Georgia" font-size="18" font-weight="bold" fill="#1A1A18" text-anchor="middle">$${fmt(total)}</text>
+    <text x="${cx}" y="${cy+16}" font-family="Arial" font-size="10" fill="#8A8A80" text-anchor="middle">FIJOS / MES</text>
     ${leyenda}
   </svg>`;
 }
@@ -14744,13 +14714,13 @@ function chartCascada(ventas, margenPct, fijos, margenEventos=0){
 
   // Pasos del waterfall con acumulado real
   const pasos = [
-    {lab:'Ventas', tipo:'abs', val:ventas, col:'#4A5D4E'},
-    {lab:'Mercadería', tipo:'delta', val:-mercaderia, col:'#C86D51'},
+    {lab:'Ventas', tipo:'abs', val:ventas, col:'#C8A96E'},
+    {lab:'Mercadería', tipo:'delta', val:-mercaderia, col:'#8B1A1A'},
     {lab:'Margen bruto', tipo:'sub', val:margenBruto, col:'#6B8E4E'},
   ];
   if(margenEventos!==0) pasos.push({lab:'Eventos', tipo:'delta', val:margenEventos, col:'#B08D57'});
-  pasos.push({lab:'Gastos fijos', tipo:'delta', val:-fijos, col:'#C86D51'});
-  pasos.push({lab:'Resultado', tipo:'sub', val:resultado, col:resultado>=0?'#4A5D4E':'#C02626'});
+  pasos.push({lab:'Gastos fijos', tipo:'delta', val:-fijos, col:'#8B1A1A'});
+  pasos.push({lab:'Resultado', tipo:'sub', val:resultado, col:resultado>=0?'#2D5016':'#C02626'});
 
   const n = pasos.length;
   const W=640,H=330,mL=20,mR=20,mT=30,mB=56;
@@ -14772,19 +14742,19 @@ function chartCascada(ventas, margenPct, fijos, margenEventos=0){
     const h = Math.max(2, Math.abs(Y(desde)-Y(hasta)));
     const esNeg = p.val<0;
     svg += `<rect x="${bx(i)}" y="${yTop}" width="${bw}" height="${h}" rx="4" fill="${p.col}"/>
-      <text x="${bx(i)+bw/2}" y="${yTop-8}" font-family="Arial" font-size="12" font-weight="bold" fill="#2B2927" text-anchor="middle">${esNeg?'−':(p.tipo==='delta'?'+':'')}${fmtCorto(Math.abs(p.val))}</text>
-      <text x="${bx(i)+bw/2}" y="${mT+ph+18}" font-family="Arial" font-size="11" fill="#6B6660" text-anchor="middle">${p.lab}</text>`;
+      <text x="${bx(i)+bw/2}" y="${yTop-8}" font-family="Arial" font-size="12" font-weight="bold" fill="#1A1A18" text-anchor="middle">${esNeg?'−':(p.tipo==='delta'?'+':'')}${fmtCorto(Math.abs(p.val))}</text>
+      <text x="${bx(i)+bw/2}" y="${mT+ph+18}" font-family="Arial" font-size="11" fill="#5A5A52" text-anchor="middle">${p.lab}</text>`;
     // conector punteado hacia la próxima barra
     if(i<n-1){
       const yRun = Y(run);
-      svg += `<line x1="${bx(i)+bw}" y1="${yRun}" x2="${bx(i+1)}" y2="${yRun}" stroke="#9C968E" stroke-width="1" stroke-dasharray="3,3"/>`;
+      svg += `<line x1="${bx(i)+bw}" y1="${yRun}" x2="${bx(i+1)}" y2="${yRun}" stroke="#8A8A80" stroke-width="1" stroke-dasharray="3,3"/>`;
     }
   });
 
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
     <line x1="${mL}" y1="${Y(0)}" x2="${mL+pw}" y2="${Y(0)}" stroke="#D8D2C8" stroke-width="1.5"/>
     ${svg}
-    <text x="${mL}" y="${H-8}" font-family="Arial" font-size="10" fill="#9C968E">El recorrido del peso: de la venta al resultado</text>
+    <text x="${mL}" y="${H-8}" font-family="Arial" font-size="10" fill="#8A8A80">El recorrido del peso: de la venta al resultado</text>
   </svg>`;
 }
 
@@ -14803,15 +14773,15 @@ function chartEstructura100(ventas, mercaderia, estructura, resultado){
   const xEstFin = px(mercaderia+estructura);
   const xVentas = px(ventas);
 
-  let barras = `<rect x="${mL}" y="${y0}" width="${Math.max(0,xMercFin-mL)}" height="${barH}" fill="#C86D51"/>`;
-  barras += `<rect x="${xMercFin}" y="${y0}" width="${Math.max(0,xEstFin-xMercFin)}" height="${barH}" fill="#6B6660"/>`;
+  let barras = `<rect x="${mL}" y="${y0}" width="${Math.max(0,xMercFin-mL)}" height="${barH}" fill="#8B1A1A"/>`;
+  barras += `<rect x="${xMercFin}" y="${y0}" width="${Math.max(0,xEstFin-xMercFin)}" height="${barH}" fill="#5A5A52"/>`;
   if(resultado >= 0){
-    barras += `<rect x="${xEstFin}" y="${y0}" width="${Math.max(0,xVentas-xEstFin)}" height="${barH}" fill="#4A5D4E"/>`;
+    barras += `<rect x="${xEstFin}" y="${y0}" width="${Math.max(0,xVentas-xEstFin)}" height="${barH}" fill="#2D5016"/>`;
   }
 
   const marca = `
-    <line x1="${xVentas}" y1="${y0-10}" x2="${xVentas}" y2="${y0+barH+10}" stroke="#2B2927" stroke-width="1.5" stroke-dasharray="4,3"/>
-    <text x="${xVentas}" y="${y0-16}" font-family="Arial" font-size="11" font-weight="bold" fill="#2B2927" text-anchor="middle">100% de tus ventas · $${fmt(ventas)}</text>`;
+    <line x1="${xVentas}" y1="${y0-10}" x2="${xVentas}" y2="${y0+barH+10}" stroke="#1A1A18" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="${xVentas}" y="${y0-16}" font-family="Arial" font-size="11" font-weight="bold" fill="#1A1A18" text-anchor="middle">100% de tus ventas · $${fmt(ventas)}</text>`;
 
   const deficit = resultado < 0
     ? `<text x="${mL}" y="${y0+barH+28}" font-family="Arial" font-size="12" font-weight="bold" fill="#C02626">− $${fmt(Math.abs(resultado))} sin cubrir — mercadería + estructura superan lo que entra</text>`
@@ -14822,10 +14792,10 @@ function chartEstructura100(ventas, mercaderia, estructura, resultado){
   const pctRes = ventas>0 ? resultado/ventas*100 : 0;
   const filaLeg = (i, color, label, val, pct) => `
     <rect x="${mL}" y="${y0+barH+40+i*22}" width="12" height="12" rx="3" fill="${color}"/>
-    <text x="${mL+18}" y="${y0+barH+50+i*22}" font-family="Arial" font-size="12" fill="#3D3A36">${label}: ${val<0?'−':''}$${fmt(Math.abs(val))} · ${val<0?'−':''}${fmtD(Math.abs(pct))}%</text>`;
-  const leyenda = filaLeg(0,'#C86D51','Mercadería',mercaderia,pctMerc)
-    + filaLeg(1,'#6B6660','Estructura',estructura,pctEst)
-    + filaLeg(2, resultado>=0?'#4A5D4E':'#C02626', 'Resultado', resultado, pctRes);
+    <text x="${mL+18}" y="${y0+barH+50+i*22}" font-family="Arial" font-size="12" fill="#2A2A22">${label}: ${val<0?'−':''}$${fmt(Math.abs(val))} · ${val<0?'−':''}${fmtD(Math.abs(pct))}%</text>`;
+  const leyenda = filaLeg(0,'#8B1A1A','Mercadería',mercaderia,pctMerc)
+    + filaLeg(1,'#5A5A52','Estructura',estructura,pctEst)
+    + filaLeg(2, resultado>=0?'#2D5016':'#C02626', 'Resultado', resultado, pctRes);
 
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FFFFFF">
     ${barras}${marca}${deficit}${leyenda}
@@ -14834,10 +14804,10 @@ function chartEstructura100(ventas, mercaderia, estructura, resultado){
 
 // ── INGENIERÍA DE MENÚ — Matriz de Kasavana & Smith ──
 const CLASES_MENU = {
-  estrella:  {nombre:'Estrella',            col:'#4A5D4E', consejo:'Protegela: mantené calidad, precio y visibilidad. Es la que sostiene el negocio.'},
+  estrella:  {nombre:'Estrella',            col:'#2D5016', consejo:'Protegela: mantené calidad, precio y visibilidad. Es la que sostiene el negocio.'},
   caballito: {nombre:'Caballito de batalla', col:'#B8860B', consejo:'Se vende mucho pero deja poco: subí el precio, ajustá la porción o bajá el costo de la receta.'},
-  puzzle:    {nombre:'Puzzle',              col:'#4A5D4E', consejo:'Margen alto pero poca venta: dale visibilidad en la carta, renombrala o que el mozo la sugiera.'},
-  perro:     {nombre:'Perro',               col:'#C86D51', consejo:'Ni se vende ni deja margen: candidata a salir de la carta o reformularse por completo.'},
+  puzzle:    {nombre:'Puzzle',              col:'#C8A96E', consejo:'Margen alto pero poca venta: dale visibilidad en la carta, renombrala o que el mozo la sugiera.'},
+  perro:     {nombre:'Perro',               col:'#8B1A1A', consejo:'Ni se vende ni deja margen: candidata a salir de la carta o reformularse por completo.'},
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -15085,9 +15055,9 @@ function chartMatriz(matriz, popThreshold, mcProm){
 
   // Etiquetas de cuadrante
   const qLabels = `
-    <text x="${(mL+X(popThreshold))/2}" y="${mT+20}" font-family="Arial" font-size="12" font-weight="700" fill="#4A5D4E" opacity="0.7" text-anchor="middle">PUZZLE</text>
-    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+20}" font-family="Arial" font-size="12" font-weight="700" fill="#4A5D4E" opacity="0.7" text-anchor="middle">ESTRELLA ⭐</text>
-    <text x="${(mL+X(popThreshold))/2}" y="${mT+ph-10}" font-family="Arial" font-size="12" font-weight="700" fill="#C86D51" opacity="0.7" text-anchor="middle">PERRO</text>
+    <text x="${(mL+X(popThreshold))/2}" y="${mT+20}" font-family="Arial" font-size="12" font-weight="700" fill="#C8A96E" opacity="0.7" text-anchor="middle">PUZZLE</text>
+    <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+20}" font-family="Arial" font-size="12" font-weight="700" fill="#2D5016" opacity="0.7" text-anchor="middle">ESTRELLA ⭐</text>
+    <text x="${(mL+X(popThreshold))/2}" y="${mT+ph-10}" font-family="Arial" font-size="12" font-weight="700" fill="#8B1A1A" opacity="0.7" text-anchor="middle">PERRO</text>
     <text x="${(X(popThreshold)+mL+pw)/2}" y="${mT+ph-10}" font-family="Arial" font-size="12" font-weight="700" fill="#B8860B" opacity="0.7" text-anchor="middle">CABALLITO</text>`;
 
   // Ejes y líneas de corte
@@ -15161,7 +15131,7 @@ function chartFoodCost(matriz){
   const bars = sorted.map((i,idx)=>{
     const pct = Math.min(i.fc, 100);
     const bw  = (pct/100)*barW;
-    const col = pct > 40 ? '#C86D51' : pct > 30 ? '#B8860B' : '#4A5D4E';
+    const col = pct > 40 ? '#8B1A1A' : pct > 30 ? '#B8860B' : '#2D5016';
     const y   = 20 + idx*36;
     const nom = i.nombre.length>30 ? i.nombre.slice(0,29)+'…' : i.nombre;
     return `<g>
@@ -15175,10 +15145,10 @@ function chartFoodCost(matriz){
   const x30 = lblW + (30/100)*barW;
   const x40 = lblW + (40/100)*barW;
   const lineas = `
-    <line x1="${x30}" y1="18" x2="${x30}" y2="${H-4}" stroke="#4A5D4E" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
-    <line x1="${x40}" y1="18" x2="${x40}" y2="${H-4}" stroke="#C86D51" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
-    <text x="${x30}" y="14" font-family="Arial" font-size="9" fill="#4A5D4E" text-anchor="middle">30%</text>
-    <text x="${x40}" y="14" font-family="Arial" font-size="9" fill="#C86D51" text-anchor="middle">40%</text>`;
+    <line x1="${x30}" y1="18" x2="${x30}" y2="${H-4}" stroke="#2D5016" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+    <line x1="${x40}" y1="18" x2="${x40}" y2="${H-4}" stroke="#8B1A1A" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+    <text x="${x30}" y="14" font-family="Arial" font-size="9" fill="#2D5016" text-anchor="middle">30%</text>
+    <text x="${x40}" y="14" font-family="Arial" font-size="9" fill="#8B1A1A" text-anchor="middle">40%</text>`;
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;background:#FAFAF8;border-radius:10px">
     <text x="0" y="14" font-family="Arial" font-size="11" fill="#888">% Food cost por plato (mayor a menor)</text>
     ${lineas}${bars}
@@ -15432,7 +15402,7 @@ function descargarGrafico(contId, nombre){
 // rotisería y un restaurante de autor no se miden con la misma vara. Por eso el
 // texto de abajo dice "referencia" y no "objetivo".
 function _kpiColor(v, bien, atencion){
-  if(v == null) return {bg:'#F8F6F0', bd:'#E2DFD8', tx:'#6B6660'};
+  if(v == null) return {bg:'#F5F0E8', bd:'#EDE8E0', tx:'#5A5A52'};
   if(v <= bien)     return {bg:'#E4F3E6', bd:'#A9D8B2', tx:'#1B7A34'};
   if(v <= atencion) return {bg:'#FDF0D0', bd:'#D4B870', tx:'#6B4A08'};
   return {bg:'#FCE8E8', bd:'#EFB2B2', tx:'#C02626'};
@@ -15561,7 +15531,7 @@ function _htmlCruceCanales(km){
   filas.sort((a,b)=>a.dif-b.dif);
   const pill = c => {
     const col = {estrella:['#E4F3E6','#1B7A34'], caballito:['#FDF0D0','#6B4A08'],
-                 puzzle:['#E8EFF7','#1F4E79'], perro:['#FCE8E8','#C02626']}[c] || ['#F8F6F0','#6B6660'];
+                 puzzle:['#E8EFF7','#1F4E79'], perro:['#FCE8E8','#C02626']}[c] || ['#F5F0E8','#5A5A52'];
     const nom = {estrella:'Estrella', caballito:'Caballito', puzzle:'Puzzle', perro:'Perro'}[c] || c;
     return `<span style="background:${col[0]};color:${col[1]};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${nom}</span>`;
   };
@@ -16516,26 +16486,26 @@ function descargarInforme(){
   w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
   <title>Informe — ${esc(op.nombre)}</title>
   <style>
-    body{font-family:Georgia,serif;color:#2B2927;margin:0;padding:36px 44px;background:#fff}
-    .hd{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #4A5D4E;padding-bottom:14px;margin-bottom:6px}
+    body{font-family:Georgia,serif;color:#1A1A18;margin:0;padding:36px 44px;background:#fff}
+    .hd{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #C8A96E;padding-bottom:14px;margin-bottom:6px}
     .logo{font-size:26px;font-weight:bold;letter-spacing:.02em}
-    .logo small{display:block;font-family:Arial;font-size:9px;letter-spacing:.2em;color:#4A5D4E;font-weight:normal}
-    .fecha{font-family:Arial;font-size:12px;color:#6B6660}
+    .logo small{display:block;font-family:Arial;font-size:9px;letter-spacing:.2em;color:#C8A96E;font-weight:normal}
+    .fecha{font-family:Arial;font-size:12px;color:#5A5A52}
     h1{font-size:20px;margin:18px 0 2px}
-    .sub{font-family:Arial;font-size:12px;color:#6B6660;margin-bottom:22px}
+    .sub{font-family:Arial;font-size:12px;color:#5A5A52;margin-bottom:22px}
     .mets{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:26px}
-    .met{border:1px solid #E2DFD8;border-radius:10px;padding:12px 14px}
-    .met .l{font-family:Arial;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#9C968E;margin-bottom:6px}
+    .met{border:1px solid #EDE8E0;border-radius:10px;padding:12px 14px}
+    .met .l{font-family:Arial;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#8A8A80;margin-bottom:6px}
     .met .v{font-size:20px;font-weight:bold}
-    .met .s{font-family:Arial;font-size:10px;color:#6B6660;margin-top:4px}
-    h2{font-size:15px;margin:26px 0 10px;border-left:3px solid #4A5D4E;padding-left:10px}
+    .met .s{font-family:Arial;font-size:10px;color:#5A5A52;margin-top:4px}
+    h2{font-size:15px;margin:26px 0 10px;border-left:3px solid #C8A96E;padding-left:10px}
     table{width:100%;border-collapse:collapse;font-family:Arial;font-size:12px}
-    th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9C968E;border-bottom:1px solid #E2DFD8;padding:6px 4px}
-    td{padding:7px 4px;border-bottom:1px solid #F8F6F0}
-    .tot td{font-weight:bold;border-top:2px solid #E2DFD8}
+    th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#8A8A80;border-bottom:1px solid #EDE8E0;padding:6px 4px}
+    td{padding:7px 4px;border-bottom:1px solid #F5F0E8}
+    .tot td{font-weight:bold;border-top:2px solid #EDE8E0}
     .num{text-align:right}
     .chart{margin:6px 0 10px;page-break-inside:avoid}
-    .foot{margin-top:38px;padding-top:14px;border-top:1px solid #E2DFD8;display:flex;justify-content:space-between;font-family:Arial;font-size:10px;color:#9C968E}
+    .foot{margin-top:38px;padding-top:14px;border-top:1px solid #EDE8E0;display:flex;justify-content:space-between;font-family:Arial;font-size:10px;color:#8A8A80}
     .fil{font-family:Georgia;font-style:italic;color:#B08D57}
     @media print{ body{padding:20px 24px} }
   
@@ -16570,7 +16540,7 @@ function descargarInforme(){
 }
 </style></head><body>
     <div class="hd">
-      <div class="logo" style="display:flex;align-items:center;gap:12px"><svg width="44" height="44" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#2B2927" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#4A5D4E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#2B2927" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#2B2927" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#4A5D4E"/></svg><span>Provatio<small>GESTIÓN GASTRONÓMICA</small></span></div>
+      <div class="logo" style="display:flex;align-items:center;gap:12px"><svg width="44" height="44" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#1A1A18" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#1A1A18" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#1A1A18" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#C8A96E"/></svg><span>Provatio<small>GESTIÓN GASTRONÓMICA</small></span></div>
       <div class="fecha">${fecha}</div>
     </div>
     <h1>Informe de salud del negocio — ${esc(op.nombre)}</h1>
@@ -16624,7 +16594,7 @@ function descargarInforme(){
           ${fila('% de las unidades', uTot?fmtD(A.u/uTot*100)+'%':'—', uTot?fmtD(B.u/uTot*100)+'%':'—')}
           ${fila('Facturación', '$'+fmt(Math.round(A.v)), '$'+fmt(Math.round(B.v)))}
           ${fila('% de la facturación', vTot?fmtD(A.v/vTot*100)+'%':'—', vTot?fmtD(B.v/vTot*100)+'%':'—')}
-          ${fila('Costo del producto', '$'+fmt(Math.round(A.m)), '$'+fmt(Math.round(B.m))+' <span style="color:#9C968E">(incluye comisión y packaging)</span>')}
+          ${fila('Costo del producto', '$'+fmt(Math.round(A.m)), '$'+fmt(Math.round(B.m))+' <span style="color:#8A8A80">(incluye comisión y packaging)</span>')}
           ${fila('Food cost', fmtD(A.fc)+'%', fmtD(B.fc)+'%')}
           ${fila('Margen de contribución', '$'+fmt(Math.round(A.mc)), '$'+fmt(Math.round(B.mc)))}
           <tr class="tot"><td>% del margen total</td><td class="num">${mcTot?fmtD(A.mc/mcTot*100)+'%':'—'}</td><td class="num">${mcTot?fmtD(B.mc/mcTot*100)+'%':'—'}</td></tr>
@@ -16863,9 +16833,9 @@ async function cargarUsuariosFirebase(){
 function tipoBadgeColor(tipo){
   const t = tipo||'';
   if(t==='Centro de Producción'||t==='centroProduccion')
-    return {bg:'#4A5D4E', color:'#FFFFFF', label:'🏭 Centro de Producción'};
+    return {bg:'#2D5016', color:'#FFFFFF', label:'🏭 Centro de Producción'};
   if(t==='darkKitchen'||t==='Dark Kitchen')
-    return {bg:'#2B2927', color:'#4A5D4E', label:'🌑 Dark Kitchen'};
+    return {bg:'#1A1A18', color:'#C8A96E', label:'🌑 Dark Kitchen'};
   if(t==='hotel'||t==='Hotel')
     return {bg:'#1B3A5C', color:'#FFFFFF', label:'🏨 Hotel'};
   if(t==='catering'||t==='Catering')
@@ -16877,7 +16847,7 @@ function tipoBadgeColor(tipo){
   if(t==='comedor'||t==='Comedor empresarial')
     return {bg:'#3D5A7A', color:'#FFFFFF', label:'🏢 Comedor'};
   // Restaurante y default — dorado
-  return {bg:'#4A5D4E', color:'#2B2927', label:'🍽 Restaurante'};
+  return {bg:'#C8A96E', color:'#1A1A18', label:'🍽 Restaurante'};
 }
 function tipoBadgeHtml(tipo){
   const b = tipoBadgeColor(tipo);
@@ -17180,7 +17150,7 @@ async function modalEditarEmpresa(empresaId){
         <label>Nombre de la empresa</label>
         <input type="text" id="ee-nombre" value="${esc(emp.nombre||'')}" placeholder="Ej: Kansas" style="width:100%">
       </div>
-      <div style="background:var(--crema,#F8F6F0);border-radius:8px;padding:12px 14px;margin-top:8px;font-size:12px;color:var(--gris-2)">
+      <div style="background:var(--crema,#F5F0E8);border-radius:8px;padding:12px 14px;margin-top:8px;font-size:12px;color:var(--gris-2)">
         <div><strong>Operaciones:</strong> ${ops.length ? ops.map(esc).join(', ') : 'ninguna'}</div>
         <div style="margin-top:4px"><strong>ID interno:</strong> ${esc(empresaId)}</div>
       </div>
@@ -17341,7 +17311,7 @@ async function modalGestionarCuenta(uid){
       <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
     </div>
     <div class="modal-body">
-      <div style="background:var(--crema,#F8F6F0);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px">
+      <div style="background:var(--crema,#F5F0E8);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px">
         <div><strong>${esc(cuenta.email||'')}</strong></div>
         <div style="color:var(--gris-2);margin-top:4px">
           ${empActual ? `Pertenece a <strong>${esc(empActual.nombre||cuenta.empresaId)}</strong>${esDuenoActual?' · 👑 Dueño':' · Miembro'}` : 'Sin empresa asignada (cuenta libre)'}
@@ -19103,7 +19073,7 @@ async function procesarCartaPDF(file){
       console.error('[Provatio] falló la revisión:', err);
       const el = document.getElementById('carta-progreso');
       if(el) el.innerHTML = `
-        <div style="color:var(--bordo,#C86D51);margin-bottom:8px">
+        <div style="color:var(--bordo,#8B1A1A);margin-bottom:8px">
           ✕ La carta se leyó bien pero no pude armar la pantalla de revisión (${esc(err.message)}).
         </div>
         <div style="margin-bottom:8px">No perdiste el trabajo: bajalo como archivo y luego importalo con "Importar operación completa".</div>
@@ -19112,7 +19082,7 @@ async function procesarCartaPDF(file){
   }catch(e){
     _cartaPaso('', 0);
     const el = document.getElementById('carta-progreso');
-    if(el) el.innerHTML = `<span style="color:var(--bordo,#C86D51)">✕ ${esc(e.message)}</span>`;
+    if(el) el.innerHTML = `<span style="color:var(--bordo,#8B1A1A)">✕ ${esc(e.message)}</span>`;
     showToast('⚠ '+e.message,'error');
   }
 }
@@ -19189,7 +19159,7 @@ function renderRevisionCarta(){
   const conPrecio = filas.filter(f=>f.pv>0 && f.ok);
   const prom = conPrecio.length ? conPrecio.reduce((a,f)=>a+f.pctCosto,0)/conPrecio.length : 0;
   const rojos = conPrecio.filter(f=>f.pctCosto>38).length;
-  const color = p => p<=30 ? 'var(--oliva)' : (p<=38 ? '#B8540A' : 'var(--bordo,#C86D51)');
+  const color = p => p<=30 ? 'var(--oliva)' : (p<=38 ? '#B8540A' : 'var(--bordo,#8B1A1A)');
 
   setContent('Revisar la carta leída', `
     <div style="display:flex;gap:8px;margin-bottom:16px">
@@ -19357,11 +19327,11 @@ function renderImportExport(){
         <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
           <button class="btn btn-secondary" onclick="exportarOperacion()" style="justify-content:flex-start;padding:14px;height:auto;flex-direction:column;align-items:flex-start;gap:4px">
             <strong>Exportar operación completa</strong>
-            <span style="font-size:12px;color:#6B6660">Ingredientes + mermas + recetas + configuración</span>
+            <span style="font-size:12px;color:#5A5A52">Ingredientes + mermas + recetas + configuración</span>
           </button>
           <button class="btn btn-secondary" onclick="exportarSoloRecetas()" style="justify-content:flex-start;padding:14px;height:auto;flex-direction:column;align-items:flex-start;gap:4px">
             <strong>Exportar solo recetas</strong>
-            <span style="font-size:12px;color:#6B6660">Para compartir con otra operación</span>
+            <span style="font-size:12px;color:#5A5A52">Para compartir con otra operación</span>
           </button>
         </div>
       </div>
@@ -19371,11 +19341,11 @@ function renderImportExport(){
         <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
           <button class="btn btn-secondary" onclick="importarOperacion()" style="justify-content:flex-start;padding:14px;height:auto;flex-direction:column;align-items:flex-start;gap:4px">
             <strong>Importar operación completa</strong>
-            <span style="font-size:12px;color:#6B6660">Desde backup o desde otra operación Provatio</span>
+            <span style="font-size:12px;color:#5A5A52">Desde backup o desde otra operación Provatio</span>
           </button>
           <button class="btn btn-secondary" onclick="importarRecetas()" style="justify-content:flex-start;padding:14px;height:auto;flex-direction:column;align-items:flex-start;gap:4px">
             <strong>Importar solo recetas (JSON)</strong>
-            <span style="font-size:12px;color:#6B6660">Agregar recetas a esta operación</span>
+            <span style="font-size:12px;color:#5A5A52">Agregar recetas a esta operación</span>
           </button>
           <button class="btn btn-primary" onclick="importarDesdeExcel()" style="justify-content:flex-start;padding:14px;height:auto;flex-direction:column;align-items:flex-start;gap:4px">
             <strong>${ico('chart',13)} Importar desde Excel</strong>
@@ -19810,7 +19780,7 @@ function _htmlDespiece(){
           <span class="card-title">${esc(corte.nombre)}
             <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${esc(ing.nombre)} · $${fmt(precioXkg)}/kg</span></span>
           <div style="display:flex;gap:8px;align-items:center">
-            <span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${porFicha?'#EBF3FF':'#F8F6F0'};color:${porFicha?'#1F4E79':'#6B6660'}">
+            <span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${porFicha?'#EBF3FF':'#F5F0E8'};color:${porFicha?'#1F4E79':'#5A5A52'}">
               ${porFicha?'ficha de despiece':'reparto por peso'}</span>
             <button class="btn btn-danger btn-sm" onclick="delCorte('${escJs(corte.id)}')">${ico('trash',13)}</button>
           </div>
@@ -19872,7 +19842,7 @@ function renderSubproductos(){
         <div class="card-header">
           <span class="card-title">${ico('tag',14)} ${esc(corte.nombre)}</span>
           <div style="display:flex;gap:8px">
-            <span style="font-size:12px;color:#6B6660">Precio base: $${fmt(precioXkg)}/kg</span>
+            <span style="font-size:12px;color:#5A5A52">Precio base: $${fmt(precioXkg)}/kg</span>
             <button class="btn btn-secondary btn-sm" onclick="editarCorte('${escJs(corte.id)}')">${ico('edit',13)} Editar</button>
             <button class="btn btn-danger btn-sm" onclick="delCorte('${escJs(corte.id)}')">${ico('trash',13)} Eliminar</button>
           </div>
@@ -19908,7 +19878,7 @@ function renderSubproductos(){
                 <td colspan="2"><strong>Total peso útil</strong></td>
                 <td style="text-align:right"><strong>${pesoUtil}%</strong></td>
                 <td style="text-align:right">
-                  <span style="font-size:12px;color:#6B6660">
+                  <span style="font-size:12px;color:#5A5A52">
                     ${100-pesoUtil}% desperdicio
                   </span>
                 </td>
@@ -19970,7 +19940,7 @@ function modalNuevoCorte(){
       
       <div style="margin-top:16px;margin-bottom:8px">
         <strong style="font-size:13px">Partes del corte</strong>
-        <span style="font-size:12px;color:#6B6660;margin-left:8px">Los % deben sumar 100</span>
+        <span style="font-size:12px;color:#5A5A52;margin-left:8px">Los % deben sumar 100</span>
       </div>
       
       <div id="nc-partes">
@@ -20011,7 +19981,7 @@ function modalNuevoCorte(){
       
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-secondary btn-sm" onclick="agregarParteCorte()">+ Agregar parte</button>
-        <span id="nc-total" style="font-size:12px;color:#6B6660;line-height:2">Total: calculando...</span>
+        <span id="nc-total" style="font-size:12px;color:#5A5A52;line-height:2">Total: calculando...</span>
       </div>
     </div>
     <div class="modal-footer">
@@ -20278,7 +20248,7 @@ function renderPersonal(){
     <div class="card">
       <div class="card-header">
         <span class="card-title">Menú semanal de personal</span>
-        <span style="font-size:12px;color:#6B6660">${p.cantEmpleados} empleados · ${p.servicios.join(', ')}</span>
+        <span style="font-size:12px;color:#5A5A52">${p.cantEmpleados} empleados · ${p.servicios.join(', ')}</span>
       </div>
       <div class="table-wrap">
         <table>
@@ -21124,7 +21094,7 @@ function renderCierreServicio(){
           ${(!_mal && calc.redestinado>0) ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
             A otra preparación: <strong>${fmtD(calc.redestinado,2)} kg</strong>${calc.costoRedestinado?' · $'+fmt(calc.costoRedestinado):''}
           </div>` : ''}
-          ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#C86D51)">
+          ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#8B1A1A)">
             Se tira: <strong>${fmtD(calc.descartado,2)} kg</strong>
             ${calc.costoDescartado?' · $'+fmt(calc.costoDescartado):''}
             ${calc.pctDescarte!=null?' · '+fmtD(calc.pctDescarte,1)+'% de lo que sacaste':''}
@@ -21172,7 +21142,7 @@ function renderCierreServicio(){
           ${(!_mal && calc.redestinado>0) ? `<div style="margin-top:6px;font-size:12px;color:#6B4A08">
             A otra preparación: <strong>${fmt(calc.redestinado)} u</strong>
           </div>` : ''}
-          ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#C86D51)">
+          ${calc.descartado>0 ? `<div style="margin-top:6px;font-size:12px;color:var(--bordo,#8B1A1A)">
             Se tira: <strong>${fmt(calc.descartado)} u</strong>
             ${calc.costoDescartado?' · $'+fmt(calc.costoDescartado):''}
             ${calc.pctDescarte!=null?' · '+fmtD(calc.pctDescarte,1)+'% de lo que sacaste':''}
@@ -21353,7 +21323,7 @@ function renderCierreServicio(){
         ${box('Sacado al despacho', fmtD(sacado,1)+' kg', 'lo que salió de cocina','')}
         ${box('Se lo comieron', fmtD(comido,1)+' kg', paxNum>0?fmtD(comido*1000/paxNum,0)+' g por persona':'cargá los comensales','')}
         ${box('Vuelve al stock', fmtD(reuso,1)+' kg', 'recuperado, no se perdió','#2D6A4F')}
-        ${box('Se tira', fmtD(tirado,1)+' kg', (pct!=null?fmtD(pct,1)+'% de lo sacado':'')+(plata?' · $'+fmt(plata):''), tirado>0?'var(--bordo,#C86D51)':'')}
+        ${box('Se tira', fmtD(tirado,1)+' kg', (pct!=null?fmtD(pct,1)+'% de lo sacado':'')+(plata?' · $'+fmt(plata):''), tirado>0?'var(--bordo,#8B1A1A)':'')}
         ${paxNum>0 ? box('Costo por cubierto', '$'+fmt(costoTotal/paxNum), 'de este servicio','') : ''}
       </div>`;
     })()}
@@ -22049,7 +22019,7 @@ function mostrarPendienteActivacion(user){
     align-items:center;
     justify-content:center;
     z-index:500;
-    font-family:'Plus Jakarta Sans',sans-serif;
+    font-family:'Inter',sans-serif;
   `;
   
   pendiente.innerHTML = `
@@ -22057,7 +22027,7 @@ function mostrarPendienteActivacion(user){
       
       <!-- Logo -->
       <div style="margin-bottom:32px">
-        <h1 style="font-family:'Lora',Georgia,serif;font-size:32px;font-weight:700;color:var(--negro);letter-spacing:-0.5px">
+        <h1 style="font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:var(--negro);letter-spacing:-0.5px">
           Provatio
         </h1>
         <p style="font-size:11px;color:var(--dorado);text-transform:uppercase;letter-spacing:0.12em;margin-top:4px">
@@ -22071,7 +22041,7 @@ function mostrarPendienteActivacion(user){
       </div>
 
       <!-- Título -->
-      <h2 style="font-family:'Lora',Georgia,serif;font-size:24px;font-weight:700;color:var(--negro);margin-bottom:12px">
+      <h2 style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:var(--negro);margin-bottom:12px">
         ${user.estadoCuenta==='suspendida' ? 'Tu acceso está pausado' : '¡Bienvenido a Provatio!'}
       </h2>
 
@@ -22093,12 +22063,12 @@ function mostrarPendienteActivacion(user){
           Tu cuenta
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <div style="width:36px;height:36px;background:var(--dorado-c);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Lora',Georgia,serif;font-weight:700;color:var(--dorado);font-size:15px">
+          <div style="width:36px;height:36px;background:var(--dorado-c);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-weight:700;color:var(--dorado);font-size:15px">
             ${(user.displayName||user.email)[0].toUpperCase()}
           </div>
           <div>
             <div style="font-size:13px;font-weight:600;color:var(--negro)">${user.email}</div>
-            <div style="font-size:11px;color:#6B6660">${user.estadoCuenta==='suspendida' ? 'Cuenta suspendida · Datos guardados' : 'Cuenta creada · Lista para el onboarding'}</div>
+            <div style="font-size:11px;color:#5A5A52">${user.estadoCuenta==='suspendida' ? 'Cuenta suspendida · Datos guardados' : 'Cuenta creada · Lista para el onboarding'}</div>
           </div>
         </div>
       </div>
@@ -22113,21 +22083,21 @@ function mostrarPendienteActivacion(user){
             <div style="width:24px;height:24px;background:var(--oliva-c);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--oliva);flex-shrink:0">✓</div>
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--negro)">Cuenta creada</div>
-              <div style="font-size:12px;color:#6B6660">Ya estás registrado en Provatio</div>
+              <div style="font-size:12px;color:#5A5A52">Ya estás registrado en Provatio</div>
             </div>
           </div>
           <div style="display:flex;align-items:flex-start;gap:12px">
             <div style="width:24px;height:24px;background:var(--dorado-c);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--dorado);flex-shrink:0">2</div>
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--negro)">Onboarding juntos</div>
-              <div style="font-size:12px;color:#6B6660">Coordinamos y armamos tu operación paso a paso</div>
+              <div style="font-size:12px;color:#5A5A52">Coordinamos y armamos tu operación paso a paso</div>
             </div>
           </div>
           <div style="display:flex;align-items:flex-start;gap:12px">
             <div style="width:24px;height:24px;background:var(--crema-2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#4A4A42;flex-shrink:0">3</div>
             <div>
-              <div style="font-size:13px;font-weight:600;color:#6B6660">Empezás a gestionar</div>
-              <div style="font-size:12px;color:#6B6660">Tus costos reales, al día, con todos los módulos</div>
+              <div style="font-size:13px;font-weight:600;color:#5A5A52">Empezás a gestionar</div>
+              <div style="font-size:12px;color:#5A5A52">Tus costos reales, al día, con todos los módulos</div>
             </div>
           </div>
         </div>
@@ -22136,20 +22106,20 @@ function mostrarPendienteActivacion(user){
       <!-- Botones -->
       <div style="display:flex;flex-direction:column;gap:10px">
         <a href="https://wa.me/5492664728720?text=${user.estadoCuenta==='suspendida' ? 'Hola!%20Mi%20cuenta%20de%20Provatio%20est%C3%A1%20suspendida%20y%20quiero%20reactivarla' : 'Hola!%20Me%20registré%20en%20Provatio%20y%20quiero%20coordinar%20el%20onboarding'}" target="_blank" rel="noopener"
-          style="width:100%;padding:13px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;text-decoration:none;display:block;box-sizing:border-box">
+          style="width:100%;padding:13px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;text-decoration:none;display:block;box-sizing:border-box">
           💬 ${user.estadoCuenta==='suspendida' ? 'Escribinos para reactivar' : 'Escribinos para arrancar'}
         </a>
         <button onclick="verificarActivacion()" 
-          style="width:100%;padding:11px;background:transparent;color:#4A4A42;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+          style="width:100%;padding:11px;background:transparent;color:#4A4A42;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif">
           Ya coordiné — verificar mi acceso
         </button>
         <button onclick="auth.signOut().then(()=>{document.getElementById('pending-screen').style.display='none';document.getElementById('auth-screen').style.display='flex'})" 
-          style="width:100%;padding:11px;background:transparent;color:#4A4A42;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+          style="width:100%;padding:11px;background:transparent;color:#4A4A42;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif">
           Cerrar sesión
         </button>
       </div>
 
-      <p style="margin-top:24px;font-size:12px;color:#6B6660">
+      <p style="margin-top:24px;font-size:12px;color:#5A5A52">
         provatio.io · De chef para chefs
       </p>
     </div>
@@ -22223,7 +22193,7 @@ function renderOnboardingPaso(paso){
     backdrop-filter:blur(6px);
     display:flex;align-items:center;justify-content:center;
     z-index:700;padding:20px;
-    font-family:'Plus Jakarta Sans',sans-serif;
+    font-family:'Inter',sans-serif;
   `;
 
   const stepData = ONBOARDING_STEPS[paso-1];
@@ -22239,12 +22209,12 @@ function renderOnboardingPaso(paso){
             <div style="font-size:11px;color:var(--dorado);text-transform:uppercase;letter-spacing:0.12em;font-weight:700;margin-bottom:4px">
               Paso ${paso} de 5
             </div>
-            <h2 style="font-family:'Lora',Georgia,serif;font-size:22px;font-weight:700;color:var(--blanco)">
+            <h2 style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--blanco)">
               ${stepData.icono} ${stepData.titulo}
             </h2>
           </div>
           <button onclick="saltarOnboarding()" 
-            style="background:rgba(255,255,255,0.1);border:none;color:rgba(255,255,255,0.5);padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+            style="background:rgba(255,255,255,0.1);border:none;color:rgba(255,255,255,0.5);padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif">
             Saltar tour
           </button>
         </div>
@@ -22279,11 +22249,11 @@ function renderOnboardingPaso(paso){
         <div style="font-size:12px;color:var(--gris-2)">${stepData.desc}</div>
         <div style="display:flex;gap:8px">
           ${paso > 1 ? `<button onclick="irOnboardingPaso(${paso-1})" 
-            style="padding:10px 16px;background:transparent;color:var(--gris-1);border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+            style="padding:10px 16px;background:transparent;color:var(--gris-1);border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif">
             ← Anterior
           </button>` : ''}
           <button onclick="avanzarOnboarding(${paso})" id="btn-onboarding-next"
-            style="padding:10px 20px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+            style="padding:10px 20px;background:var(--negro);color:var(--blanco);border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif">
             ${paso < 5 ? 'Continuar →' : '¡Empezar a usar Provatio!'}
           </button>
         </div>
@@ -22303,12 +22273,12 @@ function getOnboardingContent(paso){
           <div>
             <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Nombre de tu operación</label>
             <input type="text" id="ob-nombre" value="${esc(getOp()?.nombre||'')}" placeholder="Ej: Restaurante El Olivo"
-              style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:14px;font-family:'Plus Jakarta Sans',sans-serif">
+              style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:14px;font-family:'Inter',sans-serif">
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
               <label style="display:block;font-size:11px;font-weight:700;color:var(--gris-1);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Tipo</label>
-              <select id="ob-tipo" style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif">
+              <select id="ob-tipo" style="width:100%;padding:10px 12px;border:1.5px solid var(--crema-2);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif">
                 ${['Restaurante','Catering','Viandas','Pastelería','Hotel','Comedor','Dark Kitchen','Centro de Producción','Otro'].map(t=>`<option${getOp()?.tipo===t?' selected':''}>${t}</option>`).join('')}
               </select>
             </div>
@@ -22338,7 +22308,7 @@ function getOnboardingContent(paso){
         `).join('')}
       </div>
       <button onclick="cerrarOnboarding();navigate('ingredientes');modalNuevoIng()"
-        style="width:100%;padding:11px;background:var(--oliva);color:var(--blanco);border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+        style="width:100%;padding:11px;background:var(--oliva);color:var(--blanco);border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif">
         + Agregar ingrediente ahora
       </button>
     `;
@@ -22360,7 +22330,7 @@ function getOnboardingContent(paso){
         `).join('')}
       </div>
       <button onclick="cerrarOnboarding();navigate('recetas');nuevaReceta()"
-        style="width:100%;padding:11px;background:var(--oliva);color:var(--blanco);border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+        style="width:100%;padding:11px;background:var(--oliva);color:var(--blanco);border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif">
         + Crear primera receta
       </button>
     `;
@@ -22376,7 +22346,7 @@ function getOnboardingContent(paso){
             <div style="font-size:12px;color:rgba(255,255,255,0.7);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">
               Costo real de "${r.nombre}"
             </div>
-            <div style="font-family:'Lora',Georgia,serif;font-size:36px;font-weight:700;color:var(--blanco)">
+            <div style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:var(--blanco)">
               $${fmt(merc)}
             </div>
             <div style="font-size:13px;color:rgba(255,255,255,0.7);margin-top:4px">por porción · mermas incluidas</div>
@@ -22413,15 +22383,15 @@ function getOnboardingContent(paso){
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div style="text-align:center;background:var(--blanco);border-radius:8px;padding:12px">
-                <div style="font-family:'Lora',Georgia,serif;font-size:22px;font-weight:700;color:var(--negro)">$${fmt(total)}</div>
+                <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--negro)">$${fmt(total)}</div>
                 <div style="font-size:10px;color:var(--gris-2);margin-top:2px">COSTO TOTAL</div>
               </div>
               <div style="text-align:center;background:var(--blanco);border-radius:8px;padding:12px">
-                <div style="font-family:'Lora',Georgia,serif;font-size:22px;font-weight:700;color:var(--oliva)">$${fmt(merc)}</div>
+                <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--oliva)">$${fmt(merc)}</div>
                 <div style="font-size:10px;color:var(--gris-2);margin-top:2px">COSTO/PORCIÓN</div>
               </div>
               <div style="text-align:center;background:var(--blanco);border-radius:8px;padding:12px">
-                <div style="font-family:'Lora',Georgia,serif;font-size:22px;font-weight:700;color:var(--dorado)">${fmtD(getOp()?.precioVenta?merc/getOp()?.precioVenta*100:0)}%</div>
+                <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--dorado)">${fmtD(getOp()?.precioVenta?merc/getOp()?.precioVenta*100:0)}%</div>
                 <div style="font-size:10px;color:var(--gris-2);margin-top:2px">% COSTO</div>
               </div>
             </div>
@@ -22593,7 +22563,7 @@ function _mostrarAvisoInactividad(){
     aviso.innerHTML = `
       <div style="background:var(--blanco,#fff);border-radius:14px;padding:28px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25)">
         <div style="font-size:40px;margin-bottom:8px">⏳</div>
-        <h3 style="font-family:'Lora',Georgia,serif;font-size:20px;margin-bottom:8px;color:#1a1a1a">¿Seguís ahí?</h3>
+        <h3 style="font-family:'Playfair Display',serif;font-size:20px;margin-bottom:8px;color:#1a1a1a">¿Seguís ahí?</h3>
         <p style="font-size:14px;color:#555;line-height:1.6;margin-bottom:20px">
           Tu sesión está por cerrarse por inactividad. Tus datos se guardan solos antes de cerrar.
         </p>
@@ -22682,7 +22652,7 @@ window.__appOk = true;
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M7 13a4 4 0 0 1-1-7.9A5 5 0 0 1 12 3a5 5 0 0 1 6 2.1A4 4 0 0 1 17 13v5H7v-5z"/><path d="M7 18h10v2.5H7z"/></svg>
     </div>
     <div style="flex:1">
-      <div style="font-family:'Lora',Georgia,serif;font-size:15px;font-weight:700;color:var(--blanco)">Chefcito</div>
+      <div style="font-family:'Playfair Display',serif;font-size:15px;font-weight:700;color:var(--blanco)">Chefcito</div>
       <div style="font-size:11px;color:var(--dorado);opacity:0.8">30 años de operatoria · disponible 24/7</div>
     </div>
     <button onclick="toggleChefIA()" style="background:none;border:none;color:rgba(255,255,255,0.5);font-size:18px;cursor:pointer;padding:4px">✕</button>
@@ -22704,7 +22674,7 @@ window.__appOk = true;
   <!-- Input -->
   <div style="padding:12px 16px;border-top:1px solid var(--crema-2);background:var(--blanco);display:flex;gap:8px">
     <input type="text" id="chef-input" placeholder="Preguntale a Chefcito..." 
-      style="flex:1;padding:10px 14px;border:1.5px solid var(--crema-2);border-radius:24px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;outline:none"
+      style="flex:1;padding:10px 14px;border:1.5px solid var(--crema-2);border-radius:24px;font-size:13px;font-family:'Inter',sans-serif;outline:none"
       onkeydown="if(event.key==='Enter')enviarChef()"
       onfocus="this.style.borderColor='var(--dorado)'"
       onblur="this.style.borderColor='var(--crema-2)'">
@@ -22894,7 +22864,7 @@ ${contexto}`,
     var d = document.createElement('div');
     d.id = 'prov-instalar';
     d.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));'
-      + 'z-index:9998;background:#2B2927;color:#F7F4EE;border-radius:12px;padding:14px 16px;'
+      + 'z-index:9998;background:#1A1A18;color:#F7F4EE;border-radius:12px;padding:14px 16px;'
       + 'font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;'
       + 'box-shadow:0 6px 24px rgba(0,0,0,.35);display:flex;gap:12px;align-items:center;flex-wrap:wrap';
     d.innerHTML = html;
@@ -22924,7 +22894,7 @@ ${contexto}`,
     setTimeout(function(){
       if(document.getElementById('prov-instalar')) return;
       var d = cartel('<div style="flex:1;min-width:180px">Instalá Provatio en este teléfono para abrirlo como una app.</div>'
-        + '<button id="prov-btn-inst" style="background:#4A5D4E;color:#2B2927;border:0;border-radius:8px;padding:9px 16px;font-weight:700;font-size:14px;cursor:pointer">Instalar</button>'
+        + '<button id="prov-btn-inst" style="background:#C8A96E;color:#1A1A18;border:0;border-radius:8px;padding:9px 16px;font-weight:700;font-size:14px;cursor:pointer">Instalar</button>'
         + '<button onclick="_provCerrarInstalar()" style="background:transparent;color:#B9B4AA;border:0;padding:9px 6px;font-size:14px;cursor:pointer">Ahora no</button>');
       d.querySelector('#prov-btn-inst').addEventListener('click', function(){
         cerrar();
@@ -22947,9 +22917,9 @@ ${contexto}`,
       if(document.getElementById('prov-instalar')) return;
       cartel(esSafari
         ? '<div style="flex:1;min-width:180px">Para tener Provatio como app: tocá <strong>Compartir</strong> abajo y elegí <strong>Agregar a inicio</strong>.</div>'
-          + '<button onclick="_provCerrarInstalar()" style="background:#4A5D4E;color:#2B2927;border:0;border-radius:8px;padding:9px 16px;font-weight:700;font-size:14px;cursor:pointer">Entendido</button>'
+          + '<button onclick="_provCerrarInstalar()" style="background:#C8A96E;color:#1A1A18;border:0;border-radius:8px;padding:9px 16px;font-weight:700;font-size:14px;cursor:pointer">Entendido</button>'
         : '<div style="flex:1;min-width:180px">Para instalar Provatio en el iPhone hay que abrirlo con <strong>Safari</strong>.</div>'
-          + '<button onclick="_provCerrarInstalar()" style="background:#4A5D4E;color:#2B2927;border:0;border-radius:8px;padding:9px 16px;font-weight:700;font-size:14px;cursor:pointer">Entendido</button>');
+          + '<button onclick="_provCerrarInstalar()" style="background:#C8A96E;color:#1A1A18;border:0;border-radius:8px;padding:9px 16px;font-weight:700;font-size:14px;cursor:pointer">Entendido</button>');
     }, 5000);
   });
 })();
