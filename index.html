@@ -8311,6 +8311,16 @@ function renderEditorReceta(){
     programarAutoguardadoReceta();
   }
   const esPrep = !!r.esPreparacion;
+  // Rescate de filas rotas: si alguna quedó con "rec:xxx" guardado en el campo
+  // de ingrediente (pasó mientras la conversión estaba mal enganchada), se
+  // convierte sola a subreceta al abrir la receta. Nadie tiene que borrar nada.
+  (r.ingredientes||[]).forEach(ln=>{
+    if(ln && typeof ln.ingId === 'string' && ln.ingId.startsWith('rec:')){
+      ln.recetaId = ln.ingId.slice(4);
+      delete ln.ingId; delete ln.tecnica;
+      programarAutoguardadoReceta();
+    }
+  });
   const _subSinRend = (r.ingredientes||[])
     .filter(i => i && i.recetaId)
     .map(i => demoData.recetas.find(x=>x.id===i.recetaId))
@@ -9176,6 +9186,18 @@ function agregarIngReceta(){ recetaEditando.ingredientes.push({ingId:'',tecnica:
 function onChangeIngrediente(idx, ingId){
   const ing = recetaEditando.ingredientes[idx];
   if(!ing) return;
+  // Si en el desplegable se eligió una PREPARACIÓN, esta fila deja de ser un
+  // ingrediente y pasa a ser una subreceta: se guarda el id de la receta y se
+  // borra todo lo que ya no aplica. La técnica y la merma no van: la merma de
+  // una preparación ya está aplicada adentro de su propia receta.
+  if(typeof ingId === 'string' && ingId.startsWith('rec:')){
+    delete ing.ingId; delete ing.tecnica; delete ing.esCondimento;
+    delete ing.productoCP; delete ing._esCP; delete ing._modoUso;
+    delete ing.porcionesCP; delete ing._revisarPorciones;
+    ing.recetaId = ingId.slice(4);
+    renderEditorReceta(); programarAutoguardadoReceta();
+    return;
+  }
   ing.ingId = ingId;
   delete ing.productoCP;
   delete ing._esCP;
