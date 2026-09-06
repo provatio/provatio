@@ -3532,6 +3532,16 @@ function esLoteDeCP(r, op){
 }
 function costoComparableReceta(r, merc, op){
   const m = +merc || 0;
+  // Una PREPARACIÓN que además se vende: el precio es el de una porción, así que
+  // el costo comparable es el de esa porción, no el de la olla entera. Un puré
+  // que cuesta $5.367 la olla y se vende a $8.000 la porción no tiene 63 % de
+  // food cost: tiene 5,6 %, porque la porción de 200 g cuesta $447.
+  // Sin el tamaño de la porción no se puede comparar nada: devuelve 0, que es
+  // como el resto del sistema dice "todavía no".
+  if(r && r.esPreparacion && +r.precioVenta > 0){
+    const rendP = +r.rendimientoG || 0, porc = +r.porcionVentaG || 0;
+    return (rendP > 0 && porc > 0) ? m / rendP * porc : 0;
+  }
   if(!esLoteDeCP(r, op)) return m;
   const rend = +r.rendimientoG || 0;
   return rend > 0 ? m / rend * 1000 : 0;   // 0 = todavía no se puede comparar
@@ -3541,6 +3551,10 @@ function costoComparableReceta(r, merc, op){
 // cuando pasa lo segundo manda al usuario a corregir el campo equivocado.
 function estadoCostoReceta(r, merc, op){
   if(esLoteDeCP(r, op) && !(+r.rendimientoG > 0)) return {pct:null, base:0, motivo:'sin-rendimiento'};
+  // Preparación con precio pero sin definir de cuántos gramos es la porción.
+  // Decir "sin costo" mandaría a corregir el campo equivocado.
+  if(r && r.esPreparacion && +r.precioVenta > 0 && !(+r.porcionVentaG > 0))
+    return {pct:null, base:0, motivo:'sin-porcion'};
   const base = costoComparableReceta(r, merc, op);
   const pv = (r && +r.precioVenta) || 0;
   if(!(pv > 0))   return {pct:null, base, motivo:'sin-precio'};
@@ -3578,6 +3592,9 @@ function semaforoReceta(r, merc, op){
   const m = metricaPrecioReceta(r, merc, op);
   if(m.motivo === 'sin-rendimiento'){
     return `<span class="sem sem-a" title="Es un lote del centro de producción y todavía no está cargado cuánto pesa terminado. Sin ese dato no se puede saber el costo por kilo, que es contra lo que se compara el precio de transferencia.">${dot} Falta el peso del lote</span>`;
+  }
+  if(m.motivo === 'sin-porcion'){
+    return `<span class="sem sem-a" title="Es una preparación que también se vende. El precio es el de una porción, así que hay que decir de cuántos gramos es esa porción: si no, se estaría comparando contra el costo de la olla entera.">${dot} Falta el tamaño de la porción</span>`;
   }
   if(m.tipo === 'foodcost') return semaforo(m.valor);
   // Margen del CP sobre su propio costo.
@@ -8465,7 +8482,7 @@ function renderEditorReceta(){
             ${pct===null?'— Sin precio':fmtD(pct)+'%'}
           </div>`}
         </div>
-        <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${_prepSinPorcionVenta(r) ? '<span class="sem sem-a">● Falta el tamaño de la porción</span>' : semaforoReceta(r, baseCosto)}</div></div>
+        <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${semaforoReceta(r, merc)}</div></div>
       `}
     </div>
 
@@ -8878,6 +8895,7 @@ function renderFichaPlato(id){
             : `<div class="metric-value" style="font-size:14px;color:var(--gris-2)">— Sin precio</div>`}
         </div>
         <div class="metric"><div class="metric-label">${_esCPFicha?'Margen sobre el costo':'Food cost'}</div><div style="margin-top:8px">${semaforoReceta(receta, merc)}</div></div>
+        ${(receta.esPreparacion && +receta.porcionVentaG>0) ? `<div class="metric"><div class="metric-label">Porción que se vende</div><div class="metric-value">${fmt(receta.porcionVentaG)} g</div><div class="metric-sub">cuesta $${fmt(costoComparableReceta(receta, merc))}</div></div>` : ''}
       `}
       ` : ''}
     </div>
@@ -14894,10 +14912,11 @@ function _clasificarSet(items){
 // distinto.
 function _costoUnidadVenta(r){
   const {merc} = calcReceta(r, r.porciones||1);
-  const rend = +r.rendimientoG || 0;
-  const porc = +r.porcionVentaG || 0;
-  if(r.esPreparacion && rend > 0 && porc > 0) return merc / rend * porc;
-  return merc;
+  // Se apoya en costoComparableReceta para que no haya dos reglas distintas
+  // diciendo lo mismo. Si esa función no puede (falta la porción), acá se
+  // devuelve el costo del lote, que es lo único cierto que hay.
+  const base = costoComparableReceta(r, merc);
+  return base > 0 ? base : merc;
 }
 // ¿Falta definir de cuánto es la porción que se vende?
 function _prepSinPorcionVenta(r){
