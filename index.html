@@ -8201,7 +8201,7 @@ function renderEditorReceta(){
     return `<tr>
       <td data-col="ingrediente">
         <select onchange="onChangeIngrediente(${idx},this.value)" style="min-width:180px">
-          ${_opcionesIngrediente(ing.ingId)}
+          ${_opcionesIngrediente(ing.ingId, {conPreparaciones:true, excluirReceta:r.id})}
         </select>
       </td>
       <td data-col="tecnica">
@@ -9072,7 +9072,7 @@ function renderVarianteDelivery(r, mercSalon){
     const esCPIng = ing._esCP || false;
     const modoUsoCP = ing._modoUso || 'granel';
                 return `<tr>
-                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px">${_opcionesIngrediente(ing.ingId)}</select></td>
+                  <td><select onchange="updIngDelivery(${idx},'ingId',this.value)" style="min-width:160px">${_opcionesIngrediente(ing.ingId, {conPreparaciones:true, excluirReceta:r.id})}</select></td>
                   <td><select onchange="updIngDelivery(${idx},'tecnica',this.value)" style="min-width:120px">${_opcionesTecnica(ingObj, ing.tecnica)}</select></td>
                   <td><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:75px;text-align:right" onchange="updIngDelivery(${idx},'neto',num(this.value))"></td>
                   <td style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
