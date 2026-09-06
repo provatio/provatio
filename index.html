@@ -3542,6 +3542,14 @@ function costoComparableReceta(r, merc, op){
   // Sin el tamaño de la porción no se puede comparar nada: devuelve 0, que es
   // como el resto del sistema dice "todavía no".
   if(r && r.esPreparacion && +r.precioVenta > 0){
+    // Si rinde en UNIDADES, lo que se vende son unidades: el costo comparable es
+    // el de una unidad (o las que lleve la porción). Buscar una porción en
+    // gramos acá devolvía 0 y el food cost salía disparatado.
+    if(_rindeEnUnidades(r)){
+      const u = +r.rendimientoUnid || 0;
+      if(!(u > 0)) return 0;
+      return (m / u) * (+r.porcionVentaUnid || 1);
+    }
     const rendP = +r.rendimientoG || 0, porc = +r.porcionVentaG || 0;
     return (rendP > 0 && porc > 0) ? m / rendP * porc : 0;
   }
@@ -3556,8 +3564,9 @@ function estadoCostoReceta(r, merc, op){
   if(esLoteDeCP(r, op) && !(+r.rendimientoG > 0)) return {pct:null, base:0, motivo:'sin-rendimiento'};
   // Preparación con precio pero sin definir de cuántos gramos es la porción.
   // Decir "sin costo" mandaría a corregir el campo equivocado.
-  if(r && r.esPreparacion && +r.precioVenta > 0 && !(+r.porcionVentaG > 0))
-    return {pct:null, base:0, motivo:'sin-porcion'};
+  if(r && r.esPreparacion && +r.precioVenta > 0
+     && !(_rindeEnUnidades(r) ? _prepTieneRendimiento(r) : (+r.porcionVentaG > 0)))
+    return {pct:null, base:0, motivo:_rindeEnUnidades(r) ? 'sin-rendimiento-unid' : 'sin-porcion'};
   const base = costoComparableReceta(r, merc, op);
   const pv = (r && +r.precioVenta) || 0;
   if(!(pv > 0))   return {pct:null, base, motivo:'sin-precio'};
@@ -3595,6 +3604,9 @@ function semaforoReceta(r, merc, op){
   const m = metricaPrecioReceta(r, merc, op);
   if(m.motivo === 'sin-rendimiento'){
     return `<span class="sem sem-a" title="Es un lote del centro de producción y todavía no está cargado cuánto pesa terminado. Sin ese dato no se puede saber el costo por kilo, que es contra lo que se compara el precio de transferencia.">${dot} Falta el peso del lote</span>`;
+  }
+  if(m.motivo === 'sin-rendimiento-unid'){
+    return `<span class="sem sem-a" title="Es una preparación que rinde en unidades y todavía no está cargado cuántas salen del lote. Sin eso no se sabe cuánto cuesta cada una.">${dot} Falta cuántas unidades salen</span>`;
   }
   if(m.motivo === 'sin-porcion'){
     return `<span class="sem sem-a" title="Es una preparación que también se vende. El precio es el de una porción, así que hay que decir de cuántos gramos es esa porción: si no, se estaría comparando contra el costo de la olla entera.">${dot} Falta el tamaño de la porción</span>`;
@@ -8004,7 +8016,14 @@ function _bloqueCategoriaRecetas(g, esCP, opts){
 
 function renderRecetas(){
   const esCP = esCentroProduccion();
-  const todas = getRecetas();
+  // RECETAS ES LA CARTA. Una preparación que no se vende sola —una salsa fileto,
+  // un lote de milanesas crudas— no va acá: vive en Subrecetas, que es donde se
+  // la busca. Si además tiene precio, entonces sí está en la carta y aparece en
+  // las dos, porque cumple los dos roles. No hay que declarar nada: se deduce de
+  // si tiene precio o no.
+  const _todasIncluidasPreps = getRecetas();
+  const todas = _todasIncluidasPreps.filter(r => !(esPreparacionReceta(r) && !(+r.precioVenta > 0)));
+  const _prepsOcultas = _todasIncluidasPreps.length - todas.length;
   const grupos = _gruposRecetas(todas);
 
   setContent('Recetas', `
@@ -8020,7 +8039,7 @@ function renderRecetas(){
         <button class="btn btn-secondary btn-sm" onclick="expandirTodoRecetas(false)">Contraer todo</button>`:''}
     </div>
     <div style="font-size:12px;color:var(--gris-2);margin-bottom:12px">
-      ${todas.length} receta${todas.length!==1?'s':''} en ${grupos.length} categoría${grupos.length!==1?'s':''}
+      ${todas.length} receta${todas.length!==1?'s':''} en ${grupos.length} categoría${grupos.length!==1?'s':''}${_prepsOcultas?` · <a href="#" onclick="navigate('subrecetas');return false" style="color:var(--azul)">${_prepsOcultas} preparación${_prepsOcultas!==1?'es':''} en Subrecetas</a>`:''}
     </div>
     <div id="rec-lista">
       ${grupos.length
@@ -8479,7 +8498,15 @@ function renderEditorReceta(){
               + (usadaComoInsumo ? ' · la usan ' + _recetasQueLaUsan.length + ' plato' + (_recetasQueLaUsan.length>1?'s':'') : '')
             : 'pesá la olla terminada y cargá acá cuánto dio'}</div>
         </div>`) : ''}
-        ${esPrep ? (+r.precioVenta>0 ? `
+        ${esPrep ? (+r.precioVenta>0 ? (_rindeEnUnidades(r) ? `
+        <div class="metric">
+          <div class="metric-label">Unidades por porción</div>
+          <input type="text" inputmode="decimal" value="${r.porcionVentaUnid||1}" placeholder="1"
+            style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+            title="Cuántas unidades lleva la porción que se vende. Casi siempre 1: una milanesa es una milanesa."
+            onchange="recetaEditando.porcionVentaUnid=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+          <div class="metric-sub">${_prepTieneRendimiento(r)?'cuesta $'+fmt(costoComparableReceta(r, merc)):'falta cuántas salen del lote'}</div>
+        </div>` : `
         <div class="metric">
           <div class="metric-label">Porción que vendés (g)</div>
           <input type="text" inputmode="decimal" value="${r.porcionVentaG||''}" placeholder="ej: 200"
@@ -8489,7 +8516,7 @@ function renderEditorReceta(){
           <div class="metric-sub">${(+r.porcionVentaG>0 && +r.rendimientoG>0)
             ? 'cuesta $'+fmt(_costoUnidadVenta(r))+' · salen '+fmtD((+r.rendimientoG)/(+r.porcionVentaG),1)+' porciones por olla'
             : 'de la olla salen varias: cuánto pesa cada una'}</div>
-        </div>` : '') : `<div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>`}
+        </div>`) : '') : `<div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>`}
         <div class="metric"><div class="metric-label">${esCP ? "Margen sobre el costo" : "% sobre precio venta"}</div>
           ${esCP
             ? (()=>{ const _mg = metricaPrecioReceta(r, merc);
