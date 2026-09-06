@@ -4471,7 +4471,7 @@ function renderFacturas(){
       return `<tr style="cursor:pointer" onclick="window._facVer='${f.id}';renderFacturas()" title="Ver detalle">
         <td>${_facFmtFecha(f.fecha)}</td>
         <td>${f.nro?'<span style="font-family:monospace;font-size:12px">'+f.nro+'</span>':'<span style="color:var(--gris-3)">s/n</span>'}</td>
-        <td><strong>${f.proveedor||'Sin proveedor'}</strong></td>
+        <td><strong>${esc(f.proveedor||'Sin proveedor')}</strong></td>
         <td style="text-align:center">${f.medio==='ia'?'📷 IA':'✍️ Manual'}</td>
         <td style="text-align:right">${(f.items||[]).length} ítems</td>
         <td style="text-align:right">$${fmt(tot)}</td>
@@ -4520,7 +4520,7 @@ function renderDetalleFactura(fid){
              : i.accion==='crear' ? '<span style="color:#B8540A">＋ Creó ingrediente</span>'
              : '<span style="color:var(--gris-2)">Omitido</span>';
     return `<tr>
-      <td><strong>${i.desc||'—'}</strong></td>
+      <td><strong>${esc(i.desc||'—')}</strong></td>
       <td style="text-align:right">${i.cantidad||'—'} ${i.unidad||''}</td>
       <td style="text-align:right">${pu!==null?'$'+fmt(pu)+'/'+(i.unidad==='unidades'?'u':i.unidad==='litros'?'L':'kg'):'—'}</td>
       <td style="text-align:right">$${fmt(+i.precioTotal||0)}</td>
@@ -4532,7 +4532,7 @@ function renderDetalleFactura(fid){
     <div class="card" style="margin-bottom:16px">
       <div class="card-header"><span class="card-title">Datos del comprobante</span></div>
       <div style="padding:14px 18px;display:flex;gap:32px;flex-wrap:wrap;font-size:14px">
-        <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">Proveedor</div><strong>${f.proveedor||'Sin proveedor'}</strong></div>
+        <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">Proveedor</div><strong>${esc(f.proveedor||'Sin proveedor')}</strong></div>
         <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">Fecha</div><strong>${_facFmtFecha(f.fecha)}</strong></div>
         <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">N° comprobante</div><strong>${f.nro||'s/n'}</strong></div>
         <div><div style="font-size:11px;color:var(--gris-2);text-transform:uppercase">Origen</div><strong>${f.medio==='ia'?'📷 IA':'✍️ Manual'}</strong></div>
@@ -4619,7 +4619,7 @@ function renderConciliacionFactura(){
     </select>`;
     const catDef = it.cat || _facSugerirCat(it.desc||'');
     const sugs = (!it.matchId && it.desc) ? _facSugerencias(it.desc, 3) : [];
-    const chips = sugs.length ? `<div style="margin-top:4px;font-size:11px;color:var(--gris-2)">¿Es alguno? ${sugs.map(s=>`<span onclick="updFacItem(${ix},'matchId','${s.ing.id}')" style="cursor:pointer;color:var(--azul);text-decoration:underline;margin-right:8px">${s.ing.nombre}</span>`).join('')}</div>` : '';
+    const chips = sugs.length ? `<div style="margin-top:4px;font-size:11px;color:var(--gris-2)">¿Es alguno? ${sugs.map(s=>`<span onclick="updFacItem(${ix},'matchId','${escJs(s.ing.id)}')" style="cursor:pointer;color:var(--azul);text-decoration:underline;margin-right:8px">${esc(s.ing.nombre)}</span>`).join('')}</div>` : '';
     const celdaMatch = it.accion==='crear'
       ? `<div style="font-size:10px;color:#B8540A;font-weight:700;margin-bottom:2px">SE CREARÁ EN:</div><select onchange="updFacItem(${ix},'cat',this.value)" style="min-width:150px">${_facCatsDisponibles().map(c=>`<option value="${c}"${c===catDef?' selected':''}>${c}</option>`).join('')}</select>${chips}`
       : selMatch + chips;
@@ -15084,7 +15084,7 @@ function chartMatriz(matriz, popThreshold, mcProm){
     return `<g>
       <circle cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="${c}" opacity="0.25" stroke="${c}" stroke-width="1.5"/>
       <circle cx="${cx}" cy="${cy}" r="${(r*0.45).toFixed(1)}" fill="${c}" opacity="0.9"/>
-      <title>${i.nombre} · ${CLASES_MENU[i.clase].nombre} · ${i.unid} u · $${fmt(i.mc)}/p · contrib $${fmt(i.contribucion)}</title>
+      <title>${esc(i.nombre)} · ${CLASES_MENU[i.clase].nombre} · ${i.unid} u · $${fmt(i.mc)}/p · contrib $${fmt(i.contribucion)}</title>
       ${lbl}
     </g>`;
   }).join('');
@@ -16484,7 +16484,7 @@ function descargarInforme(){
   const w = window.open('', '_blank');
   if(!w){ showToast('El navegador bloqueó la ventana — permití pop-ups','error'); return; }
   w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
-  <title>Informe — ${op.nombre}</title>
+  <title>Informe — ${esc(op.nombre)}</title>
   <style>
     body{font-family:Georgia,serif;color:#1A1A18;margin:0;padding:36px 44px;background:#fff}
     .hd{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #C8A96E;padding-bottom:14px;margin-bottom:6px}
@@ -16543,7 +16543,7 @@ function descargarInforme(){
       <div class="logo" style="display:flex;align-items:center;gap:12px"><svg width="44" height="44" viewBox="0 0 64 68" style="flex-shrink:0"><circle cx="30" cy="34" r="30" fill="none" stroke="#1A1A18" stroke-width="2.5"/><line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/><path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#1A1A18" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="50" x2="46" y2="50" stroke="#1A1A18" stroke-width="2.5" stroke-linecap="round"/><circle cx="41" cy="43" r="2.6" fill="#C8A96E"/></svg><span>Provatio<small>GESTIÓN GASTRONÓMICA</small></span></div>
       <div class="fecha">${fecha}</div>
     </div>
-    <h1>Informe de salud del negocio — ${op.nombre}</h1>
+    <h1>Informe de salud del negocio — ${esc(op.nombre)}</h1>
     <div class="sub">Tipo de operación: ${op.tipo || '—'} · Días operativos por mes: ${c.dias}</div>
 
     ${c.kpi && c.kpi.listo ? `
@@ -16644,7 +16644,7 @@ function descargarInforme(){
       <thead><tr><th>Fecha</th><th>Ítem</th><th>Motivo</th><th class="num">Cantidad</th><th class="num">Costo</th></tr></thead>
       <tbody>
         ${c.despLogMes.slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')).map(r=>`
-          <tr><td>${r.fecha||'—'}</td><td>${r.nombre||'—'}</td><td>${r.motivo||'—'}</td>
+          <tr><td>${r.fecha||'—'}</td><td>${r.nombre||'—'}</td><td>${esc(r.motivo||'—')}</td>
               <td class="num">${fmt(r.cantidad||0)} ${r.unidad||''}</td>
               <td class="num">$${fmt(Math.round(r.costo||0))}</td></tr>`).join('')}
         <tr class="tot"><td colspan="4">Total del mes</td><td class="num">$${fmt(Math.round(c.despLogMes.reduce((s,r)=>s+(+r.costo||0),0)))}</td></tr>
@@ -16657,7 +16657,7 @@ function descargarInforme(){
     <table>
       <thead><tr><th>Concepto</th><th class="num">Monto mensual</th><th class="num">Peso</th></tr></thead>
       <tbody>
-        ${c.gastos.filter(x=>+x.monto>0).map(x=>`<tr><td>${x.concepto||'Sin nombre'}</td><td class="num">$${fmt(x.monto)}</td><td class="num">${fmtD((+x.monto)/c.totalFijos*100)}%</td></tr>`).join('')}
+        ${c.gastos.filter(x=>+x.monto>0).map(x=>`<tr><td>${esc(x.concepto||'Sin nombre')}</td><td class="num">$${fmt(x.monto)}</td><td class="num">${fmtD((+x.monto)/c.totalFijos*100)}%</td></tr>`).join('')}
         <tr class="tot"><td>Total</td><td class="num">$${fmt(c.totalFijos)}</td><td class="num">100%</td></tr>
       </tbody>
     </table>
@@ -18054,7 +18054,7 @@ window.modalVincularCadena = function(opId){
   }
   openModal(`
     <div class="modal-header">
-      <span class="modal-title">Vincular a cadena — ${op.nombre}</span>
+      <span class="modal-title">Vincular a cadena — ${esc(op.nombre)}</span>
       <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
     </div>
     <div class="modal-body">
@@ -18112,7 +18112,7 @@ window.modalDatosCliente = function(opId){
   const tipos = ['Restaurante','Hotel','Catering','Viandas','Pastelería','Comedor empresarial','Dark Kitchen','Centro de Producción / Casa Matriz','Otro'];
   openModal(`
     <div class="modal-header">
-      <span class="modal-title">Datos del cliente — ${op.nombre}</span>
+      <span class="modal-title">Datos del cliente — ${esc(op.nombre)}</span>
       <button class="btn btn-icon" onclick="closeModal()" title="Cerrar">✕</button>
     </div>
     <div class="modal-body">
@@ -18598,7 +18598,7 @@ function procesarImportacion(data){
     <div class="modal-body">
       <div class="alert alert-info">Se encontraron los siguientes datos para importar:</div>
       <table style="width:100%;font-size:13px;margin-bottom:16px">
-        <tr><td style="padding:6px 0;color:var(--gris-3)">Operación</td><td><strong>${data.operacion.nombre}</strong></td></tr>
+        <tr><td style="padding:6px 0;color:var(--gris-3)">Operación</td><td><strong>${esc(data.operacion.nombre)}</strong></td></tr>
         <tr><td style="padding:6px 0;color:var(--gris-3)">Ingredientes</td><td><strong>${(data.ingredientes||[]).length}</strong></td></tr>
         <tr><td style="padding:6px 0;color:var(--gris-3)">Mermas</td><td><strong>${(data.mermas||[]).length}</strong></td></tr>
         <tr><td style="padding:6px 0;color:var(--gris-3)">Recetas</td><td><strong>${(data.recetas||[]).length}</strong></td></tr>
@@ -19840,7 +19840,7 @@ function renderSubproductos(){
     return `
       <div class="card" style="margin-bottom:16px">
         <div class="card-header">
-          <span class="card-title">${ico('tag',14)} ${corte.nombre}</span>
+          <span class="card-title">${ico('tag',14)} ${esc(corte.nombre)}</span>
           <div style="display:flex;gap:8px">
             <span style="font-size:12px;color:#5A5A52">Precio base: $${fmt(precioXkg)}/kg</span>
             <button class="btn btn-secondary btn-sm" onclick="editarCorte('${escJs(corte.id)}')">${ico('edit',13)} Editar</button>
