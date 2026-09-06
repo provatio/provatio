@@ -8264,7 +8264,9 @@ function renderEditorReceta(){
   // con el costo recién calculado unas líneas más arriba. Por eso agregar,
   // sacar o cambiar un ingrediente actualiza el precio (o el %) al instante,
   // sin tener que volver a tipear nada.
-  const baseCosto = esCP ? _reconciliarPrecioMargen(r, merc) : merc;
+  // Contra qué se compara el precio de venta. En una preparación que se vende,
+  // NO es el costo de la olla: es el de la porción que sale al salón.
+  const baseCosto = esCP ? _reconciliarPrecioMargen(r, merc) : _costoUnidadVenta(r);
 
   // Food cost sobre el precio, para el semáforo. Tiene que compararse contra
   // la MISMA base que el precio: en una receta "Elaborado" del CP el precio es
@@ -8444,7 +8446,17 @@ function renderEditorReceta(){
               + (usadaComoInsumo ? ' · la usan ' + _recetasQueLaUsan.length + ' plato' + (_recetasQueLaUsan.length>1?'s':'') : '')
             : 'pesá la olla terminada y cargá acá cuánto dio'}</div>
         </div>` : ''}
-        ${esPrep ? '' : `<div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>`}
+        ${esPrep ? (+r.precioVenta>0 ? `
+        <div class="metric">
+          <div class="metric-label">Porción que vendés (g)</div>
+          <input type="text" inputmode="decimal" value="${r.porcionVentaG||''}" placeholder="ej: 200"
+            style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+            title="Cuántos gramos lleva la porción que sale al salón. Sin esto el food cost compararía el precio de una porción contra el costo de la olla entera."
+            onchange="recetaEditando.porcionVentaG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+          <div class="metric-sub">${(+r.porcionVentaG>0 && +r.rendimientoG>0)
+            ? 'cuesta $'+fmt(_costoUnidadVenta(r))+' · salen '+fmtD((+r.rendimientoG)/(+r.porcionVentaG),1)+' porciones por olla'
+            : 'de la olla salen varias: cuánto pesa cada una'}</div>
+        </div>` : '') : `<div class="metric"><div class="metric-label">Mercadería / porción</div><div class="metric-value">$${fmt(merc)}</div></div>`}
         <div class="metric"><div class="metric-label">${esCP ? "Margen sobre el costo" : "% sobre precio venta"}</div>
           ${esCP
             ? (()=>{ const _mg = metricaPrecioReceta(r, merc);
@@ -8453,7 +8465,7 @@ function renderEditorReceta(){
             ${pct===null?'— Sin precio':fmtD(pct)+'%'}
           </div>`}
         </div>
-        <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${semaforoReceta(r, merc)}</div></div>
+        <div class="metric"><div class="metric-label">Estado</div><div style="margin-top:8px">${_prepSinPorcionVenta(r) ? '<span class="sem sem-a">● Falta el tamaño de la porción</span>' : semaforoReceta(r, baseCosto)}</div></div>
       `}
     </div>
 
@@ -14822,7 +14834,8 @@ function clasificarMenu(mes){
     .map(r=>{
       const {merc} = calcReceta(r, r.porciones||1);
       const unid = +ventas[r.id] || 0;
-      return {id:r.id, nombre:r.nombre, tipoPlato:r.tipoPlato||'Sin tipo', pv:r.precioVenta, costo:merc, mc:r.precioVenta-merc, unid};
+      const costoVenta = _costoUnidadVenta(r);
+      return {id:r.id, nombre:r.nombre, tipoPlato:r.tipoPlato||'Sin tipo', pv:r.precioVenta, costo:costoVenta, mc:r.precioVenta-costoVenta, unid};
     });
   const conVenta = items.filter(i=>i.unid>0);
   if(conVenta.length < 2) return {items, matriz:[], listo:false};
@@ -14867,11 +14880,35 @@ function _clasificarSet(items){
   });
   return {matriz, listo:true, popThreshold, mcProm, totalUnid};
 }
+// ¿Cuánto cuesta LO QUE SE VENDE de esta receta?
+//
+// Para un plato es directo: lo que cuesta el plato. Para una preparación que
+// además se vende —un puré que va de guarnición y también solo— NO es el costo
+// de la olla: es el costo de la porción que sale al salón. Una olla de puré
+// cuesta $5.367 y rinde 2.400 g; si la porción es de 200 g, lo que se vende
+// cuesta $447. Comparar los $5.367 contra el precio de venta da un food cost
+// disparatado y una alerta roja que no significa nada.
+//
+// Un solo lugar: de acá lo toman la ficha, la matriz de menú y el análisis de
+// ventas. Si cada pantalla lo resolviera por su cuenta, algún día darían
+// distinto.
+function _costoUnidadVenta(r){
+  const {merc} = calcReceta(r, r.porciones||1);
+  const rend = +r.rendimientoG || 0;
+  const porc = +r.porcionVentaG || 0;
+  if(r.esPreparacion && rend > 0 && porc > 0) return merc / rend * porc;
+  return merc;
+}
+// ¿Falta definir de cuánto es la porción que se vende?
+function _prepSinPorcionVenta(r){
+  return !!(r.esPreparacion && +r.precioVenta > 0 && !(+r.porcionVentaG > 0));
+}
+
 // La economía de una receta en un canal: precio, costo y margen por porción.
 // Un solo lugar. La matriz de menú y el análisis de ventas leen de acá, así que
 // no pueden mostrar márgenes distintos para el mismo plato.
 function _econCanal(r, canal){
-  const {merc} = calcReceta(r, r.porciones||1);
+  const merc = _costoUnidadVenta(r);
   if(canal !== CANAL_DELIVERY){
     const pv = +r.precioVenta || 0;
     return {pv, costo: merc, mc: pv - merc, existe: pv > 0};
@@ -15588,11 +15625,24 @@ function _htmlProducciones(r){
           <div style="font-size:20px;font-weight:700">${rendActual>0?fmt(rendActual)+' g':'—'}</div>
           <div style="font-size:11px;color:var(--gris-2)">el rendimiento que usa el costeo</div>
         </div>
-        <div style="flex:1;min-width:150px;background:${pctActual!==null?'#FDF0D0':'var(--crema)'};border-radius:10px;padding:12px 14px">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${pctActual!==null?'#6B4A08':'var(--gris-2)'}">Se pierde</div>
-          <div style="font-size:20px;font-weight:700;color:${pctActual!==null?'#6B4A08':'inherit'}">${pctActual!==null?fmtD(100-pctActual,1)+'%':'—'}</div>
-          <div style="font-size:11px;color:var(--gris-2)">${pctActual!==null?fmt(entraActual-rendActual)+' g de agua y evaporación':'falta el rendimiento'}</div>
-        </div>
+        ${(()=>{
+          // Una preparación puede PERDER peso (una salsa que reduce) o GANARLO
+          // (papa, arroz, pastas, que absorben agua). Decir "se pierde −4,3%"
+          // en un puré es al revés de lo que pasó.
+          const gana = pctActual !== null && pctActual > 100;
+          const dif = pctActual === null ? null : Math.abs(100 - pctActual);
+          const col = pctActual === null ? 'var(--crema)' : gana ? '#E4F3E6' : '#FDF0D0';
+          const txt = pctActual === null ? 'var(--gris-2)' : gana ? '#1B7A34' : '#6B4A08';
+          return `<div style="flex:1;min-width:150px;background:${col};border-radius:10px;padding:12px 14px">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${txt}">${pctActual===null?'Diferencia':gana?'Se gana':'Se pierde'}</div>
+            <div style="font-size:20px;font-weight:700;color:${txt}">${dif===null?'—':fmtD(dif,1)+'%'}</div>
+            <div style="font-size:11px;color:var(--gris-2)">${pctActual===null
+              ? 'falta el rendimiento'
+              : gana
+                ? fmt(rendActual-entraActual)+' g de agua absorbida'
+                : fmt(entraActual-rendActual)+' g de agua y evaporación'}</div>
+          </div>`;
+        })()}
       </div>
 
       ${(window._prodDuda && window._prodDuda.recetaId===r.id) ? (()=>{
@@ -15717,6 +15767,7 @@ function renderSubrecetas(){
             ${filas.map(({r,merc,rend,xg,usan})=>`<tr${rend<=0?' style="background:#FDF5F5"':''}>
               <td><strong>${esc(r.nombre||'Sin nombre')}</strong>
                 ${r.precioVenta>0?`<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:#E4F3E6;color:#1B7A34">también se vende · $${fmt(r.precioVenta)}</span>`:''}
+                ${_prepSinPorcionVenta(r)?`<div style="font-size:11px;color:#C02626;margin-top:2px">Tiene precio pero no está definido de cuántos gramos es la porción: el food cost de este plato no se puede calcular.</div>`:''}
               </td>
               <td style="text-align:right">${rend>0?fmt(rend)+' g':'<span style="color:#C02626;font-size:12px">falta cargarlo</span>'}</td>
               <td style="text-align:right">$${fmt(merc)}</td>
