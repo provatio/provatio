@@ -8373,8 +8373,11 @@ function renderEditorReceta(){
   setContent(r.nombre||'Nueva receta', `
     <div class="editor-receta">
     ${esPrep && !(+r.rendimientoG>0) ? `<div style="background:#EBF3FF;border:1px solid #A9C4E8;color:#1F4E79;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px">
-      <strong>Cargá las cantidades de la olla entera</strong>, no de una porción: 1 kg de tomate, 500 g de cebolla, lo que lleve la preparación completa.<br>
-      Después hacela, <strong>pesá el resultado ya terminado</strong> y cargá ese número en "Cuánto rinde". Recién ahí se puede saber cuánto cuesta el gramo — antes de cocinar no hay forma de saberlo, porque al cocinar se pierde o se gana peso.
+${_rindeEnUnidades(r)
+        ? `<strong>Cargá las cantidades de la producción entera</strong>, no de una unidad: 15 kg de nalga, 2 kg de huevo, 5 kg de pan rallado, lo que lleve el lote completo.<br>
+           Después armá el lote, <strong>contá las piezas que salieron</strong> y cargá ese número acá arriba. Con eso el sistema sabe cuánto cuesta cada una.`
+        : `<strong>Cargá las cantidades de la olla entera</strong>, no de una porción: 1 kg de tomate, 500 g de cebolla, lo que lleve la preparación completa.<br>
+           Después hacela, <strong>pesá el resultado ya terminado</strong> y cargá ese número en "Cuánto rinde". Recién ahí se puede saber cuánto cuesta el gramo — antes de cocinar no hay forma de saberlo, porque al cocinar se pierde o se gana peso.`}
     </div>` : ''}
     ${_subSinRend.length ? `<div style="background:#FCE8E8;border:1px solid #EFB2B2;color:#C02626;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px">
       <strong>El costo de este plato está incompleto.</strong>
@@ -8558,7 +8561,7 @@ function renderEditorReceta(){
             <col style="width:90px"><col style="width:96px">
           </colgroup>
           <thead><tr>
-            <th>Ingrediente</th><th>Técnica</th><th style="text-align:right">${esPrep?'Cantidad<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">de la olla entera</div>':'Cantidad'}</th>
+            <th>Ingrediente</th><th>Técnica</th><th style="text-align:right">${esPrep?'Cantidad<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">'+(_rindeEnUnidades(r)?'del lote entero':'de la olla entera')+'</div>':'Cantidad'}</th>
             <th style="text-align:right">Merma</th><th style="text-align:right">Bruto/p</th>
             <th style="text-align:right">Costo/p</th><th style="text-align:right">Costo total</th>
             <th style="text-align:right">Kg total</th><th></th>
@@ -15718,26 +15721,70 @@ function _htmlProducciones(r){
   <div class="card">
     <div class="card-header"><span class="card-title">Cuánto rinde de verdad</span></div>
     <div class="card-body">
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-        <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Entra a la olla</div>
-          <div style="font-size:20px;font-weight:700">${fmt(entraActual)} g</div>
-          <div style="font-size:11px;color:var(--gris-2)">suma de los ingredientes netos</div>
-        </div>
-        <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Sale de la olla</div>
-          <div style="font-size:20px;font-weight:700">${rendActual>0?fmt(rendActual)+' g':'—'}</div>
-          <div style="font-size:11px;color:var(--gris-2)">el rendimiento que usa el costeo</div>
-        </div>
-        ${(()=>{
-          // Una preparación puede PERDER peso (una salsa que reduce) o GANARLO
-          // (papa, arroz, pastas, que absorben agua). Decir "se pierde −4,3%"
-          // en un puré es al revés de lo que pasó.
-          const gana = pctActual !== null && pctActual > 100;
-          const dif = pctActual === null ? null : Math.abs(100 - pctActual);
-          const col = pctActual === null ? 'var(--crema)' : gana ? '#E4F3E6' : '#FDF0D0';
-          const txt = pctActual === null ? 'var(--gris-2)' : gana ? '#1B7A34' : '#6B4A08';
-          return `<div style="flex:1;min-width:150px;background:${col};border-radius:10px;padding:12px 14px">
+      ${(()=>{
+        // Hay dos preguntas distintas según cómo rinda la preparación.
+        //
+        // EN GRAMOS (una salsa, un puré): interesa el balance de peso. Entra
+        // tanto, sale tanto, y la diferencia es agua — se pierde al reducir o se
+        // gana al absorber. Ahí "olla" es la palabra correcta.
+        //
+        // EN UNIDADES (milanesas, medallones): no hay olla ni cocción, hay
+        // armado. Los gramos que "se ganan" no son agua: son el huevo y el pan
+        // rallado que se le pegaron a la carne, o sea exactamente lo que se le
+        // puso. Contarlo como rendimiento no dice nada. Lo que sí importa es si
+        // salieron las piezas que tenían que salir y si pesan lo que deberían.
+        const ultimaProd = (r.producciones||[]).slice().reverse().find(x=>+x.saleG>0);
+        if(_rindeEnUnidades(r)){
+          const esperadas = +r.rendimientoUnid || 0;
+          const salieron  = ultimaProd && +ultimaProd.unid ? +ultimaProd.unid : null;
+          const pesoLote  = ultimaProd ? +ultimaProd.saleG : 0;
+          const pesoUnid  = (salieron && pesoLote) ? pesoLote/salieron : null;
+          const dif = (salieron !== null && esperadas) ? salieron - esperadas : null;
+          const colU = dif === null ? 'var(--crema)' : dif === 0 ? '#E4F3E6' : '#FDF0D0';
+          const txtU = dif === null ? 'var(--gris-2)' : dif === 0 ? '#1B7A34' : '#6B4A08';
+          return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+            <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Materia prima</div>
+              <div style="font-size:20px;font-weight:700">${fmt(entraActual)} g</div>
+              <div style="font-size:11px;color:var(--gris-2)">suma de los ingredientes netos</div>
+            </div>
+            <div style="flex:1;min-width:150px;background:${colU};border-radius:10px;padding:12px 14px">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${txtU}">Unidades</div>
+              <div style="font-size:20px;font-weight:700;color:${txtU}">${salieron!==null?fmt(salieron):(esperadas?fmt(esperadas):'—')}${esperadas&&salieron!==null?' <span style="font-size:13px;font-weight:400">de '+fmt(esperadas)+'</span>':''}</div>
+              <div style="font-size:11px;color:var(--gris-2)">${salieron===null
+                ? (esperadas?'esperadas — anotá una producción para contarlas':'falta cuántas salen del lote')
+                : dif===0 ? 'salieron las esperadas'
+                : dif<0 ? fmt(Math.abs(dif))+' menos de lo esperado'
+                        : fmt(dif)+' más de lo esperado'}</div>
+            </div>
+            <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Peso por unidad</div>
+              <div style="font-size:20px;font-weight:700">${pesoUnid?fmtD(pesoUnid,0)+' g':'—'}</div>
+              <div style="font-size:11px;color:var(--gris-2)">${pesoUnid?'ya armada, con el apanado':'se calcula al anotar una producción'}</div>
+            </div>
+            <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Lote terminado</div>
+              <div style="font-size:20px;font-weight:700">${pesoLote?fmtD(pesoLote/1000,2)+' kg':'—'}</div>
+              <div style="font-size:11px;color:var(--gris-2)">${pesoLote?'peso total del lote ya armado':'de la última producción'}</div>
+            </div>
+          </div>`;
+        }
+        const gana = pctActual !== null && pctActual > 100;
+        const dif = pctActual === null ? null : Math.abs(100 - pctActual);
+        const col = pctActual === null ? 'var(--crema)' : gana ? '#E4F3E6' : '#FDF0D0';
+        const txt = pctActual === null ? 'var(--gris-2)' : gana ? '#1B7A34' : '#6B4A08';
+        return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Entra a la olla</div>
+            <div style="font-size:20px;font-weight:700">${fmt(entraActual)} g</div>
+            <div style="font-size:11px;color:var(--gris-2)">suma de los ingredientes netos</div>
+          </div>
+          <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Sale de la olla</div>
+            <div style="font-size:20px;font-weight:700">${rendActual>0?fmt(rendActual)+' g':'—'}</div>
+            <div style="font-size:11px;color:var(--gris-2)">el rendimiento que usa el costeo</div>
+          </div>
+          <div style="flex:1;min-width:150px;background:${col};border-radius:10px;padding:12px 14px">
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${txt}">${pctActual===null?'Diferencia':gana?'Se gana':'Se pierde'}</div>
             <div style="font-size:20px;font-weight:700;color:${txt}">${dif===null?'—':fmtD(dif,1)+'%'}</div>
             <div style="font-size:11px;color:var(--gris-2)">${pctActual===null
@@ -15745,9 +15792,9 @@ function _htmlProducciones(r){
               : gana
                 ? fmt(rendActual-entraActual)+' g de agua absorbida'
                 : fmt(entraActual-rendActual)+' g de agua y evaporación'}</div>
-          </div>`;
-        })()}
-      </div>
+          </div>
+        </div>`;
+      })()}
 
       ${(window._prodDuda && window._prodDuda.recetaId===r.id) ? (()=>{
         const d = window._prodDuda;
