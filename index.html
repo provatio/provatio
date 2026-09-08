@@ -5647,7 +5647,10 @@ function opStats(opId){
     // La operación no está activa pero su documento completo ya fue traído por
     // cargarDesdeFirestore al inicio — leer _datos.recetas directamente desde ahí.
     const opDoc = demoData.operaciones[opId] || {};
-    const recetasDoc = (opDoc._datos && opDoc._datos.recetas) ? opDoc._datos.recetas : [];
+    const _todasDoc  = (opDoc._datos && opDoc._datos.recetas) ? opDoc._datos.recetas : [];
+    // Mismo criterio que el cálculo en vivo: el resumen habla de la carta, así
+    // que las preparaciones que no se venden no cuentan ni piden precio.
+    const recetasDoc = _todasDoc.filter(r => !(esPreparacionReceta(r) && !(+r.precioVenta > 0)));
     const conPrecio  = recetasDoc.filter(r=>r.precioVenta>0).length;
     const sinPrecio  = recetasDoc.filter(r=>!r.precioVenta||r.precioVenta<=0).length;
     const sinIngs    = recetasDoc.filter(r=>!r.ingredientes||r.ingredientes.length===0).length;
@@ -5665,12 +5668,22 @@ function opStats(opId){
   }
 
   // Cálculo en vivo para la operación activa (en memoria)
-  const recetas = demoData.recetas.filter(r=>r.opId===opId);
+  const todas = demoData.recetas.filter(r=>r.opId===opId);
+  // EL RESUMEN HABLA DE LA CARTA. Una preparación que no se vende sola no es un
+  // plato: no tiene precio y no debe pedirlo. Y su costo es el de la olla o el
+  // del lote entero — promediar los $290.000 de un lote de milanesas junto con
+  // platos de $4.000 daba un "costo promedio por porción" de $25.000, que no es
+  // el costo de nada.
+  const preparaciones = todas.filter(r => esPreparacionReceta(r) && !(+r.precioVenta > 0));
+  const recetas = todas.filter(r => !(esPreparacionReceta(r) && !(+r.precioVenta > 0)));
   const conPrecio = recetas.filter(r=>r.precioVenta>0);
   let sumPct = 0, sumMerc = 0, nMerc = 0;
   recetas.forEach(r=>{
     const {merc} = calcReceta(r, r.porciones||1);
-    sumMerc += merc; nMerc++;
+    // El costo comparable: en una preparación que se vende es el de la porción,
+    // no el del lote. Es el mismo que usan la ficha, la lista y la matriz.
+    const base = costoComparableReceta(r, merc) || merc;
+    sumMerc += base; nMerc++;
     const _p = pctCostoReceta(r, merc);
     if(_p !== null) sumPct += _p;
   });
@@ -5678,6 +5691,7 @@ function opStats(opId){
     total: recetas.length,
     conPrecio: conPrecio.length,
     sinPrecio: recetas.length - conPrecio.length,
+    preparaciones: preparaciones.length,
     sinIngredientes: recetas.filter(r=>!r.ingredientes||r.ingredientes.length===0).length,
     pctProm: conPrecio.length ? sumPct/conPrecio.length : null,
     mercProm: nMerc ? sumMerc/nMerc : 0,
@@ -15884,7 +15898,10 @@ ${_rindeEnUnidades(r)?`<input type="text" inputmode="decimal" id="prod-unid" pla
 //
 // Esta pantalla es la misma lista de recetas, filtrada por las que rinden.
 function esPreparacionReceta(r){
-  return !!(r.esPreparacion || +r.rendimientoG > 0);
+  // Vale para las dos formas de rendir: en gramos (una salsa) y en unidades
+  // (un lote de milanesas). Antes solo miraba los gramos, así que una
+  // preparación por unidades no se reconocía como tal.
+  return !!(r && (r.esPreparacion || +r.rendimientoG > 0 || +r.rendimientoUnid > 0));
 }
 function recetasQueUsan(recetaId){
   return getRecetas().filter(x => x.id!==recetaId && (x.ingredientes||[]).some(i=>i.recetaId===recetaId));
