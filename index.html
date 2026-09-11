@@ -4833,6 +4833,7 @@ function buildSidebar(rol){
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
+    ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
@@ -4860,6 +4861,7 @@ function buildSidebar(rol){
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
+    ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     // Inventariar y declarar desperdicio son actos de cocina, no de análisis:
     // uno se agacha a contar en la cámara y el otro se carga tras el servicio.
@@ -4914,6 +4916,7 @@ function buildSidebar(rol){
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
+    ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
@@ -4929,6 +4932,7 @@ function buildSidebar(rol){
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
+    ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
@@ -4953,6 +4957,7 @@ function buildSidebar(rol){
     {icon:'flame', label:'Mermas', vista:'mermas'},
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
+    ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
     ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
@@ -5349,6 +5354,7 @@ function navigate(vista, params={}, opts={}){
     resultado: renderResultado,
     cargarVentas: renderCargarVentas,
     subrecetas: renderSubrecetas,
+    puestos: renderPuestos,
     analisisVentas: renderAnalisisVentas,
     clientes: renderClientes,
     ingredientes: renderIngredientes,
@@ -14102,6 +14108,31 @@ function _esManoObra(g){
   if(g.esManoObra === true || g.esManoObra === false) return g.esManoObra;
   return /sueldo|salario|personal|mano de obra|cargas|jornal|honorario/i.test(g.concepto||'');
 }
+// ── MANO DE OBRA DIRECTA vs ESTRUCTURAL ────────────────────────────────────
+// Un sueldo se cuenta UNA sola vez. Si el que empana se costea adentro del
+// producto, ese mismo sueldo no puede seguir sumando como gasto fijo del mes:
+// serían los mismos pesos contados dos veces, y se romperían el prime cost y el
+// EBITDA. Por eso una línea de gastos fijos marcada como DIRECTA sale del total
+// de gastos fijos cuando el costeo de mano de obra por producto está encendido.
+//
+// Directa    → el que produce. Va al costo del producto.
+// Estructural→ jefatura, mantenimiento, administración. Queda en gastos fijos.
+//
+// Con el módulo apagado no cambia nada: todo sigue como gasto fijo, igual que
+// hasta ahora. La marca queda guardada y espera.
+function costeoMODirectaActivo(op){
+  op = op || (typeof getOp === 'function' ? getOp() : null);
+  return !!(op && op.costeoManoObra);
+}
+function _esMODirecta(g){
+  return !!(g && g.moDirecta) && _esManoObra(g);
+}
+// Los gastos fijos que SÍ pesan este mes: si el módulo está encendido, los
+// directos ya están adentro del costo de cada producto y no se suman acá.
+function gastosFijosEstructurales(){
+  const activo = costeoMODirectaActivo();
+  return getGastosFijos().filter(g => !(activo && _esMODirecta(g)));
+}
 function getGastosFijos(){
   const op = getOp();
   if(!op) return [];
@@ -14121,7 +14152,17 @@ function renderResultado(){
   const op = getOp();
   if(!op){ _panelSinOperacion(); return; }
   const gastos = getGastosFijos();
+  // OJO: los gastos fijos se suman ENTEROS, incluida la mano de obra directa.
+  // Se intentó sacarla de acá cuando se marca como directa, con el argumento de
+  // que ya estaría adentro del costo del producto. Es falso mientras el food
+  // cost siga siendo solo materia prima: la mano de obra no está sumando en
+  // ningún otro lado, así que quitarla de acá le saca un costo real al negocio
+  // y el EBITDA da más alto de lo que es.
+  // La marca directa/estructural existe y se guarda, pero hoy solo describe.
+  // El día que el costo de producción entre a los índices, este es el lugar
+  // donde hay que evitar el doble conteo.
   const totalFijos = gastos.reduce((s,g)=>s+(+g.monto||0),0);
+  const totalMODirecta = gastos.filter(_esMODirecta).reduce((s,g)=>s+(+g.monto||0),0);
   const dias = op.diasOperativos || 26;
   // Un dueño que no se paga a sí mismo cree que gana más de lo que gana.
   const tieneSueldoDueno = gastos.some(g=>/due[ñn]o/i.test(g.concepto||''));
@@ -15883,6 +15924,113 @@ ${_rindeEnUnidades(r)?`<input type="text" inputmode="decimal" id="prod-unid" pla
       </div>
     </div>
   </div>`;
+}
+
+// ══ PUESTOS DE TRABAJO ═════════════════════════════════════════════════════
+// El costo de la mano de obra se calcula sobre el PUESTO, no sobre la persona.
+// Un producto tiene un tiempo estándar —los minutos que requiere en cada etapa—
+// y ese tiempo se valoriza al costo del puesto que la ejecuta.
+//
+// Que un operario tarde más que otro no encarece el producto: es un desvío de
+// productividad, que es un dato de gestión y se mira aparte. Un mismo producto
+// tiene que costar lo mismo el lunes que el jueves; si el jueves hubo una
+// parada, la planta fue menos eficiente, el producto no cambió de costo.
+//
+// EL SUELDO VA CON CARGAS SOCIALES. Sin ellas el costo del minuto sale entre un
+// 40 % y un 60 % bajo, y todo lo que se calcule encima arrastra ese error.
+//
+// Las jefaturas no son un puesto de producción: su sueldo es estructura y se
+// queda en Gastos fijos.
+function getPuestos(){
+  const op = getOp();
+  if(!op) return [];
+  if(!op.puestos) op.puestos = [];
+  return op.puestos;
+}
+// Lo que vale un minuto de ese puesto. De acá sale todo el costeo de tiempos.
+function costoMinutoPuesto(p){
+  const mensual = +p.costoMensual || 0;
+  const horas   = +p.horasMes || 0;
+  if(mensual <= 0 || horas <= 0) return null;   // null = todavía no se puede
+  return mensual / (horas * 60);
+}
+function addPuesto(){
+  const op = getOp(); if(!op) return;
+  if(!op.puestos) op.puestos = [];
+  op.puestos.push({ id: uid(), nombre: '', costoMensual: 0, horasMes: 176 });
+  guardarEnFirestore(); renderPuestos();
+}
+function updPuesto(id, campo, val){
+  const p = getPuestos().find(x=>x.id===id); if(!p) return;
+  p[campo] = val;
+  guardarEnFirestore(); renderPuestos();
+}
+function delPuesto(id){
+  const op = getOp(); if(!op) return;
+  const p = getPuestos().find(x=>x.id===id);
+  if(!confirm('¿Borrar el puesto "'+((p&&p.nombre)||'sin nombre')+'"?')) return;
+  op.puestos = getPuestos().filter(x=>x.id!==id);
+  guardarEnFirestore(); renderPuestos();
+}
+function renderPuestos(){
+  const op = getOp();
+  if(!op){ _panelSinOperacion(); return; }
+  const puestos = getPuestos();
+  // 176 h = 8 h × 22 días. Es la referencia habitual de un mes de trabajo.
+  setContent('Puestos de trabajo', `
+    <div style="background:var(--crema);border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--gris-1)">
+      ${ico('bulb',14)} Lo que vale un minuto de trabajo en cada puesto. De acá sale el costo de mano de obra de cada producto.
+      El costo se calcula sobre el <strong>puesto</strong>, no sobre la persona: que alguien tarde más no encarece el producto, es un desvío de productividad y se mira aparte.
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Puestos <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${puestos.length}</span></span>
+        <button class="btn btn-primary btn-sm" onclick="addPuesto()">+ Nuevo puesto</button>
+      </div>
+      ${puestos.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Puesto</th>
+            <th style="text-align:right;width:190px">Costo mensual con cargas</th>
+            <th style="text-align:right;width:140px">Horas por mes</th>
+            <th style="text-align:right;width:150px">Costo del minuto</th>
+            <th style="width:60px"></th>
+          </tr></thead>
+          <tbody>
+            ${puestos.map(p=>{
+              const xmin = costoMinutoPuesto(p);
+              return `<tr${xmin===null?' style="background:#FDF5F5"':''}>
+                <td><input type="text" value="${esc(p.nombre||'')}" placeholder="Ej: operario de línea"
+                    style="border:none;background:transparent;padding:4px 0;font-weight:600;width:100%"
+                    onchange="updPuesto('${escJs(p.id)}','nombre',this.value)"></td>
+                <td style="text-align:right"><input type="text" inputmode="decimal" value="${p.costoMensual||''}" placeholder="0"
+                    title="Sueldo bruto MÁS cargas sociales. Sin las cargas, el costo del minuto sale entre 40 % y 60 % bajo."
+                    style="width:150px;text-align:right"
+                    onchange="updPuesto('${escJs(p.id)}','costoMensual',num(this.value))"></td>
+                <td style="text-align:right"><input type="text" inputmode="decimal" value="${p.horasMes||''}" placeholder="176"
+                    title="Horas de referencia por mes. 176 = 8 horas por 22 días."
+                    style="width:100px;text-align:right"
+                    onchange="updPuesto('${escJs(p.id)}','horasMes',num(this.value))"></td>
+                <td style="text-align:right">${xmin===null
+                  ? '<span style="color:#C02626;font-size:12px">falta el sueldo o las horas</span>'
+                  : `<span class="calc">$${fmtD(xmin,2)}</span><div style="font-size:10px;color:var(--gris-2)">$${fmt(Math.round(xmin*60))} la hora</div>`}</td>
+                <td><button class="btn btn-danger btn-sm" onclick="delPuesto('${escJs(p.id)}')">${ico('trash',13)}</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2);line-height:1.5">
+        El <strong>costo mensual va con cargas sociales</strong>, no el sueldo de bolsillo: es lo que la empresa desembolsa por esa persona.
+        Las <strong>jefaturas no van acá</strong> — su sueldo es estructura y se queda en Gastos fijos, aunque a veces bajen a producir.
+      </div>
+      ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
+        Todavía no hay puestos. Creá el primero con el botón de arriba: un operario de línea, un envasador, lo que tenga la producción.
+      </div>`}
+    </div>
+  `);
 }
 
 // ══ SUBRECETAS ═════════════════════════════════════════════════════════════
@@ -20700,6 +20848,34 @@ function renderModalidades(){
     </div>
 
     <div class="card" style="margin-top:16px">
+      <h3 style="margin-top:0;font-size:15px">Costeo de producción</h3>
+      <p style="margin:0 0 12px;font-size:13px;color:var(--gris-1,#555)">
+        Aparte de lo que cuesta la mercadería, cuánto cuesta <em>hacer</em> el producto: los minutos de trabajo de cada etapa, a lo que vale el minuto de cada puesto.
+      </p>
+      <label style="display:flex;gap:14px;align-items:flex-start;padding:16px;border:1.5px solid ${op.costeoManoObra?'var(--dorado,#C9A961)':'var(--crema-2,#E8E0D4)'};
+                    border-radius:10px;cursor:pointer;background:${op.costeoManoObra?'rgba(201,169,97,.07)':'transparent'}">
+        <input type="checkbox" id="mod-mano-obra" ${op.costeoManoObra?'checked':''} style="margin-top:3px;width:17px;height:17px">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:15px;margin-bottom:3px">Costo de mano de obra por producto</div>
+          <div style="font-size:13px;color:var(--gris-1,#555);line-height:1.45">
+            Habilita los <strong>puestos de trabajo</strong> con su costo por minuto, las <strong>etapas</strong> de cada producto con sus tiempos, y el registro de cada lote con el desvío entre lo que debía tardar y lo que tardó.
+          </div>
+          <div style="font-size:12px;color:var(--gris-2,#888);margin-top:6px"><em>Plantas de alimentos, viandas a escala, panificadoras, cualquier cocina que produzca en lotes</em></div>
+          <div style="font-size:12px;color:#6B4A08;background:#FDF0D0;border-radius:8px;padding:9px 12px;margin-top:10px;line-height:1.45">
+            <strong>Antes de encenderlo:</strong> hay que cargar los puestos con su sueldo, definir las etapas de cada producto y anotar los tiempos reales de cada lote. Es trabajo de todos los días.
+            Una planta ya lo hace; un restaurante que no produce en lotes no lo va a sostener, y para ese caso el sueldo ya está contado en Gastos fijos.
+          </div>
+          <div style="font-size:12px;color:var(--gris-2,#888);margin-top:8px;line-height:1.45">
+            No cambia ningún número que ya conocés: el food cost sigue siendo solo mercadería, y el prime cost y el EBITDA siguen saliendo de los gastos fijos. El costo de producción es un número aparte, al lado.
+          </div>
+        </div>
+      </label>
+      <div style="display:flex;gap:8px;margin-top:14px;align-items:center">
+        <button class="btn btn-primary" onclick="guardarModalidades()">Guardar</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <h3 style="margin-top:0;font-size:15px">Qué habilita cada una</h3>
       <table class="table" style="font-size:13px">
         <thead><tr><th>Modalidad</th><th>Qué cambia</th></tr></thead>
@@ -20729,6 +20905,8 @@ async function guardarModalidades(){
   // pantalla. Sin Carta no puede quedar encendido.
   const _chkD = document.getElementById('mod-delivery');
   if(_chkD) op.tieneDelivery = _chkD.checked && elegidas.indexOf('carta')>=0;
+  const _chkMO = document.getElementById('mod-mano-obra');
+  if(_chkMO) op.costeoManoObra = _chkMO.checked;
   await guardarEnFirestore();
   showToast('Modalidades guardadas');
   buildSidebar(currentUser?.rol||'cliente');
