@@ -4834,6 +4834,7 @@ function buildSidebar(rol){
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
+    ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
@@ -4862,6 +4863,7 @@ function buildSidebar(rol){
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
+    ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     // Inventariar y declarar desperdicio son actos de cocina, no de análisis:
     // uno se agacha a contar en la cámara y el otro se carga tras el servicio.
@@ -4917,6 +4919,7 @@ function buildSidebar(rol){
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
+    ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
     {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
@@ -4933,6 +4936,7 @@ function buildSidebar(rol){
     {icon:'chef', label:'Recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
+    ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
@@ -4958,6 +4962,7 @@ function buildSidebar(rol){
     {icon:'chef', label:'Mis recetas', vista:'recetas'},
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
+    ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
     ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
@@ -5355,6 +5360,7 @@ function navigate(vista, params={}, opts={}){
     cargarVentas: renderCargarVentas,
     subrecetas: renderSubrecetas,
     puestos: renderPuestos,
+    lotes: renderLotes,
     analisisVentas: renderAnalisisVentas,
     clientes: renderClientes,
     ingredientes: renderIngredientes,
@@ -16015,6 +16021,134 @@ function calcManoObra(r){
   };
 }
 
+// ══ REGISTRO DE LOTES ══════════════════════════════════════════════════════
+// La pantalla que se usa todos los días en planta: qué se produjo, cuánto salió,
+// quién lo hizo y cuánto tardó cada etapa.
+//
+// Devuelve DOS costos que contestan preguntas distintas y que hay que poder ver
+// separados, porque mezclarlos es lo que hace que el número no cierre nunca:
+//
+//   COSTO ESTÁNDAR — lo que ese producto DEBE costar, según los tiempos del
+//   proceso. Es el que sirve para cotizar y para comparar entre lotes. Un mismo
+//   producto tiene que costar lo mismo el lunes que el jueves.
+//
+//   COSTO REAL — lo que costó ESTE lote, con los minutos que efectivamente se
+//   usaron. Si el jueves hubo una parada, este número sube.
+//
+// La diferencia entre los dos NO es que el producto cambió de costo: es que la
+// planta fue más o menos eficiente ese día. Son dos hechos distintos.
+//
+// El desvío se guarda POR ETAPA, que es lo único que lo hace accionable: saber
+// que el lote tardó 40 minutos de más no sirve; saber que fue el envasado, sí.
+function getLotes(){
+  const op = getOp();
+  if(!op) return [];
+  if(!op.lotes) op.lotes = [];
+  return op.lotes;
+}
+function _proximoNumeroLote(){
+  const lotes = getLotes();
+  const hoy = new Date();
+  const pref = String(hoy.getFullYear()).slice(2) + String(hoy.getMonth()+1).padStart(2,'0');
+  const delMes = lotes.filter(l => String(l.numero||'').startsWith(pref));
+  return pref + '-' + String(delMes.length + 1).padStart(3,'0');
+}
+// Estándar y real de un lote. Devuelve el desvío por etapa, que es lo accionable.
+function calcLote(lote){
+  const r = getRecetas().find(x=>x.id===lote.recetaId);
+  if(!r) return {error:'La receta de este lote ya no existe'};
+  const puestos = getPuestos();
+  const etapasReceta = getEtapas(r);
+  const unid = +lote.unidades || 0;
+  const unidEsperadas = _unidadesDelLote(r);
+
+  let stdMin=0, realMin=0, stdCosto=0, realCosto=0;
+  const detalle = etapasReceta.map(e=>{
+    const reg = (lote.etapas||[]).find(x=>x.etapaId===e.id) || {};
+    const persStd  = Math.max(1, +e.personas||1);
+    const persReal = Math.max(1, +reg.personas || persStd);
+    const p = puestos.find(x=>x.id===e.puestoId);
+    const xmin = p ? costoMinutoPuesto(p) : null;
+    // Estándar: el tiempo de lote más el tiempo por unidad por las unidades que
+    // ESTE lote produjo. Así los dos costos se comparan sobre la misma tanda.
+    const mStd  = ((+e.minLote||0) + (+e.minUnidad||0)*unid) * persStd;
+    const mReal = (reg.minReal !== undefined && reg.minReal !== '') ? (+reg.minReal||0) * persReal : null;
+    stdMin += mStd;
+    if(mReal !== null) realMin += mReal;
+    const cStd  = xmin!==null ? mStd*xmin : null;
+    const cReal = (xmin!==null && mReal!==null) ? mReal*xmin : null;
+    if(cStd!==null) stdCosto += cStd;
+    if(cReal!==null) realCosto += cReal;
+    return {
+      etapaId:e.id, nombre:e.nombre||'Etapa sin nombre', tipo:e.tipo||'manual',
+      puesto: p ? p.nombre : null, sinPuesto: !p || xmin===null,
+      minStd:mStd, minReal:mReal, costoStd:cStd, costoReal:cReal,
+      difMin: mReal!==null ? mReal-mStd : null,
+      difCosto: (cReal!==null&&cStd!==null) ? cReal-cStd : null,
+      quien: reg.quien||'', personas: persReal,
+    };
+  });
+  const completo = detalle.every(d=>d.minReal!==null);
+  const faltanPuestos = detalle.filter(d=>d.sinPuesto && d.minStd>0).length;
+  const {merc} = calcReceta(r, r.porciones||1);
+  // La mercadería del lote se escala a las unidades que salieron.
+  const mpLote = unidEsperadas>0 ? merc/unidEsperadas*unid : (unid>0 ? merc : 0);
+  return {
+    receta:r, detalle, unid, unidEsperadas,
+    difUnid: unidEsperadas>0 ? unid-unidEsperadas : null,
+    stdMin, realMin, stdCosto, realCosto,
+    difMin: completo ? realMin-stdMin : null,
+    difCosto: completo ? realCosto-stdCosto : null,
+    stdUnitario: unid>0 ? stdCosto/unid : null,
+    realUnitario: (unid>0&&completo) ? realCosto/unid : null,
+    mpLote, mpUnitario: unid>0 ? mpLote/unid : null,
+    completo, faltanPuestos,
+    sinUnidades: !(unid>0),
+  };
+}
+function nuevoLote(){
+  const op = getOp(); if(!op) return;
+  const conProceso = getRecetas().filter(x=>(x.etapas||[]).length);
+  if(!conProceso.length){
+    showToast('Primero cargá el proceso de algún producto: sin etapas no hay tiempos que comparar','error');
+    return;
+  }
+  if(!op.lotes) op.lotes = [];
+  op.lotes.push({
+    id: uid(), numero: _proximoNumeroLote(),
+    fecha: new Date().toISOString().slice(0,10),
+    turno: '', recetaId: conProceso[0].id, unidades: 0, etapas: [], obs: '',
+  });
+  window._loteAbierto = op.lotes[op.lotes.length-1].id;
+  guardarEnFirestore(); renderLotes();
+}
+function updLote(id, campo, val){
+  const l = getLotes().find(x=>x.id===id); if(!l) return;
+  l[campo] = val;
+  if(campo==='recetaId') l.etapas = [];   // otro producto, otras etapas
+  guardarEnFirestore(); renderLotes();
+}
+function updLoteEtapa(loteId, etapaId, campo, val){
+  const l = getLotes().find(x=>x.id===loteId); if(!l) return;
+  if(!l.etapas) l.etapas = [];
+  let e = l.etapas.find(x=>x.etapaId===etapaId);
+  if(!e){ e = {etapaId}; l.etapas.push(e); }
+  e[campo] = val;
+  guardarEnFirestore(); renderLotes();
+}
+function delLote(id){
+  const op = getOp(); if(!op) return;
+  const l = getLotes().find(x=>x.id===id);
+  if(!confirm('¿Borrar el lote '+((l&&l.numero)||'')+'? Se pierde el registro de trazabilidad.')) return;
+  op.lotes = getLotes().filter(x=>x.id!==id);
+  if(window._loteAbierto===id) window._loteAbierto = null;
+  guardarEnFirestore(); renderLotes();
+}
+function abrirLote(id){
+  window._loteAbierto = (window._loteAbierto===id) ? null : id;
+  renderLotes();
+}
+
 // ══ PUESTOS DE TRABAJO ═════════════════════════════════════════════════════
 // El costo de la mano de obra se calcula sobre el PUESTO, no sobre la persona.
 // Un producto tiene un tiempo estándar —los minutos que requiere en cada etapa—
@@ -16237,6 +16371,187 @@ function _htmlProceso(r){
 function _hhmm(min){
   const h = Math.floor(min/60), m = Math.round(min%60);
   return h>0 ? (h+' h'+(m?' '+m+' min':'')) : (m+' min');
+}
+
+function renderLotes(){
+  const op = getOp();
+  if(!op){ _panelSinOperacion(); return; }
+  const lotes = getLotes().slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'') || (b.numero||'').localeCompare(a.numero||''));
+  const conProceso = getRecetas().filter(x=>(x.etapas||[]).length);
+  const abierto = window._loteAbierto;
+
+  setContent('Registro de lotes', `
+    <div style="background:var(--crema);border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--gris-1)">
+      ${ico('bulb',14)} Qué se produjo, cuánto salió, quién lo hizo y cuánto tardó cada etapa.
+      De acá salen dos números que contestan preguntas distintas: <strong>el costo estándar</strong> —lo que el producto debe costar, el que sirve para cotizar— y <strong>el costo real de este lote</strong>.
+      La diferencia no es que el producto cambió de costo: es cuánto se apartó la producción del estándar ese día.
+    </div>
+
+    ${!conProceso.length ? `<div class="card"><div class="card-body" style="font-size:13px;color:#6B4A08;background:#FDF0D0">
+      Ningún producto tiene todavía el proceso cargado. Abrí una receta, cargá las etapas con sus tiempos, y después volvé acá.
+    </div></div>` : ''}
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Lotes <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${lotes.length}</span></span>
+        <button class="btn btn-primary btn-sm" onclick="nuevoLote()" ${conProceso.length?'':'disabled'}>+ Nuevo lote</button>
+      </div>
+      ${lotes.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:110px">Lote</th><th style="width:110px">Fecha</th>
+            <th>Producto</th><th style="width:90px">Turno</th>
+            <th style="text-align:right;width:100px">Unidades</th>
+            <th style="text-align:right;width:120px">Costo estándar</th>
+            <th style="text-align:right;width:120px">Costo real</th>
+            <th style="text-align:right;width:120px">Desvío</th>
+            <th style="width:90px"></th>
+          </tr></thead>
+          <tbody>
+            ${lotes.map(l=>{
+              const c = calcLote(l);
+              if(c.error) return `<tr><td colspan="9" style="color:#C02626;font-size:12px">${esc(l.numero||'')} — ${esc(c.error)}</td></tr>`;
+              const pct = (c.difCosto!==null && c.stdCosto>0) ? c.difCosto/c.stdCosto*100 : null;
+              return `<tr${abierto===l.id?' style="background:#FFFBF2"':''}>
+                <td><strong>${esc(l.numero||'—')}</strong></td>
+                <td>${l.fecha?fmtFechaCorta(l.fecha):'—'}</td>
+                <td>${esc(c.receta.nombre||'Sin nombre')}</td>
+                <td style="font-size:12px">${esc(l.turno||'—')}</td>
+                <td style="text-align:right">${c.unid?fmt(c.unid):'<span style="color:#C02626;font-size:12px">falta</span>'}${c.difUnid!==null&&c.difUnid!==0?`<div style="font-size:10px;color:${c.difUnid<0?'#C02626':'#1B7A34'}">${c.difUnid>0?'+':'−'}${fmt(Math.abs(c.difUnid))} vs ${fmt(c.unidEsperadas)}</div>`:''}</td>
+                <td style="text-align:right">${c.stdCosto>0?'$'+fmt(c.stdCosto):'—'}</td>
+                <td style="text-align:right">${c.completo?'$'+fmt(c.realCosto):'<span style="color:var(--gris-3);font-size:12px">incompleto</span>'}</td>
+                <td style="text-align:right;font-weight:700;color:${c.difCosto===null?'var(--gris-3)':Math.abs(pct||0)<3?'var(--gris-2)':c.difCosto>0?'#C02626':'#1B7A34'}">
+                  ${c.difCosto===null?'—':(c.difCosto>0?'+':'−')+'$'+fmt(Math.abs(c.difCosto))+(pct!==null?`<div style="font-size:10px;font-weight:400">${fmtD(Math.abs(pct),1)}%</div>`:'')}</td>
+                <td><div style="display:flex;gap:4px">
+                  <button class="btn btn-secondary btn-sm" onclick="abrirLote('${escJs(l.id)}')">${abierto===l.id?'Cerrar':'Abrir'}</button>
+                  <button class="btn btn-danger btn-sm" onclick="delLote('${escJs(l.id)}')">${ico('trash',13)}</button>
+                </div></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
+        Todavía no hay lotes registrados.
+      </div>`}
+    </div>
+
+    ${abierto ? _htmlLoteDetalle(getLotes().find(x=>x.id===abierto), conProceso) : ''}
+  `);
+}
+
+function _htmlLoteDetalle(l, conProceso){
+  if(!l) return '';
+  const c = calcLote(l);
+  if(c.error) return `<div class="card"><div class="card-body" style="color:#C02626">${esc(c.error)}</div></div>`;
+  const unidLabel = _rindeEnUnidades(c.receta) ? 'unidades' : (c.receta.esPreparacion ? 'gramos' : 'porciones');
+
+  return `
+  <div class="card" style="border:1px solid var(--dorado)">
+    <div class="card-header"><span class="card-title">Lote ${esc(l.numero||'')} — ${esc(c.receta.nombre||'')}</span></div>
+    <div class="card-body" style="border-bottom:1px solid var(--crema-2)">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:4px">N° de lote</div>
+          <input type="text" value="${esc(l.numero||'')}" style="width:120px" onchange="updLote('${escJs(l.id)}','numero',this.value)"></div>
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:4px">Fecha</div>
+          <input type="date" value="${l.fecha||''}" style="width:auto" onchange="updLote('${escJs(l.id)}','fecha',this.value)"></div>
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:4px">Turno</div>
+          <input type="text" value="${esc(l.turno||'')}" placeholder="mañana / tarde" style="width:130px" onchange="updLote('${escJs(l.id)}','turno',this.value)"></div>
+        <div style="flex:1;min-width:180px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:4px">Producto</div>
+          <select style="width:100%" onchange="updLote('${escJs(l.id)}','recetaId',this.value)">
+            ${conProceso.map(x=>`<option value="${esc(x.id)}"${x.id===l.recetaId?' selected':''}>${esc(x.nombre||'Sin nombre')}</option>`).join('')}
+          </select></div>
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:4px">${unidLabel} producidas</div>
+          <input type="text" inputmode="decimal" value="${l.unidades||''}" placeholder="0" style="width:110px;text-align:right"
+            title="Lo que salió de verdad. Si no está cargado no se puede repartir nada: el lote queda incompleto."
+            onchange="updLote('${escJs(l.id)}','unidades',num(this.value))"></div>
+      </div>
+      ${c.sinUnidades ? `<div style="background:#FDF0D0;color:#6B4A08;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px">
+        Falta cuántas ${unidLabel} salieron. Sin ese dato no se reparte nada y el lote queda <strong>incompleto</strong> — no se acomoda con un número inventado.
+      </div>` : ''}
+      ${c.faltanPuestos ? `<div style="background:#FCE8E8;color:#C02626;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px">
+        Hay ${c.faltanPuestos} etapa${c.faltanPuestos>1?'s':''} con tiempo pero sin puesto asignado o con el puesto sin sueldo cargado. Esas etapas no costean.
+      </div>` : ''}
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Etapa</th><th style="width:120px">Puesto</th>
+          <th style="text-align:right;width:95px">Personas</th>
+          <th style="text-align:right;width:110px">Min. estándar</th>
+          <th style="text-align:right;width:110px">Min. reales</th>
+          <th style="text-align:right;width:110px">Desvío</th>
+          <th style="width:150px">Quién</th>
+        </tr></thead>
+        <tbody>
+          ${c.detalle.map(d=>`<tr>
+            <td><strong>${esc(d.nombre)}</strong>${d.tipo!=='manual'?`<div style="font-size:10px;color:var(--gris-2)">${TIPOS_ETAPA[d.tipo]?TIPOS_ETAPA[d.tipo].label:d.tipo}</div>`:''}</td>
+            <td style="font-size:12px;color:${d.sinPuesto?'#C02626':'var(--gris-1)'}">${d.puesto?esc(d.puesto):'sin puesto'}</td>
+            <td style="text-align:right"><input type="text" inputmode="decimal" value="${d.personas}" style="width:60px;text-align:right"
+                onchange="updLoteEtapa('${escJs(l.id)}','${escJs(d.etapaId)}','personas',num(this.value))"></td>
+            <td style="text-align:right">${fmtD(d.minStd,0)}</td>
+            <td style="text-align:right"><input type="text" inputmode="decimal" value="${d.minReal!==null?(d.minReal/d.personas):''}" placeholder="—" style="width:75px;text-align:right"
+                title="Minutos que tardó la etapa. Se multiplican por las personas para obtener minutos-hombre."
+                onchange="updLoteEtapa('${escJs(l.id)}','${escJs(d.etapaId)}','minReal',this.value)"></td>
+            <td style="text-align:right;font-weight:700;color:${d.difMin===null?'var(--gris-3)':Math.abs(d.difMin)<1?'var(--gris-2)':d.difMin>0?'#C02626':'#1B7A34'}">
+              ${d.difMin===null?'—':(d.difMin>0?'+':'−')+fmtD(Math.abs(d.difMin),0)+' min'}
+              ${d.difCosto!==null&&Math.abs(d.difCosto)>=1?`<div style="font-size:10px;font-weight:400">${d.difCosto>0?'+':'−'}$${fmt(Math.abs(d.difCosto))}</div>`:''}</td>
+            <td><input type="text" value="${esc(d.quien||'')}" placeholder="nombre" style="width:100%"
+                title="Para trazabilidad, no para costear: el costo sale del puesto."
+                onchange="updLoteEtapa('${escJs(l.id)}','${escJs(d.etapaId)}','quien',this.value)"></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card-body" style="border-top:1px solid var(--crema-2)">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+        <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Costo estándar</div>
+          <div style="font-size:20px;font-weight:700">${c.stdCosto>0?'$'+fmt(c.stdCosto):'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">${c.stdUnitario!==null?'$'+fmt(c.stdUnitario)+' por unidad · lo que debe costar':'mano de obra del lote'}</div>
+        </div>
+        <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Costo real</div>
+          <div style="font-size:20px;font-weight:700">${c.completo?'$'+fmt(c.realCosto):'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">${c.completo?(c.realUnitario!==null?'$'+fmt(c.realUnitario)+' por unidad · lo que costó':'') : 'faltan minutos reales en alguna etapa'}</div>
+        </div>
+        <div style="flex:1;min-width:150px;background:${c.difCosto===null?'var(--crema)':c.difCosto>0?'#FCE8E8':'#E4F3E6'};border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${c.difCosto===null?'var(--gris-2)':c.difCosto>0?'#C02626':'#1B7A34'}">Desvío de eficiencia</div>
+          <div style="font-size:20px;font-weight:700;color:${c.difCosto===null?'inherit':c.difCosto>0?'#C02626':'#1B7A34'}">${c.difMin===null?'—':(c.difMin>0?'+':'−')+fmtD(Math.abs(c.difMin),0)+' min'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">${c.difCosto!==null?(c.difCosto>0?'+':'−')+'$'+fmt(Math.abs(c.difCosto))+' respecto del estándar':'se calcula al cargar los tiempos'}</div>
+        </div>
+        <div style="flex:1;min-width:170px;background:${c.completo&&c.mpUnitario!==null?'#EBF3FF':'var(--crema)'};border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${c.completo&&c.mpUnitario!==null?'#1F4E79':'var(--gris-2)'}">Costo de producción</div>
+          <div style="font-size:20px;font-weight:700;color:${c.completo&&c.mpUnitario!==null?'#1F4E79':'inherit'}">${(c.mpUnitario!==null&&c.stdUnitario!==null)?'$'+fmt(c.mpUnitario+c.stdUnitario):'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">${c.mpUnitario!==null?'mercadería $'+fmt(c.mpUnitario)+' + mano de obra estándar':'por unidad'}</div>
+        </div>
+      </div>
+
+      ${(() => {
+        // La lectura: el número solo no sirve, hay que decir dónde pasó y qué
+        // mirar. Y ojo con el tipo de etapa: si la que se desvió es automática,
+        // el problema no es el operario.
+        if(!c.completo || c.difMin===null) return '';
+        const peor = c.detalle.filter(d=>d.difMin!==null).sort((a,b)=>Math.abs(b.difMin)-Math.abs(a.difMin))[0];
+        if(!peor || Math.abs(peor.difMin) < 1) return `<div style="font-size:13px;color:#1B7A34;background:#E4F3E6;border-radius:8px;padding:10px 14px">Este lote salió según el estándar.</div>`;
+        const auto = peor.tipo!=='manual';
+        return `<div style="font-size:13px;color:var(--gris-1);background:var(--crema);border-radius:8px;padding:12px 14px;line-height:1.5">
+          <strong>La etapa que más se apartó fue ${esc(peor.nombre)}</strong>: ${peor.difMin>0?'+':'−'}${fmtD(Math.abs(peor.difMin),0)} minutos-hombre${peor.difCosto!==null?' ('+(peor.difCosto>0?'+':'−')+'$'+fmt(Math.abs(peor.difCosto))+')':''}.
+          ${auto
+            ? ' Es una etapa <strong>'+(TIPOS_ETAPA[peor.tipo]?TIPOS_ETAPA[peor.tipo].label.toLowerCase():peor.tipo)+'</strong>: el tiempo no depende de quién la haga. Mirá el equipo, el insumo o el procedimiento antes que a la gente.'
+            : ' Es una etapa manual. Puede ser el equipo, el insumo, o que el estándar no sea alcanzable — si se repite en todos los lotes, revisá el estándar.'}
+        </div>`;
+      })()}
+
+      <div style="margin-top:12px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:4px">Observaciones</div>
+        <input type="text" value="${esc(l.obs||'')}" placeholder="qué pasó en este lote: paradas, cambios de insumo, lo que sea" style="width:100%"
+          onchange="updLote('${escJs(l.id)}','obs',this.value)">
+      </div>
+    </div>
+  </div>`;
 }
 
 function renderPuestos(){
