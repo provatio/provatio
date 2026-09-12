@@ -15989,6 +15989,11 @@ function calcManoObra(r){
   const puestos = getPuestos();
   const unidades = _unidadesDelLote(r);
   let minLoteH = 0, minUnidH = 0, costoLote = 0, costoUnidad = 0, duracionTotal = 0;
+  // minLoteH = el trabajo que se hace una vez por tanda.
+  // minUnidH = el trabajo extra POR PIEZA (todavía sin multiplicar).
+  // El total real de la tanda es minLoteH + minUnidH × unidades, y ese es el
+  // número que hay que mostrar como "minutos-hombre del lote": mostrar solo
+  // minLoteH decía 55 cuando el lote llevaba 3.655.
   const faltan = [];
   etapas.forEach(e=>{
     const personas = Math.max(1, +e.personas || 1);
@@ -16010,9 +16015,10 @@ function calcManoObra(r){
   // El tiempo de lote se reparte entre lo que rinde la tanda.
   const loteXUnidad = unidades > 0 ? costoLote / unidades : null;
   const total = (loteXUnidad === null) ? null : loteXUnidad + costoUnidad;
+  const minTotalLote = minLoteH + minUnidH * (unidades > 0 ? unidades : 0);
   return {
     etapas: etapas.length,
-    minLoteH, minUnidH, duracionTotal,
+    minLoteH, minUnidH, minTotalLote, duracionTotal,
     costoLote, costoPorUnidad: total,
     minHombrePorUnidad: unidades > 0 ? minLoteH/unidades + minUnidH : null,
     unidades, faltan,
@@ -16269,8 +16275,8 @@ function _htmlProceso(r){
           <th style="min-width:150px">Etapa</th>
           <th style="min-width:140px">Puesto</th>
           <th style="text-align:right;width:80px" title="Cuántas personas la hacen a la vez. Dos personas 30 minutos son 60 minutos-hombre.">Personas</th>
-          <th style="text-align:right;width:100px" title="Minutos de trabajo que se hacen UNA vez por tanda: armado, cambio de formato, sanitización, precalentado.">Min. por lote</th>
-          <th style="text-align:right;width:105px" title="Minutos de trabajo que lleva CADA pieza. No cambia con el tamaño del lote.">Min. por ${unidLabel}</th>
+          <th style="text-align:right;width:120px" title="Los minutos de trabajo de esta etapa para TODO el lote. Es lo que se carga casi siempre: si limpiar los 10 kg lleva 55 minutos, van 55.">Trabajo<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">todo el lote</div></th>
+          <th style="text-align:right;width:115px" title="Solo si ADEMÁS cada pieza suma tiempo aparte: bollar, armar, decorar una por una. Casi siempre va vacío.">Extra<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">por ${unidLabel}</div></th>
           <th style="text-align:right;width:110px" title="Cuánto tarda la etapa de punta a punta aunque nadie esté: levado, maceración, cocción lenta. NO cuesta mano de obra.">Duración</th>
           <th style="width:130px">Tipo</th>
           <th style="text-align:right;width:110px">Costo</th>
@@ -16301,9 +16307,11 @@ function _htmlProceso(r){
                 </select></td>
               <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.personas||1}" style="width:55px;text-align:right"
                   onchange="updEtapa('${escJs(e.id)}','personas',num(this.value))"></td>
-              <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.minLote||''}" placeholder="0" style="width:70px;text-align:right"
+              <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.minLote||''}" placeholder="0" style="width:80px;text-align:right"
+                  title="Minutos de trabajo de esta etapa para el lote entero."
                   onchange="updEtapa('${escJs(e.id)}','minLote',num(this.value))"></td>
-              <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.minUnidad||''}" placeholder="0" style="width:70px;text-align:right"
+              <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.minUnidad||''}" placeholder="—" style="width:70px;text-align:right;color:var(--gris-2)"
+                  title="Dejalo vacío salvo que cada pieza sume tiempo aparte del trabajo del lote."
                   onchange="updEtapa('${escJs(e.id)}','minUnidad',num(this.value))"></td>
               <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.duracion||''}" placeholder="—" style="width:75px;text-align:right"
                   title="Minutos de punta a punta. No cuesta mano de obra."
@@ -16337,8 +16345,10 @@ function _htmlProceso(r){
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Minutos-hombre</div>
-          <div style="font-size:20px;font-weight:700">${fmtD(mo.minLoteH,0)} <span style="font-size:12px;font-weight:400;color:var(--gris-2)">el lote</span></div>
-          <div style="font-size:11px;color:var(--gris-2)">${mo.minHombrePorUnidad!==null?fmtD(mo.minHombrePorUnidad,2)+' por '+unidLabel:'falta el rendimiento'}</div>
+          <div style="font-size:20px;font-weight:700">${fmtD(mo.minTotalLote,0)} <span style="font-size:12px;font-weight:400;color:var(--gris-2)">todo el lote</span></div>
+          <div style="font-size:11px;color:var(--gris-2)">${mo.minHombrePorUnidad!==null
+            ? fmtD(mo.minHombrePorUnidad,2)+' por '+unidLabel+(mo.minUnidH>0?' · '+fmtD(mo.minLoteH,0)+' de lote + '+fmtD(mo.minUnidH,2)+' por pieza':'')
+            : 'falta el rendimiento'}</div>
         </div>
         <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Duración del proceso</div>
@@ -16357,7 +16367,8 @@ function _htmlProceso(r){
         </div>
       </div>
       <div style="font-size:12px;color:var(--gris-2);margin-top:12px;line-height:1.5">
-        Los <strong>minutos por lote</strong> se hacen una vez por tanda y se reparten entre las ${mo.unidades>0?fmt(mo.unidades)+' '+unidLabel+'s':'unidades'} que rinde: cuanto más grande el lote, menos pesa cada una.
+        La columna <strong>Trabajo</strong> son los minutos de esta etapa para <strong>todo el lote</strong> — si limpiar los 10 kg lleva 55 minutos, van 55, no 55 por milanesa. Se reparten entre las ${mo.unidades>0?fmt(mo.unidades)+' '+unidLabel+'s':'unidades'} que rinde: cuanto más grande la tanda, menos pesa cada una.
+        La columna <strong>Extra</strong> va casi siempre vacía: solo se usa cuando además cada pieza suma tiempo aparte, como bollar o decorar una por una.
         La <strong>duración</strong> no cuesta mano de obra — una masa que leva dos horas no tiene a nadie mirándola; sirve para saber a qué hora arrancar y cuántos lotes entran en el día.
         Este costo <strong>no entra al food cost ni al EBITDA</strong>: va al lado.
       </div>
