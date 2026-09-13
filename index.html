@@ -16111,8 +16111,17 @@ function calcLote(lote){
   let stdMin=0, realMin=0, stdCosto=0, realCosto=0;
   const detalle = etapasReceta.map(e=>{
     const reg = (lote.etapas||[]).find(x=>x.etapaId===e.id) || {};
+    // Las personas del ESTÁNDAR salen de la receta y no se tocan desde el lote:
+    // son parte de cómo debe hacerse el producto. Las del lote son otra cosa —
+    // ese día se fue con menos gente, o con más— y eso es un desvío legítimo
+    // que hay que poder registrar.
+    // Antes había una sola columna: se editaba el real y el estándar seguía
+    // usando el de la receta. La tabla mostraba 240 minutos-hombre de estándar
+    // con 1 persona cargada, y el desvío daba +10 minutos pero −$15.625: más
+    // tiempo y menos plata, porque comparaba 2 personas contra 1.
     const persStd  = Math.max(1, +e.personas||1);
-    const persReal = Math.max(1, +reg.personas || persStd);
+    const persReal = (reg.personas !== undefined && reg.personas !== '')
+      ? Math.max(1, +reg.personas || 1) : persStd;
     const p = puestos.find(x=>x.id===e.puestoId);
     const xmin = p ? costoMinutoPuesto(p) : null;
     // Estándar: el tiempo de lote más el tiempo por unidad por las unidades que
@@ -16560,7 +16569,8 @@ function _htmlLoteDetalle(l, conProceso){
       <table>
         <thead><tr>
           <th>Etapa</th><th style="width:120px">Puesto</th>
-          <th style="text-align:right;width:95px">Personas</th>
+          <th style="text-align:right;width:85px" title="Cuántas personas dice el proceso que hacen esta etapa. Se cambia en la receta, no acá.">Personas<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">estándar</div></th>
+          <th style="text-align:right;width:90px" title="Cuántas personas la hicieron de verdad ese día. Si fue con menos o con más gente, eso también es un desvío.">Personas<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">reales</div></th>
           <th style="text-align:right;width:115px" title="Los minutos que debería tardar la etapa, en reloj, escalados a las unidades que salieron.">Min. estándar<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">de reloj</div></th>
           <th style="text-align:right;width:115px" title="Los minutos que tardó de verdad, en reloj. Las personas se aplican aparte.">Min. reales<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">de reloj</div></th>
           <th style="text-align:right;width:110px">Desvío</th>
@@ -16570,16 +16580,19 @@ function _htmlLoteDetalle(l, conProceso){
           ${c.detalle.map(d=>`<tr>
             <td><strong>${esc(d.nombre)}</strong>${d.tipo!=='manual'?`<div style="font-size:10px;color:var(--gris-2)">${TIPOS_ETAPA[d.tipo]?TIPOS_ETAPA[d.tipo].label:d.tipo}</div>`:''}</td>
             <td style="font-size:12px;color:${d.sinPuesto?'#C02626':'var(--gris-1)'}">${d.puesto?esc(d.puesto):'sin puesto'}</td>
-            <td style="text-align:right"><input type="text" inputmode="decimal" value="${d.personas}" style="width:60px;text-align:right"
-                onchange="updLoteEtapa('${escJs(l.id)}','${escJs(d.etapaId)}','personas',num(this.value))"></td>
+            <td style="text-align:right;color:var(--gris-2)">${d.personasStd}</td>
+            <td style="text-align:right"><input type="text" inputmode="decimal" value="${d.personas}" style="width:60px;text-align:right${d.personas!==d.personasStd?';border-color:#D4B870;font-weight:700':''}"
+                title="Cuántas personas hicieron esta etapa ese día."
+                onchange="updLoteEtapa('${escJs(l.id)}','${escJs(d.etapaId)}','personas',this.value)"></td>
             <td style="text-align:right">${fmtD(d.relojStd,0)}${d.personasStd>1?`<div style="font-size:10px;color:var(--gris-2)">${fmtD(d.minStd,0)} min-hombre</div>`:''}</td>
             <td style="text-align:right"><input type="text" inputmode="decimal" value="${d.relojReal!==null?d.relojReal:''}" placeholder="—" style="width:75px;text-align:right"
                 title="Minutos de reloj que tardó la etapa. La cantidad de personas se aplica aparte, en el costo."
                 onchange="updLoteEtapa('${escJs(l.id)}','${escJs(d.etapaId)}','minReal',this.value)">
                 ${(d.relojReal!==null&&d.personas>1)?`<div style="font-size:10px;color:var(--gris-2)">${fmtD(d.minReal,0)} min-hombre</div>`:''}</td>
-            <td style="text-align:right;font-weight:700;color:${d.difReloj===null?'var(--gris-3)':Math.abs(d.difReloj)<0.5?'var(--gris-2)':d.difReloj>0?'#C02626':'#1B7A34'}">
-              ${d.difReloj===null?'—':(d.difReloj>0?'+':'−')+fmtD(Math.abs(d.difReloj),0)+' min'}
-              ${d.difCosto!==null&&Math.abs(d.difCosto)>=1?`<div style="font-size:10px;font-weight:400">${d.difCosto>0?'+':'−'}$${fmt(Math.abs(d.difCosto))}</div>`:''}</td>
+            <td style="text-align:right;font-weight:700;color:${d.difMin===null?'var(--gris-3)':Math.abs(d.difMin)<0.5?'var(--gris-2)':d.difMin>0?'#C02626':'#1B7A34'}">
+              ${d.difMin===null?'—':(d.difMin>0?'+':'−')+fmtD(Math.abs(d.difMin),0)+' min-hombre'}
+              ${d.difCosto!==null&&Math.abs(d.difCosto)>=1?`<div style="font-size:10px;font-weight:400">${d.difCosto>0?'+':'−'}$${fmt(Math.abs(d.difCosto))}</div>`:''}
+              ${(d.difReloj!==null&&Math.abs(d.difReloj)>0.5&&d.personas!==d.personasStd)?`<div style="font-size:10px;font-weight:400;color:var(--gris-2)">${d.difReloj>0?'+':'−'}${fmtD(Math.abs(d.difReloj),0)} de reloj · ${d.personas} vs ${d.personasStd} personas</div>`:''}</td>
             <td><input type="text" value="${esc(d.quien||'')}" placeholder="nombre" style="width:100%"
                 title="Para trazabilidad, no para costear: el costo sale del puesto."
                 onchange="updLoteEtapa('${escJs(l.id)}','${escJs(d.etapaId)}','quien',this.value)"></td>
@@ -16621,7 +16634,10 @@ function _htmlLoteDetalle(l, conProceso){
         if(!peor || Math.abs(peor.difReloj) < 1) return `<div style="font-size:13px;color:#1B7A34;background:#E4F3E6;border-radius:8px;padding:10px 14px">Este lote salió según el estándar.</div>`;
         const auto = peor.tipo!=='manual';
         return `<div style="font-size:13px;color:var(--gris-1);background:var(--crema);border-radius:8px;padding:12px 14px;line-height:1.5">
-          <strong>La etapa que más se apartó fue ${esc(peor.nombre)}</strong>: ${peor.difReloj>0?'+':'−'}${fmtD(Math.abs(peor.difReloj),0)} minutos de reloj${peor.personas>1?' ('+fmtD(Math.abs(peor.difMin),0)+' minutos-hombre)':''}${peor.difCosto!==null?' ('+(peor.difCosto>0?'+':'−')+'$'+fmt(Math.abs(peor.difCosto))+')':''}.
+          <strong>La etapa que más se apartó fue ${esc(peor.nombre)}</strong>: ${peor.difMin>0?'+':'−'}${fmtD(Math.abs(peor.difMin),0)} minutos-hombre${peor.difCosto!==null?' ('+(peor.difCosto>0?'+':'−')+'$'+fmt(Math.abs(peor.difCosto))+')':''}.
+          ${peor.personas!==peor.personasStd
+            ? ' La etapa tardó '+(peor.difReloj>0?'+':'−')+fmtD(Math.abs(peor.difReloj),0)+' minutos de reloj y se hizo con <strong>'+peor.personas+' persona'+(peor.personas>1?'s':'')+' en vez de '+peor.personasStd+'</strong>: buena parte del desvío viene de ahí, no del ritmo de trabajo.'
+            : ''}
           ${auto
             ? ' Es una etapa <strong>'+(TIPOS_ETAPA[peor.tipo]?TIPOS_ETAPA[peor.tipo].label.toLowerCase():peor.tipo)+'</strong>: el tiempo no depende de quién la haga. Mirá el equipo, el insumo o el procedimiento antes que a la gente.'
             : ' Es una etapa manual. Puede ser el equipo, el insumo, o que el estándar no sea alcanzable — si se repite en todos los lotes, revisá el estándar.'}
