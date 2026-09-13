@@ -15971,6 +15971,21 @@ const TIPOS_ETAPA = {
 function getEtapas(r){
   if(!r) return [];
   if(!r.etapas) r.etapas = [];
+  // Las etapas cargadas con el modelo anterior tenían dos campos sueltos:
+  // minLote (trabajo por tanda) y minUnidad (trabajo por pieza). El modelo nuevo
+  // pide el TOTAL de la etapa y, aparte, qué parte de ese total es fija. La
+  // conversión es directa y se hace una sola vez, al abrir la receta: nadie
+  // tiene que recargar nada.
+  r.etapas.forEach(e=>{
+    if(e && e.minTotal === undefined && (e.minLote !== undefined || e.minUnidad !== undefined)){
+      const fijos = +e.minLote || 0;
+      const porPieza = +e.minUnidad || 0;
+      const u = _unidadesDelLote(r) || 1;
+      e.minFijos = fijos;
+      e.minTotal = fijos + porPieza * u;
+      delete e.minLote; delete e.minUnidad;
+    }
+  });
   return r.etapas;
 }
 // Cuántas unidades rinde este producto, para repartir el tiempo de lote.
@@ -15989,16 +16004,35 @@ function calcManoObra(r){
   const puestos = getPuestos();
   const unidades = _unidadesDelLote(r);
   let minLoteH = 0, minUnidH = 0, costoLote = 0, costoUnidad = 0, duracionTotal = 0;
-  // minLoteH = el trabajo que se hace una vez por tanda.
-  // minUnidH = el trabajo extra POR PIEZA (todavía sin multiplicar).
-  // El total real de la tanda es minLoteH + minUnidH × unidades, y ese es el
-  // número que hay que mostrar como "minutos-hombre del lote": mostrar solo
-  // minLoteH decía 55 cuando el lote llevaba 3.655.
+  // minLoteH = la parte FIJA del trabajo, la que no cambia con el tamaño.
+  // minUnidH = la parte variable, ya llevada a "por pieza".
+  // El total de la tanda es minLoteH + minUnidH × unidades.
   const faltan = [];
+  // CÓMO SE CARGA UNA ETAPA
+  //
+  // Se carga el TOTAL de minutos de trabajo de la etapa para el lote de
+  // referencia. Es lo que una cocina mide de verdad: nadie cronometra una
+  // milanesa suelta, se cronometra la tanda.
+  //
+  // Y opcionalmente, cuántos de esos minutos son FIJOS: los que no cambian con
+  // el tamaño de la tanda —sacar la carne de la cámara, preparar la mesa,
+  // limpiar al final—. Lo que no es fijo escala con las piezas.
+  //
+  //   Total 60 min, de los cuales 15 fijos, sobre un lote de 60 unidades
+  //   → 15 fijos + 45 variables ÷ 60 = 0,75 min por unidad
+  //   → una tanda de 200 lleva 15 + 150 = 165 min, no 200
+  //
+  // Si el campo de fijos va vacío, todo escala con las piezas. Es más simple y
+  // es lo que pasa casi siempre; el que lo completa obtiene un costeo que sirve
+  // para tandas de otro tamaño.
   etapas.forEach(e=>{
     const personas = Math.max(1, +e.personas || 1);
-    const mLote = (+e.minLote || 0) * personas;
-    const mUnid = (+e.minUnidad || 0) * personas;
+    const totalEtapa = +e.minTotal || 0;
+    const fijos = Math.min(+e.minFijos || 0, totalEtapa);
+    const variables = totalEtapa - fijos;
+    const uRef = unidades > 0 ? unidades : 1;
+    const mLote = fijos * personas;
+    const mUnid = (variables / uRef) * personas;
     minLoteH += mLote; minUnidH += mUnid;
     duracionTotal += (+e.duracion || 0);
     const p = puestos.find(x=>x.id===e.puestoId);
@@ -16077,7 +16111,14 @@ function calcLote(lote){
     const xmin = p ? costoMinutoPuesto(p) : null;
     // Estándar: el tiempo de lote más el tiempo por unidad por las unidades que
     // ESTE lote produjo. Así los dos costos se comparan sobre la misma tanda.
-    const mStd  = ((+e.minLote||0) + (+e.minUnidad||0)*unid) * persStd;
+    // Estándar escalado a las unidades que ESTE lote produjo: la parte fija no
+    // cambia, la variable sí. Así el estándar y el real se comparan sobre la
+    // misma tanda aunque haya salido más grande o más chica de lo previsto.
+    const totalEtapa = +e.minTotal || 0;
+    const fijos = Math.min(+e.minFijos || 0, totalEtapa);
+    const variables = totalEtapa - fijos;
+    const uRef = unidEsperadas > 0 ? unidEsperadas : (unid > 0 ? unid : 1);
+    const mStd  = (fijos + variables * (unid / uRef)) * persStd;
     const mReal = (reg.minReal !== undefined && reg.minReal !== '') ? (+reg.minReal||0) * persReal : null;
     stdMin += mStd;
     if(mReal !== null) realMin += mReal;
@@ -16205,7 +16246,7 @@ function addEtapa(){
   const r = recetaEditando; if(!r) return;
   if(!r.etapas) r.etapas = [];
   r.etapas.push({ id: uid(), nombre:'', puestoId:'', personas:1,
-                  minLote:0, minUnidad:0, duracion:0, tipo:'manual' });
+                  minTotal:0, minFijos:0, duracion:0, tipo:'manual' });
   renderEditorReceta(); programarAutoguardadoReceta();
 }
 function updEtapa(id, campo, val){
@@ -16275,8 +16316,8 @@ function _htmlProceso(r){
           <th style="min-width:150px">Etapa</th>
           <th style="min-width:140px">Puesto</th>
           <th style="text-align:right;width:80px" title="Cuántas personas la hacen a la vez. Dos personas 30 minutos son 60 minutos-hombre.">Personas</th>
-          <th style="text-align:right;width:120px" title="Los minutos de trabajo de esta etapa para TODO el lote. Es lo que se carga casi siempre: si limpiar los 10 kg lleva 55 minutos, van 55.">Trabajo<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">todo el lote</div></th>
-          <th style="text-align:right;width:115px" title="Solo si ADEMÁS cada pieza suma tiempo aparte: bollar, armar, decorar una por una. Casi siempre va vacío.">Extra<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">por ${unidLabel}</div></th>
+          <th style="text-align:right;width:125px" title="El total de minutos de trabajo de esta etapa para el lote. Es lo que se cronometra: la tanda, no la pieza.">Minutos<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">total de la etapa</div></th>
+          <th style="text-align:right;width:125px" title="De esos minutos, cuántos NO cambian si la tanda es más grande: preparar la mesa, sacar la mercadería, limpiar al final. Opcional — si va vacío, todo escala con las piezas.">De los cuales<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">fijos · opcional</div></th>
           <th style="text-align:right;width:110px" title="Cuánto tarda la etapa de punta a punta aunque nadie esté: levado, maceración, cocción lenta. NO cuesta mano de obra.">Duración</th>
           <th style="width:130px">Tipo</th>
           <th style="text-align:right;width:110px">Costo</th>
@@ -16287,10 +16328,9 @@ function _htmlProceso(r){
             const personas = Math.max(1, +e.personas||1);
             const p = puestos.find(x=>x.id===e.puestoId);
             const xmin = p ? costoMinutoPuesto(p) : null;
-            const mH = ((+e.minLote||0) + (+e.minUnidad||0)*0) * personas;
-            const costoEtapaLote = xmin!==null ? (+e.minLote||0)*personas*xmin : null;
-            const costoEtapaUnid = xmin!==null ? (+e.minUnidad||0)*personas*xmin : null;
-            const sinTiempo = !(+e.minLote||0) && !(+e.minUnidad||0);
+            const costoEtapaLote = xmin!==null ? (+e.minTotal||0)*personas*xmin : null;
+            const costoEtapaUnid = (xmin!==null && mo.unidades>0) ? (+e.minTotal||0)*personas*xmin/mo.unidades : null;
+            const sinTiempo = !(+e.minTotal||0);
             return `<tr>
               <td style="padding:4px 2px">
                 <div style="display:flex;flex-direction:column;gap:1px">
@@ -16307,12 +16347,14 @@ function _htmlProceso(r){
                 </select></td>
               <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.personas||1}" style="width:55px;text-align:right"
                   onchange="updEtapa('${escJs(e.id)}','personas',num(this.value))"></td>
-              <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.minLote||''}" placeholder="0" style="width:80px;text-align:right"
-                  title="Minutos de trabajo de esta etapa para el lote entero."
-                  onchange="updEtapa('${escJs(e.id)}','minLote',num(this.value))"></td>
-              <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.minUnidad||''}" placeholder="—" style="width:70px;text-align:right;color:var(--gris-2)"
-                  title="Dejalo vacío salvo que cada pieza sume tiempo aparte del trabajo del lote."
-                  onchange="updEtapa('${escJs(e.id)}','minUnidad',num(this.value))"></td>
+              <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.minTotal||''}" placeholder="0" style="width:80px;text-align:right"
+                  title="Minutos de trabajo de esta etapa para todo el lote."
+                  onchange="updEtapa('${escJs(e.id)}','minTotal',num(this.value))">
+                  ${(+e.minTotal>0 && mo.unidades>0)?`<div style="font-size:10px;color:var(--gris-2)">${fmtD((+e.minTotal)/mo.unidades,2)} por ${unidLabel}</div>`:''}</td>
+              <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.minFijos||''}" placeholder="—" style="width:75px;text-align:right;color:var(--gris-2)"
+                  title="De los minutos de arriba, cuántos no cambian si la tanda es más grande. Si lo dejás vacío, todo escala con las piezas."
+                  onchange="updEtapa('${escJs(e.id)}','minFijos',num(this.value))">
+                  ${(+e.minFijos > +e.minTotal)?'<div style="font-size:10px;color:#C02626">más que el total</div>':''}</td>
               <td style="text-align:right"><input type="text" inputmode="decimal" value="${e.duracion||''}" placeholder="—" style="width:75px;text-align:right"
                   title="Minutos de punta a punta. No cuesta mano de obra."
                   onchange="updEtapa('${escJs(e.id)}','duracion',num(this.value))"></td>
@@ -16347,7 +16389,7 @@ function _htmlProceso(r){
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Minutos-hombre</div>
           <div style="font-size:20px;font-weight:700">${fmtD(mo.minTotalLote,0)} <span style="font-size:12px;font-weight:400;color:var(--gris-2)">todo el lote</span></div>
           <div style="font-size:11px;color:var(--gris-2)">${mo.minHombrePorUnidad!==null
-            ? fmtD(mo.minHombrePorUnidad,2)+' por '+unidLabel+(mo.minUnidH>0?' · '+fmtD(mo.minLoteH,0)+' de lote + '+fmtD(mo.minUnidH,2)+' por pieza':'')
+            ? fmtD(mo.minHombrePorUnidad,2)+' por '+unidLabel+(mo.minLoteH>0?' · '+fmtD(mo.minLoteH,0)+' fijos + el resto escala':'')
             : 'falta el rendimiento'}</div>
         </div>
         <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
@@ -16367,8 +16409,8 @@ function _htmlProceso(r){
         </div>
       </div>
       <div style="font-size:12px;color:var(--gris-2);margin-top:12px;line-height:1.5">
-        La columna <strong>Trabajo</strong> son los minutos de esta etapa para <strong>todo el lote</strong> — si limpiar los 10 kg lleva 55 minutos, van 55, no 55 por milanesa. Se reparten entre las ${mo.unidades>0?fmt(mo.unidades)+' '+unidLabel+'s':'unidades'} que rinde: cuanto más grande la tanda, menos pesa cada una.
-        La columna <strong>Extra</strong> va casi siempre vacía: solo se usa cuando además cada pieza suma tiempo aparte, como bollar o decorar una por una.
+        En <strong>Minutos</strong> va el total de trabajo de la etapa para el lote — es lo que se cronometra: la tanda, no la pieza. Se reparte entre las ${mo.unidades>0?fmt(mo.unidades)+' '+unidLabel+'s':'unidades'} que rinde.
+        <strong>De los cuales fijos</strong> es opcional: son los minutos que no cambian si la tanda es más grande —preparar la mesa, sacar la mercadería, limpiar al final—. Si lo completás, el sistema sabe que una tanda más grande rinde mejor; si lo dejás vacío, asume que todo escala parejo.
         La <strong>duración</strong> no cuesta mano de obra — una masa que leva dos horas no tiene a nadie mirándola; sirve para saber a qué hora arrancar y cuántos lotes entran en el día.
         Este costo <strong>no entra al food cost ni al EBITDA</strong>: va al lado.
       </div>
