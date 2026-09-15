@@ -16108,6 +16108,11 @@ function calcLote(lote){
   const unid = +lote.unidades || 0;
   const unidEsperadas = _unidadesDelLote(r);
 
+  // Cuántas veces se hizo la receta en este lote. Hace falta antes del recorrido
+  // de etapas: dos tandas llevan el doble de trabajo, y eso es estándar, no
+  // desvío. Escalar el tiempo por las unidades que salieron mezclaría la pérdida
+  // de rendimiento con el ritmo de trabajo, que son dos problemas distintos.
+  const tandas = (lote.tandas !== undefined && lote.tandas !== '') ? Math.max(0, +lote.tandas || 0) : 1;
   let stdMin=0, realMin=0, stdCosto=0, realCosto=0;
   const detalle = etapasReceta.map(e=>{
     const reg = (lote.etapas||[]).find(x=>x.etapaId===e.id) || {};
@@ -16130,13 +16135,12 @@ function calcLote(lote){
     // cambia, la variable sí. Así el estándar y el real se comparan sobre la
     // misma tanda aunque haya salido más grande o más chica de lo previsto.
     const totalEtapa = e.todaLaEtapa ? (+e.duracion || 0) : (+e.minTotal || 0);
-    const uRef = unidEsperadas > 0 ? unidEsperadas : (unid > 0 ? unid : 1);
     // LAS DOS COLUMNAS VAN EN MINUTOS DE RELOJ, que es lo que se cronometra.
     // Antes el estándar se mostraba en minutos-HOMBRE (ya multiplicado por la
     // gente) y el campo de reales pedía minutos de reloj: la tabla comparaba
     // 240 contra 220 y devolvía +200, porque por dentro eran 440 contra 240.
     // La cantidad de personas ya tiene su propia columna y se aplica al costo.
-    const relojStd  = totalEtapa * (unid / uRef);
+    const relojStd  = totalEtapa * tandas;
     const relojReal = (reg.minReal !== undefined && reg.minReal !== '') ? (+reg.minReal||0) : null;
     // Para el costo sí hacen falta los minutos-hombre.
     const mStd  = relojStd * persStd;
@@ -16161,17 +16165,37 @@ function calcLote(lote){
   const completo = detalle.every(d=>d.minReal!==null);
   const faltanPuestos = detalle.filter(d=>d.sinPuesto && d.minStd>0).length;
   const {merc} = calcReceta(r, r.porciones||1);
-  // La mercadería del lote se escala a las unidades que salieron.
-  const mpLote = unidEsperadas>0 ? merc/unidEsperadas*unid : (unid>0 ? merc : 0);
+  // ── LA MERCADERÍA QUE ENTRÓ AL LOTE ──────────────────────────────────────
+  //
+  // Antes esto dividía el costo de la receta por las unidades ESPERADAS, así que
+  // la mercadería por unidad era siempre la misma: una copia del estándar. Si la
+  // receta decía que 22,5 kg dan 100 milanesas y ese día salieron 80 con la
+  // misma carne, cada milanesa costó más de mercadería y el sistema no lo veía.
+  //
+  // El problema es que dos situaciones distintas se ven igual desde afuera:
+  //   · salieron 80 de una tanda prevista para 100 → se perdió rendimiento
+  //   · salieron 200 porque se hicieron 2 tandas   → el costo por unidad no cambia
+  //
+  // Por eso el lote dice CUÁNTAS TANDAS de la receta se hicieron. Con ese dato la
+  // materia prima que entró es exacta —tandas × la receta— y lo que salga de más
+  // o de menos es un desvío de rendimiento real, no una suposición.
+  const mpLote = merc * tandas;
+  const unidTeoricas = unidEsperadas > 0 ? unidEsperadas * tandas : 0;
   return {
     receta:r, detalle, unid, unidEsperadas,
-    difUnid: unidEsperadas>0 ? unid-unidEsperadas : null,
+    difUnid: unidEsperadas>0 ? unid-(unidEsperadas*tandas) : null,
     stdMin, realMin, stdCosto, realCosto,
     difMin: completo ? realMin-stdMin : null,
     difCosto: completo ? realCosto-stdCosto : null,
     stdUnitario: unid>0 ? stdCosto/unid : null,
     realUnitario: (unid>0&&completo) ? realCosto/unid : null,
+    tandas, unidTeoricas,
+    // Lo que costó de verdad cada unidad que salió: toda la materia prima que
+    // entró, dividida por lo que efectivamente salió.
     mpLote, mpUnitario: unid>0 ? mpLote/unid : null,
+    // Lo que debería haber costado si el rendimiento hubiera sido el previsto.
+    mpUnitarioStd: unidTeoricas>0 ? mpLote/unidTeoricas : null,
+    difRendimiento: (unidTeoricas>0 && unid>0) ? unid-unidTeoricas : null,
     completo, faltanPuestos,
     sinUnidades: !(unid>0),
   };
@@ -16509,7 +16533,7 @@ function renderLotes(){
                 <td>${l.fecha?fmtFechaCorta(l.fecha):'—'}</td>
                 <td>${esc(c.receta.nombre||'Sin nombre')}</td>
                 <td style="font-size:12px">${esc(l.turno||'—')}</td>
-                <td style="text-align:right">${c.unid?fmt(c.unid):'<span style="color:#C02626;font-size:12px">falta</span>'}${c.difUnid!==null&&c.difUnid!==0?`<div style="font-size:10px;color:${c.difUnid<0?'#C02626':'#1B7A34'}">${c.difUnid>0?'+':'−'}${fmt(Math.abs(c.difUnid))} vs ${fmt(c.unidEsperadas)}</div>`:''}</td>
+                <td style="text-align:right">${c.unid?fmt(c.unid):'<span style="color:#C02626;font-size:12px">falta</span>'}${c.difUnid!==null&&Math.abs(c.difUnid)>0.01?`<div style="font-size:10px;color:${c.difUnid<0?'#C02626':'#1B7A34'}">${c.difUnid>0?'+':'−'}${fmt(Math.abs(c.difUnid))} vs ${fmt(c.unidTeoricas)}</div>`:''}</td>
                 <td style="text-align:right">${c.stdCosto>0?'$'+fmt(c.stdCosto):'—'}</td>
                 <td style="text-align:right">${c.completo?'$'+fmt(c.realCosto):'<span style="color:var(--gris-3);font-size:12px">incompleto</span>'}</td>
                 <td style="text-align:right;font-weight:700;color:${c.difCosto===null?'var(--gris-3)':Math.abs(pct||0)<3?'var(--gris-2)':c.difCosto>0?'#C02626':'#1B7A34'}">
@@ -16552,11 +16576,22 @@ function _htmlLoteDetalle(l, conProceso){
           <select style="width:100%" onchange="updLote('${escJs(l.id)}','recetaId',this.value)">
             ${conProceso.map(x=>`<option value="${esc(x.id)}"${x.id===l.recetaId?' selected':''}>${esc(x.nombre||'Sin nombre')}</option>`).join('')}
           </select></div>
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:4px">Tandas</div>
+          <input type="text" inputmode="decimal" value="${l.tandas!==undefined?l.tandas:1}" placeholder="1" style="width:80px;text-align:right"
+            title="Cuántas veces se hizo la receta en este lote. Una tanda = la receta tal como está cargada. Dos tandas = el doble de materia prima y el doble de trabajo."
+            onchange="updLote('${escJs(l.id)}','tandas',this.value)"></div>
         <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:4px">${unidLabel} producidas</div>
           <input type="text" inputmode="decimal" value="${l.unidades||''}" placeholder="0" style="width:110px;text-align:right"
             title="Lo que salió de verdad. Si no está cargado no se puede repartir nada: el lote queda incompleto."
             onchange="updLote('${escJs(l.id)}','unidades',num(this.value))"></div>
       </div>
+      ${(c.difRendimiento!==null && Math.abs(c.difRendimiento) > 0.01) ? `
+      <div style="background:${c.difRendimiento<0?'#FDF0D0':'#E4F3E6'};color:${c.difRendimiento<0?'#6B4A08':'#1B7A34'};border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px">
+        Con <strong>${fmtD(c.tandas,2).replace(',00','')} tanda${c.tandas===1?'':'s'}</strong> deberían haber salido <strong>${fmt(c.unidTeoricas)}</strong> ${unidLabel} y salieron <strong>${fmt(c.unid)}</strong>:
+        ${c.difRendimiento<0?fmt(Math.abs(c.difRendimiento))+' menos':fmt(c.difRendimiento)+' más'}.
+        La misma mercadería repartida entre ${c.difRendimiento<0?'menos':'más'} unidades hace que cada una cueste
+        <strong>$${fmt(c.mpUnitario)}</strong> en vez de $${fmt(c.mpUnitarioStd)}${c.difRendimiento<0?` — son $${fmt((c.mpUnitario-c.mpUnitarioStd)*c.unid)} de más en el lote`:''}.
+      </div>` : ''}
       ${c.sinUnidades ? `<div style="background:#FDF0D0;color:#6B4A08;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px">
         Falta cuántas ${unidLabel} salieron. Sin ese dato no se reparte nada y el lote queda <strong>incompleto</strong> — no se acomoda con un número inventado.
       </div>` : ''}
@@ -16618,10 +16653,14 @@ function _htmlLoteDetalle(l, conProceso){
           <div style="font-size:20px;font-weight:700;color:${c.difCosto===null?'inherit':c.difCosto>0?'#C02626':'#1B7A34'}">${c.difMin===null?'—':(c.difMin>0?'+':'−')+fmtD(Math.abs(c.difMin),0)+' min'}</div>
           <div style="font-size:11px;color:var(--gris-2)">${c.difCosto!==null?(c.difCosto>0?'+':'−')+'$'+fmt(Math.abs(c.difCosto))+' respecto del estándar':'se calcula al cargar los tiempos'}</div>
         </div>
-        <div style="flex:1;min-width:170px;background:${c.completo&&c.mpUnitario!==null?'#EBF3FF':'var(--crema)'};border-radius:10px;padding:12px 14px">
+        <div style="flex:1;min-width:190px;background:${c.completo&&c.mpUnitario!==null?'#EBF3FF':'var(--crema)'};border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${c.completo&&c.mpUnitario!==null?'#1F4E79':'var(--gris-2)'}">Costo de producción</div>
-          <div style="font-size:20px;font-weight:700;color:${c.completo&&c.mpUnitario!==null?'#1F4E79':'inherit'}">${(c.mpUnitario!==null&&c.stdUnitario!==null)?'$'+fmt(c.mpUnitario+c.stdUnitario):'—'}</div>
-          <div style="font-size:11px;color:var(--gris-2)">${c.mpUnitario!==null?'mercadería $'+fmt(c.mpUnitario)+' + mano de obra estándar':'por unidad'}</div>
+          <div style="font-size:20px;font-weight:700;color:${c.completo&&c.mpUnitario!==null?'#1F4E79':'inherit'}">${(c.mpUnitario!==null&&c.realUnitario!==null)?'$'+fmt(c.mpUnitario+c.realUnitario):(c.mpUnitario!==null&&c.stdUnitario!==null)?'$'+fmt(c.mpUnitario+c.stdUnitario):'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">${c.mpUnitario===null?'por unidad'
+            : c.realUnitario!==null
+              ? 'lo que costó este lote · mercadería $'+fmt(c.mpUnitario)+' + mano de obra $'+fmt(c.realUnitario)
+              : 'mercadería $'+fmt(c.mpUnitario)+' + mano de obra estándar (faltan tiempos reales)'}</div>
+          ${(c.mpUnitario!==null&&c.realUnitario!==null&&c.stdUnitario!==null)?`<div style="font-size:11px;color:var(--gris-2);margin-top:4px;border-top:1px solid var(--crema-2);padding-top:4px">Al estándar sería $${fmt(c.mpUnitario+c.stdUnitario)}</div>`:''}
         </div>
       </div>
 
