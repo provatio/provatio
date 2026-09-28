@@ -4835,6 +4835,8 @@ function buildSidebar(rol){
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'store', label:'Equipos de cocción', vista:'equipos'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'clipboard', label:'Pruebas de cocción', vista:'pruebas'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
@@ -4864,6 +4866,8 @@ function buildSidebar(rol){
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'store', label:'Equipos de cocción', vista:'equipos'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'clipboard', label:'Pruebas de cocción', vista:'pruebas'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     // Inventariar y declarar desperdicio son actos de cocina, no de análisis:
     // uno se agacha a contar en la cámara y el otro se carga tras el servicio.
@@ -4920,6 +4924,8 @@ function buildSidebar(rol){
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'store', label:'Equipos de cocción', vista:'equipos'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'clipboard', label:'Pruebas de cocción', vista:'pruebas'}] : []),
     {icon:'trash', label:'Desperdicio', vista:'desperdicio'},
     {section:'Planificación'},
     {icon:'calendar', label:'Semana actual', vista:'semanal'},
@@ -4937,6 +4943,8 @@ function buildSidebar(rol){
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'store', label:'Equipos de cocción', vista:'equipos'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'clipboard', label:'Pruebas de cocción', vista:'pruebas'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     {section:'Análisis'},
     {icon:'chart', label:'Cargar ventas', vista:'cargarVentas'},
@@ -4963,6 +4971,8 @@ function buildSidebar(rol){
     {icon:'tag', label:'Subrecetas', vista:'subrecetas'},
     ...(costeoMODirectaActivo() ? [{icon:'users', label:'Puestos de trabajo', vista:'puestos'}] : []),
     ...(costeoMODirectaActivo() ? [{icon:'clipboard', label:'Registro de lotes', vista:'lotes'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'store', label:'Equipos de cocción', vista:'equipos'}] : []),
+    ...(equiposCoccionActivo() ? [{icon:'clipboard', label:'Pruebas de cocción', vista:'pruebas'}] : []),
     {icon:'users', label:'Comida de personal', vista:'personal'},
     ...(!isCP ? [{icon:'clipboard', label:'Control de stock', vista:'stock'}] : []),
     ...(!isCP ? [{icon:'trash', label:'Desperdicio', vista:'desperdicio'}] : []),
@@ -5360,6 +5370,8 @@ function navigate(vista, params={}, opts={}){
     cargarVentas: renderCargarVentas,
     subrecetas: renderSubrecetas,
     puestos: renderPuestos,
+    equipos: renderEquipos,
+    pruebas: renderPruebas,
     lotes: renderLotes,
     analisisVentas: renderAnalisisVentas,
     clientes: renderClientes,
@@ -8596,6 +8608,8 @@ ${_rindeEnUnidades(r)
         </table>
       </div>
     </div>
+
+    ${equiposCoccionActivo() && !esNivelCocina() ? _htmlCoccion(r) : ''}
 
     ${costeoMODirectaActivo() && !esNivelCocina() ? _htmlProceso(r) : ''}
 
@@ -14128,6 +14142,10 @@ function _esManoObra(g){
 //
 // Con el módulo apagado no cambia nada: todo sigue como gasto fijo, igual que
 // hasta ahora. La marca queda guardada y espera.
+function equiposCoccionActivo(op){
+  op = op || (typeof getOp === 'function' ? getOp() : null);
+  return !!(op && op.equiposCoccion);
+}
 function costeoMODirectaActivo(op){
   op = op || (typeof getOp === 'function' ? getOp() : null);
   return !!(op && op.costeoManoObra);
@@ -15934,6 +15952,148 @@ ${_rindeEnUnidades(r)?`<input type="text" inputmode="decimal" id="prod-unid" pla
   </div>`;
 }
 
+// ══ EQUIPOS DE COCCIÓN Y VALIDACIÓN DE PROGRAMAS ═══════════════════════════
+//
+// EL PROBLEMA QUE RESUELVE, que no es costear:
+//
+// Una planta tiene varios equipos de cocción de distinta generación. En la
+// práctica casi todo se cocina en uno solo —el que alguien conoce— y los demás
+// quedan subutilizados. Ese equipo se vuelve el cuello de botella de la planta:
+// no encarece el producto, limita cuánto se puede producir por día.
+//
+// Validar los otros equipos no mejora el costo por unidad: MULTIPLICA LA
+// CAPACIDAD. Por eso lo primero de este módulo es la validación, no la plata.
+//
+// EL ESTÁNDAR ES EL PRODUCTO TERMINADO, NO LA TEMPERATURA.
+//
+// Dos hornos distintos necesitan programas distintos para dar el mismo
+// resultado: uno a 180 y otro a 175. Lo que no cambia es lo que tiene que dar
+// el producto —temperatura interna, merma, lo que mida calidad—, y eso sale del
+// instructivo, no de una opinión.
+//
+// QUÉ REGISTRA Y QUÉ NO:
+//
+// Este módulo registra PRUEBAS DE ESTANDARIZACIÓN, que son ensayos y hoy no
+// tienen dónde vivir. NO registra las cocciones de producción ni reemplaza el
+// sistema de calidad de la planta: ese dato tiene dueño y ya tiene su circuito.
+// Lo que falta es juntar las pruebas del mismo producto en equipos distintos y
+// poder decir, con el instructivo en la mano, cuál queda validado.
+//
+// LA VALIDACIÓN VA POR CARGA, NO POR REPETICIÓN:
+//
+// No alcanza con repetir tres veces la misma prueba. La carga cambia el
+// comportamiento térmico del equipo, así que se prueba con CARGA MÍNIMA (una
+// lata, unos moldes) y con CARGA COMPLETA (el carro lleno). Si el producto sale
+// dentro de rango en los dos extremos, lo del medio está cubierto.
+const CARGAS_PRUEBA = {
+  minima:  { label:'Carga mínima',  desc:'Una lata o unos moldes' },
+  completa:{ label:'Carga completa',desc:'El carro o el equipo lleno' },
+};
+// Lo que se mide en cada prueba. El peso inicial y final no se comparan contra
+// nada: de ellos sale la merma, que es la que tiene rango.
+const PARAMETROS_PRUEBA = {
+  tempInterna: { label:'Temperatura interna', unidad:'°C', dec:1 },
+  merma:       { label:'Merma de cocción',    unidad:'%',  dec:1, derivado:true },
+};
+
+function getEquipos(){
+  const op = getOp();
+  if(!op) return [];
+  if(!op.equipos) op.equipos = [];
+  return op.equipos;
+}
+function getPruebas(){
+  const op = getOp();
+  if(!op) return [];
+  if(!op.pruebasCoccion) op.pruebasCoccion = [];
+  return op.pruebasCoccion;
+}
+// El programa de cocción de un producto en un equipo: los pasos con sus
+// parámetros. Vive en la receta, indexado por equipo, porque es una propiedad
+// del producto — el mismo equipo cocina distinto según qué se le ponga adentro.
+function getPrograma(r, equipoId){
+  if(!r) return null;
+  if(!r.programas) r.programas = {};
+  if(!r.programas[equipoId]) r.programas[equipoId] = { pasos: [] };
+  return r.programas[equipoId];
+}
+// La merma sale de los pesos, no se carga: es un dato derivado y pedirlo aparte
+// abre la puerta a que no coincida con los pesos que están al lado.
+function mermaDePrueba(pr){
+  const ini = +pr.pesoInicial || 0, fin = +pr.pesoFinal || 0;
+  if(!(ini > 0) || !(fin > 0)) return null;
+  return (ini - fin) / ini * 100;
+}
+// ¿Esta prueba dio dentro de lo que pide el instructivo?
+// Devuelve el detalle por parámetro, no un sí o un no: si algo se fue de rango
+// hay que poder decir qué, no solo que falló.
+function evaluarPrueba(pr, r){
+  const est = (r && r.estandarCoccion) || {};
+  const detalle = [];
+  const merma = mermaDePrueba(pr);
+  if(merma !== null && (+est.mermaMin > 0 || +est.mermaMax > 0)){
+    const min = +est.mermaMin || 0, max = +est.mermaMax || 100;
+    detalle.push({ param:'merma', label:'Merma', valor:merma, min, max,
+                   unidad:'%', dentro: merma >= min && merma <= max });
+  }
+  const t = +pr.tempInterna || 0;
+  if(t > 0 && (+est.tempMin > 0 || +est.tempMax > 0)){
+    const min = +est.tempMin || 0, max = +est.tempMax || 999;
+    detalle.push({ param:'tempInterna', label:'Temperatura interna', valor:t, min, max,
+                   unidad:'°C', dentro: t >= min && t <= max });
+  }
+  const medidos = detalle.length;
+  return {
+    detalle, medidos,
+    // Sin estándar cargado no se puede evaluar nada. Decirlo, no dar por buena.
+    sinEstandar: medidos === 0,
+    dentro: medidos > 0 && detalle.every(d => d.dentro),
+    fuera: detalle.filter(d => !d.dentro),
+  };
+}
+
+// El estado de validación de un producto en cada equipo.
+//
+// Un producto queda VALIDADO en un equipo cuando pasó las dos cargas —mínima y
+// completa— dentro del rango del instructivo. Con una sola queda a medias, y el
+// informe lo dice así: "parcial", no "validado". Un equipo que anduvo bien con
+// una lata puede fallar con el carro lleno, y al revés.
+function estadoValidacion(r, equipoId){
+  const pruebas = getPruebas().filter(p => p.recetaId === r.id && p.equipoId === equipoId);
+  const porCarga = {};
+  Object.keys(CARGAS_PRUEBA).forEach(c => {
+    const delCarga = pruebas.filter(p => (p.carga || 'minima') === c);
+    const evals = delCarga.map(p => ({ prueba: p, ev: evaluarPrueba(p, r) }));
+    const conDatos = evals.filter(e => !e.ev.sinEstandar);
+    porCarga[c] = {
+      pruebas: delCarga.length,
+      // Manda la última prueba hecha: si se ajustó el programa y la última dio
+      // bien, eso es lo que vale. Las anteriores quedan como historia.
+      ultima: evals.length ? evals[evals.length - 1] : null,
+      ok: conDatos.length > 0 && conDatos[conDatos.length - 1].ev.dentro,
+    };
+  });
+  const cargasOk = Object.values(porCarga).filter(c => c.ok).length;
+  const cargasProbadas = Object.values(porCarga).filter(c => c.pruebas > 0).length;
+  let estado = 'sin-probar';
+  if (cargasOk === 2) estado = 'validado';
+  else if (cargasProbadas > 0 && cargasOk === cargasProbadas) estado = 'parcial';
+  else if (cargasProbadas > 0) estado = 'fuera';
+  return { estado, porCarga, pruebas: pruebas.length, cargasOk, cargasProbadas };
+}
+const ESTADOS_VALIDACION = {
+  'validado':   { label:'Validado',   bg:'#E4F3E6', tx:'#1B7A34', desc:'Pasó carga mínima y completa' },
+  'parcial':    { label:'Parcial',    bg:'#FDF0D0', tx:'#6B4A08', desc:'Falta probar una de las dos cargas' },
+  'fuera':      { label:'Fuera de rango', bg:'#FCE8E8', tx:'#C02626', desc:'Alguna prueba dio fuera del instructivo' },
+  'sin-probar': { label:'Sin probar', bg:'#F5F0E8', tx:'#5A5A52', desc:'Todavía no se hicieron pruebas' },
+};
+// Los productos que este módulo mira: los que tienen estándar de cocción
+// cargado. Sin instructivo no hay contra qué comparar.
+function productosConEstandar(){
+  return getRecetas().filter(r => r.estandarCoccion &&
+    (+r.estandarCoccion.tempMin > 0 || +r.estandarCoccion.mermaMax > 0));
+}
+
 // ══ PROCESO POR ETAPAS Y MANO DE OBRA ══════════════════════════════════════
 // Un producto se hace en pasos, y cada paso lleva tiempo de trabajo. El mapa de
 // etapas lo define el usuario y depende de DÓNDE ARRANCA la materia prima: si el
@@ -16690,6 +16850,524 @@ function _htmlLoteDetalle(l, conProceso){
       </div>
     </div>
   </div>`;
+}
+
+function addEquipo(){
+  const op = getOp(); if(!op) return;
+  if(!op.equipos) op.equipos = [];
+  op.equipos.push({ id: uid(), nombre:'', tipo:'horno', generacion:'', referencia:false, notas:'' });
+  guardarEnFirestore(); renderEquipos();
+}
+function updEquipo(id, campo, val){
+  const e = getEquipos().find(x=>x.id===id); if(!e) return;
+  // El equipo de referencia es uno solo: es contra el que se compara todo lo
+  // demás. Marcar uno desmarca el anterior, sin preguntar.
+  if(campo === 'referencia' && val) getEquipos().forEach(x => x.referencia = false);
+  e[campo] = val;
+  guardarEnFirestore(); renderEquipos();
+}
+function delEquipo(id){
+  const op = getOp(); if(!op) return;
+  const e = getEquipos().find(x=>x.id===id);
+  const conPruebas = getPruebas().filter(p=>p.equipoId===id).length;
+  const aviso = conPruebas
+    ? '\n\nTiene '+conPruebas+' prueba'+(conPruebas>1?'s':'')+' de cocción registrada'+(conPruebas>1?'s':'')+', que se van a perder.'
+    : '';
+  if(!confirm('¿Borrar "'+((e&&e.nombre)||'sin nombre')+'"?'+aviso)) return;
+  op.equipos = getEquipos().filter(x=>x.id!==id);
+  op.pruebasCoccion = getPruebas().filter(p=>p.equipoId!==id);
+  guardarEnFirestore(); renderEquipos();
+}
+const TIPOS_EQUIPO = {
+  horno:      'Horno',
+  combinado:  'Horno combinado',
+  olla:       'Olla volcable',
+  marmita:    'Marmita',
+  freidora:   'Freidora',
+  plancha:    'Plancha',
+  otro:       'Otro',
+};
+// El estándar del instructivo y el programa de cada equipo, dentro de la receta.
+// El estándar es lo que NO cambia entre equipos: lo que tiene que dar el
+// producto terminado. El programa sí cambia, y por eso hay uno por equipo.
+function updEstandar(campo, val){
+  const r = recetaEditando; if(!r) return;
+  if(!r.estandarCoccion) r.estandarCoccion = {};
+  r.estandarCoccion[campo] = val;
+  renderEditorReceta(); programarAutoguardadoReceta();
+}
+function addPasoPrograma(equipoId){
+  const r = recetaEditando; if(!r) return;
+  const pr = getPrograma(r, equipoId);
+  pr.pasos.push({ id: uid(), nombre:'', temperatura:'', tiempoMin:'', humedad:'', notas:'' });
+  renderEditorReceta(); programarAutoguardadoReceta();
+}
+function updPasoPrograma(equipoId, pasoId, campo, val){
+  const r = recetaEditando; if(!r) return;
+  const paso = getPrograma(r, equipoId).pasos.find(x=>x.id===pasoId);
+  if(!paso) return;
+  paso[campo] = val;
+  renderEditorReceta(); programarAutoguardadoReceta();
+}
+function delPasoPrograma(equipoId, pasoId){
+  const r = recetaEditando; if(!r) return;
+  const pr = getPrograma(r, equipoId);
+  pr.pasos = pr.pasos.filter(x=>x.id!==pasoId);
+  renderEditorReceta(); programarAutoguardadoReceta();
+}
+// NO HAY "COPIAR PROGRAMA" A PROPÓSITO.
+//
+// Se probó y se sacó: copiar los parámetros de un equipo a otro empuja
+// exactamente al error que este módulo existe para evitar. Alguien copia, lo
+// deja igual, y da por sentado que va a salir lo mismo. Si dos equipos usaran
+// los mismos parámetros no habría nada que estandarizar.
+//
+// Lo que se estandariza es el RESULTADO —lo que pide el instructivo—, y cada
+// equipo llega ahí por su propio camino. El programa de cada uno se descubre
+// probando, no copiando.
+function _htmlCoccion(r){
+  const equipos = getEquipos();
+  const est = r.estandarCoccion || {};
+  const eqActivo = window._eqPrograma || (equipos[0] && equipos[0].id) || null;
+  const eq = equipos.find(x=>x.id===eqActivo);
+  const pr = eq ? getPrograma(r, eq.id) : null;
+  const val = eq ? estadoValidacion(r, eq.id) : null;
+
+  return `
+  <div class="card">
+    <div class="card-header"><span class="card-title">Estándar de cocción</span></div>
+    <div class="card-body">
+      <div style="font-size:13px;color:var(--gris-1);margin-bottom:12px;line-height:1.5">
+        Lo que tiene que dar el producto terminado, según el instructivo. <strong>Esto no cambia entre equipos</strong>: es el objetivo.
+        Lo que cambia es cómo llega cada equipo, y eso va más abajo.
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:210px;background:var(--crema);border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:6px">Temperatura interna (°C)</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" inputmode="decimal" value="${est.tempMin||''}" placeholder="mín" style="width:70px;text-align:right"
+              onchange="updEstandar('tempMin',num(this.value))">
+            <span style="color:var(--gris-2)">a</span>
+            <input type="text" inputmode="decimal" value="${est.tempMax||''}" placeholder="máx" style="width:70px;text-align:right"
+              onchange="updEstandar('tempMax',num(this.value))">
+          </div>
+        </div>
+        <div style="flex:1;min-width:210px;background:var(--crema);border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:6px">Merma de cocción (%)</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" inputmode="decimal" value="${est.mermaMin||''}" placeholder="mín" style="width:70px;text-align:right"
+              onchange="updEstandar('mermaMin',num(this.value))">
+            <span style="color:var(--gris-2)">a</span>
+            <input type="text" inputmode="decimal" value="${est.mermaMax||''}" placeholder="máx" style="width:70px;text-align:right"
+              onchange="updEstandar('mermaMax',num(this.value))">
+          </div>
+        </div>
+        <div style="flex:2;min-width:230px;background:var(--crema);border-radius:10px;padding:12px 14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2);margin-bottom:6px">De dónde sale</div>
+          <input type="text" value="${esc(est.fuente||'')}" placeholder="Instructivo, versión, fecha" style="width:100%"
+            title="Qué documento define estos rangos. El día que alguien pregunte por qué el límite es ese, tiene que estar la respuesta."
+            onchange="updEstandar('fuente',this.value)">
+        </div>
+      </div>
+      ${!(+est.tempMin>0 || +est.mermaMax>0) ? `<div style="background:#FDF0D0;color:#6B4A08;border-radius:8px;padding:10px 14px;margin-top:12px;font-size:13px">
+        Sin estos rangos no se puede evaluar ninguna prueba. Una cocción que no se compara contra nada no dice si el equipo sirve.
+      </div>` : ''}
+    </div>
+  </div>
+
+  ${equipos.length ? `
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Programa por equipo</span>
+      ${eq ? `<button class="btn btn-secondary btn-sm" onclick="addPasoPrograma('${escJs(eq.id)}')">+ Paso</button>` : ''}
+    </div>
+
+    <div class="card-body" style="border-bottom:1px solid var(--crema-2);padding-bottom:12px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${equipos.map(x=>{
+          const v = estadoValidacion(r, x.id);
+          const c = ESTADOS_VALIDACION[v.estado];
+          const sel = x.id===eqActivo;
+          return `<button onclick="window._eqPrograma='${escJs(x.id)}';renderEditorReceta()"
+            style="cursor:pointer;padding:7px 14px;font-size:13px;font-weight:${sel?'700':'400'};
+            border:1px solid ${sel?'var(--dorado)':'var(--crema-2)'};border-radius:8px;
+            background:${sel?'var(--crema)':'transparent'};color:var(--negro)">
+            ${esc(x.nombre||'sin nombre')}${x.referencia?' ★':''}
+            <span style="display:block;font-size:10px;font-weight:400;color:${c.tx}">${c.label}</span>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
+
+    ${eq ? (pr.pasos.length ? `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th style="min-width:150px">Paso</th>
+          <th style="text-align:right;width:110px">Temperatura</th>
+          <th style="text-align:right;width:100px">Tiempo</th>
+          <th style="text-align:right;width:100px">Humedad</th>
+          <th>Notas</th>
+          <th style="width:50px"></th>
+        </tr></thead>
+        <tbody>
+          ${pr.pasos.map(paso=>`<tr>
+            <td><input type="text" value="${esc(paso.nombre||'')}" placeholder="Ej: cocción"
+                style="border:none;background:transparent;padding:4px 0;font-weight:600;width:100%"
+                onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','nombre',this.value)"></td>
+            <td style="text-align:right"><input type="text" inputmode="decimal" value="${paso.temperatura||''}" placeholder="°C" style="width:75px;text-align:right"
+                onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','temperatura',num(this.value))"></td>
+            <td style="text-align:right"><input type="text" inputmode="decimal" value="${paso.tiempoMin||''}" placeholder="min" style="width:70px;text-align:right"
+                onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','tiempoMin',num(this.value))"></td>
+            <td style="text-align:right"><input type="text" inputmode="decimal" value="${paso.humedad||''}" placeholder="%" style="width:70px;text-align:right"
+                onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','humedad',num(this.value))"></td>
+            <td><input type="text" value="${esc(paso.notas||'')}" placeholder="Opcional" style="width:100%"
+                onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','notas',this.value)"></td>
+            <td><button class="btn btn-danger btn-sm" onclick="delPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}')">${ico('trash',13)}</button></td>
+          </tr>`).join('')}
+          <tr style="background:var(--crema)">
+            <td style="font-weight:700">Total</td>
+            <td></td>
+            <td style="text-align:right;font-weight:700">${fmtD(pr.pasos.reduce((s,p)=>s+(+p.tiempoMin||0),0),0)} min</td>
+            <td colspan="3"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2);line-height:1.5">
+      Este es el programa de <strong>${esc(eq.nombre||'este equipo')}</strong> para este producto, y <strong>tiene que ser el suyo</strong>.
+      Dos equipos de distinta generación llegan al mismo resultado con parámetros distintos: uno a 180 y otro a 175 pueden dar exactamente el mismo producto.
+      Lo que tiene que coincidir es lo que sale, no lo que se programa — por eso acá no hay forma de copiar el programa de otro equipo.
+      ${val && val.pruebas ? `Lleva ${val.pruebas} prueba${val.pruebas>1?'s':''} registrada${val.pruebas>1?'s':''}.` : 'Todavía no tiene pruebas: cargalas desde Pruebas de cocción.'}
+    </div>
+    ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
+      Todavía no hay programa cargado para ${esc(eq.nombre||'este equipo')}. Agregá el primer paso con los parámetros que vayas a probar, y después registrá la prueba para ver si dio dentro del instructivo.
+    </div>`) : ''}
+  </div>` : ''}`;
+}
+
+function nuevaPrueba(){
+  const op = getOp(); if(!op) return;
+  const productos = productosConEstandar();
+  const equipos = getEquipos();
+  if(!productos.length){ showToast('Primero cargá el estándar de cocción de algún producto','error'); return; }
+  if(!equipos.length){ showToast('Primero cargá los equipos','error'); return; }
+  if(!op.pruebasCoccion) op.pruebasCoccion = [];
+  op.pruebasCoccion.push({
+    id: uid(), fecha: new Date().toISOString().slice(0,10),
+    recetaId: productos[0].id, equipoId: equipos[0].id, carga: 'minima',
+    pesoInicial: 0, pesoFinal: 0, tempInterna: 0, quien: '', notas: '',
+  });
+  window._pruebaAbierta = op.pruebasCoccion[op.pruebasCoccion.length-1].id;
+  guardarEnFirestore(); renderPruebas();
+}
+function updPrueba(id, campo, val){
+  const pr = getPruebas().find(x=>x.id===id); if(!pr) return;
+  pr[campo] = val;
+  guardarEnFirestore(); renderPruebas();
+}
+function delPrueba(id){
+  const op = getOp(); if(!op) return;
+  if(!confirm('¿Borrar esta prueba? Es un registro de ensayo y no se recupera.')) return;
+  op.pruebasCoccion = getPruebas().filter(x=>x.id!==id);
+  guardarEnFirestore(); renderPruebas();
+}
+// El informe que va a producción. Es el entregable del módulo: por producto,
+// qué equipos quedaron validados y con qué programa. Producción decide con eso.
+//
+// Va POR PRODUCTO y no por equipo a propósito: la pregunta que hay que contestar
+// es "¿dónde puedo cocinar esto?", porque de eso depende liberar el equipo que
+// hoy es el cuello de botella.
+function descargarInformeCoccion(){
+  const op = getOp();
+  if(!op){ showToast('Abrí una operación primero','error'); return; }
+  const productos = productosConEstandar();
+  if(!productos.length){ showToast('Ningún producto tiene cargado el estándar de cocción','error'); return; }
+  const equipos = getEquipos();
+  const ref = equipos.find(e=>e.referencia);
+  const fecha = new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'});
+  const w = window.open('', '_blank');
+  if(!w){ showToast('El navegador bloqueó la ventana — permití pop-ups','error'); return; }
+
+  const filasProducto = productos.map(r=>{
+    const est = r.estandarCoccion||{};
+    const porEquipo = equipos.map(e=>({ equipo:e, val: estadoValidacion(r, e.id) }));
+    const validados = porEquipo.filter(x=>x.val.estado==='validado');
+    return `
+    <h2>${esc(r.nombre||'Sin nombre')}</h2>
+    <div class="sub">Estándar: temperatura interna ${est.tempMin||'—'} a ${est.tempMax||'—'} °C ·
+      merma ${est.mermaMin||'—'} a ${est.mermaMax||'—'} %${est.fuente?' · según '+esc(est.fuente):''}</div>
+
+    <table>
+      <thead><tr><th>Equipo</th><th>Estado</th><th class="num">Carga mínima</th><th class="num">Carga completa</th><th>Programa</th></tr></thead>
+      <tbody>
+        ${porEquipo.map(({equipo,val})=>{
+          const c = ESTADOS_VALIDACION[val.estado];
+          const pr = (r.programas||{})[equipo.id];
+          const pasos = (pr&&pr.pasos)||[];
+          const resumen = pasos.length
+            ? pasos.map(p=>[p.nombre||'paso', (p.temperatura?p.temperatura+'°C':''), (p.tiempoMin?p.tiempoMin+' min':''), (p.humedad?p.humedad+'% hum':'')].filter(Boolean).join(' · ')).join('<br>')
+            : '<span style="color:#8A8A80">sin programa cargado</span>';
+          const celda = carga => {
+            const cc = val.porCarga[carga];
+            if(!cc || !cc.pruebas) return '<span style="color:#8A8A80">sin probar</span>';
+            const u = cc.ultima;
+            const m = u ? mermaDePrueba(u.prueba) : null;
+            const det = u && u.ev && !u.ev.sinEstandar
+              ? (m!==null?'merma '+fmtD(m,1)+'%':'') + (u.prueba.tempInterna?' · '+fmtD(u.prueba.tempInterna,1)+'°C':'')
+              : '';
+            return `<strong style="color:${cc.ok?'#1B7A34':'#C02626'}">${cc.ok?'Dentro':'Fuera'}</strong>
+                    <div style="font-size:11px;color:#5A5A52">${det}${cc.pruebas>1?' · '+cc.pruebas+' pruebas':''}</div>`;
+          };
+          return `<tr${equipo.referencia?' style="background:#F0F5FA"':''}>
+            <td><strong>${esc(equipo.nombre||'sin nombre')}</strong>${equipo.referencia?' <span style="font-size:11px;color:#1F4E79">referencia</span>':''}
+                <div style="font-size:11px;color:#5A5A52">${TIPOS_EQUIPO[equipo.tipo||'horno']}${equipo.generacion?' · '+esc(equipo.generacion):''}</div></td>
+            <td><span style="display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:${c.bg};color:${c.tx}">${c.label}</span></td>
+            <td class="num">${celda('minima')}</td>
+            <td class="num">${celda('completa')}</td>
+            <td style="font-size:12px;line-height:1.5">${resumen}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <div class="concl">
+      ${validados.length
+        ? `<strong>Este producto se puede cocinar en ${validados.length} equipo${validados.length>1?'s':''}:</strong> ${validados.map(x=>esc(x.equipo.nombre||'sin nombre')).join(', ')}.
+           ${validados.length>1?'Producción puede repartir la carga entre ellos.':'Falta validar los demás para poder repartir la carga.'}`
+        : `<strong>Todavía no hay ningún equipo validado para este producto.</strong> Hasta que lo haya, sigue dependiendo de un solo equipo.`}
+      ${porEquipo.filter(x=>x.val.estado==='parcial').length
+        ? `<div style="margin-top:6px">Quedan a medias: ${porEquipo.filter(x=>x.val.estado==='parcial').map(x=>esc(x.equipo.nombre||'sin nombre')).join(', ')} — falta probar una de las dos cargas.</div>` : ''}
+      ${porEquipo.filter(x=>x.val.estado==='fuera').length
+        ? `<div style="margin-top:6px;color:#C02626">Fuera de rango: ${porEquipo.filter(x=>x.val.estado==='fuera').map(x=>esc(x.equipo.nombre||'sin nombre')).join(', ')} — hay que ajustar el programa y volver a probar.</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const totalVal = productos.reduce((s,r)=>s+equipos.filter(e=>estadoValidacion(r,e.id).estado==='validado').length,0);
+  const totalPosible = productos.length * Math.max(1, equipos.length);
+
+  w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+  <title>Estandarización de cocción — ${esc(op.nombre||'')}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#1A1A18;max-width:1000px;margin:24px auto;padding:0 20px;line-height:1.5}
+    h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:26px 0 4px;border-bottom:1px solid #D5CFC6;padding-bottom:4px}
+    .sub{font-size:12px;color:#5A5A52;margin-bottom:10px}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px}
+    th{background:#EDE8E0;text-align:left;padding:7px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #D5CFC6}
+    td{padding:7px 9px;border-bottom:1px solid #E8E4DC;vertical-align:top}
+    .num{text-align:right}
+    .concl{background:#F5F0E8;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:6px}
+    .mets{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 20px}
+    .met{background:#F5F0E8;border-radius:8px;padding:10px 14px}
+    .met .l{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#5A5A52}
+    .met .v{font-size:20px;font-weight:700}
+    .nota{font-size:11px;color:#5A5A52;border-top:1px solid #D5CFC6;margin-top:24px;padding-top:10px}
+    @media print{body{margin:0}}
+  </style></head><body>
+    <h1>Estandarización de cocción — ${esc(op.nombre||'')}</h1>
+    <div class="sub">Informe del ${fecha}${ref?' · equipo de referencia: '+esc(ref.nombre||''):''}</div>
+
+    <div class="mets">
+      <div class="met"><div class="l">Productos evaluados</div><div class="v">${productos.length}</div></div>
+      <div class="met"><div class="l">Equipos</div><div class="v">${equipos.length}</div></div>
+      <div class="met"><div class="l">Combinaciones validadas</div><div class="v">${totalVal} <span style="font-size:13px;font-weight:400">de ${totalPosible}</span></div></div>
+    </div>
+
+    ${filasProducto}
+
+    <div class="nota">
+      Un producto se considera <strong>validado</strong> en un equipo cuando las pruebas de carga mínima y carga completa dieron dentro del rango del instructivo.
+      Se prueban las dos cargas porque cambian el comportamiento térmico del equipo: uno puede dar bien con una lata y fallar con el carro lleno.
+      <br><br>
+      Este informe recoge <strong>pruebas de estandarización</strong>, no registros de la producción diaria, y no reemplaza al sistema de calidad de la planta.
+      Los rangos son los del instructivo vigente; las decisiones de producción quedan a cargo de la gerencia correspondiente.
+    </div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
+function renderPruebas(){
+  const op = getOp();
+  if(!op){ _panelSinOperacion(); return; }
+  const pruebas = getPruebas().slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const productos = productosConEstandar();
+  const equipos = getEquipos();
+
+  setContent('Pruebas de cocción', `
+    <div style="background:var(--crema);border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--gris-1)">
+      ${ico('bulb',14)} Los ensayos de estandarización: qué programa se usó en cada equipo y qué dio el producto.
+      La <strong>merma sale de los pesos</strong>, no se carga. Cada prueba se compara sola contra el estándar del instructivo.
+      <div style="margin-top:6px">Esto no reemplaza el registro de calidad de la producción diaria — son ensayos, y son otra cosa.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Pruebas <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${pruebas.length}</span></span>
+        <button class="btn btn-primary btn-sm" onclick="nuevaPrueba()" ${(productos.length&&equipos.length)?'':'disabled'}>+ Nueva prueba</button>
+      </div>
+      ${pruebas.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:110px">Fecha</th>
+            <th style="min-width:150px">Producto</th>
+            <th style="width:130px">Equipo</th>
+            <th style="width:130px">Carga</th>
+            <th style="text-align:right;width:105px">Peso inicial</th>
+            <th style="text-align:right;width:105px">Peso final</th>
+            <th style="text-align:right;width:95px">Merma</th>
+            <th style="text-align:right;width:100px">T° interna</th>
+            <th style="width:130px">Resultado</th>
+            <th style="width:120px">Quién</th>
+            <th style="width:50px"></th>
+          </tr></thead>
+          <tbody>
+            ${pruebas.map(pr=>{
+              const r = getRecetas().find(x=>x.id===pr.recetaId);
+              const eq = equipos.find(x=>x.id===pr.equipoId);
+              const ev = r ? evaluarPrueba(pr, r) : null;
+              const m = mermaDePrueba(pr);
+              return `<tr>
+                <td><input type="date" value="${pr.fecha||''}" style="width:auto;padding:4px 6px;font-size:12px"
+                    onchange="updPrueba('${escJs(pr.id)}','fecha',this.value)"></td>
+                <td><select onchange="updPrueba('${escJs(pr.id)}','recetaId',this.value)" style="width:100%;padding:4px 6px;font-size:12px">
+                    ${productos.map(x=>`<option value="${esc(x.id)}"${x.id===pr.recetaId?' selected':''}>${esc(x.nombre||'Sin nombre')}</option>`).join('')}
+                  </select></td>
+                <td><select onchange="updPrueba('${escJs(pr.id)}','equipoId',this.value)" style="width:100%;padding:4px 6px;font-size:12px">
+                    ${equipos.map(x=>`<option value="${esc(x.id)}"${x.id===pr.equipoId?' selected':''}>${esc(x.nombre||'sin nombre')}</option>`).join('')}
+                  </select></td>
+                <td><select onchange="updPrueba('${escJs(pr.id)}','carga',this.value)" style="width:100%;padding:4px 6px;font-size:12px">
+                    ${Object.entries(CARGAS_PRUEBA).map(([k,v])=>`<option value="${k}"${(pr.carga||'minima')===k?' selected':''}>${v.label}</option>`).join('')}
+                  </select></td>
+                <td style="text-align:right"><input type="text" inputmode="decimal" value="${pr.pesoInicial||''}" placeholder="g" style="width:85px;text-align:right"
+                    onchange="updPrueba('${escJs(pr.id)}','pesoInicial',num(this.value))"></td>
+                <td style="text-align:right"><input type="text" inputmode="decimal" value="${pr.pesoFinal||''}" placeholder="g" style="width:85px;text-align:right"
+                    onchange="updPrueba('${escJs(pr.id)}','pesoFinal',num(this.value))"></td>
+                <td style="text-align:right">${m!==null?`<strong>${fmtD(m,1)}%</strong>`:'<span style="color:var(--gris-3)">—</span>'}</td>
+                <td style="text-align:right"><input type="text" inputmode="decimal" value="${pr.tempInterna||''}" placeholder="°C" style="width:75px;text-align:right"
+                    onchange="updPrueba('${escJs(pr.id)}','tempInterna',num(this.value))"></td>
+                <td>${!ev ? '<span style="color:#C02626;font-size:12px">receta borrada</span>'
+                  : ev.sinEstandar ? '<span style="color:#6B4A08;font-size:12px">sin estándar</span>'
+                  : ev.dentro ? '<span style="display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:#E4F3E6;color:#1B7A34">Dentro</span>'
+                  : `<span title="${esc(ev.fuera.map(d=>d.label+' '+fmtD(d.valor,1)+d.unidad+' (esperado '+fmtD(d.min,1)+' a '+fmtD(d.max,1)+')').join(' · '))}" style="display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:#FCE8E8;color:#C02626">Fuera</span>
+                     <div style="font-size:10px;color:#C02626;margin-top:2px">${ev.fuera.map(d=>esc(d.label)).join(', ')}</div>`}</td>
+                <td><input type="text" value="${esc(pr.quien||'')}" placeholder="nombre" style="width:100%"
+                    onchange="updPrueba('${escJs(pr.id)}','quien',this.value)"></td>
+                <td><button class="btn btn-danger btn-sm" onclick="delPrueba('${escJs(pr.id)}')">${ico('trash',13)}</button></td>
+              </tr>
+              ${pr.notas || true ? `<tr><td colspan="11" style="padding-top:0;border-bottom:1px solid #E8E4DC">
+                <input type="text" value="${esc(pr.notas||'')}" placeholder="Qué pasó en esta prueba: color, textura, ajustes al programa, lo que sea"
+                  style="width:100%;font-size:12px;border:none;background:transparent;color:var(--gris-1)"
+                  onchange="updPrueba('${escJs(pr.id)}','notas',this.value)">
+              </td></tr>` : ''}`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
+        Todavía no hay pruebas registradas.
+        ${(!productos.length||!equipos.length) ? '<div style="margin-top:8px;color:#6B4A08">Falta cargar '+(!equipos.length?'los equipos':'')+((!equipos.length&&!productos.length)?' y ':'')+(!productos.length?'el estándar de cocción de algún producto':'')+'.</div>' : ''}
+      </div>`}
+    </div>
+  `);
+}
+
+function renderEquipos(){
+  const op = getOp();
+  if(!op){ _panelSinOperacion(); return; }
+  const equipos = getEquipos();
+  const productos = productosConEstandar();
+  const hayRef = equipos.some(e=>e.referencia);
+
+  setContent('Equipos de cocción', `
+    <div style="background:var(--crema);border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--gris-1)">
+      ${ico('bulb',14)} Los equipos donde se cocina. Marcá uno como <strong>referencia</strong>: es el que hoy hace el producto bien, y contra el que se comparan los demás.
+      La idea no es que todos tengan la misma configuración — es que el mismo producto salga igual en todos, aunque uno vaya a 180 y otro a 175.
+    </div>
+
+    ${equipos.length && !hayRef ? `<div style="background:#FDF0D0;color:#6B4A08;border:1px solid #D4B870;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px">
+      Todavía no marcaste el equipo de <strong>referencia</strong>. Sin eso no hay contra qué comparar las pruebas.
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Equipos <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${equipos.length}</span></span>
+        <div style="display:flex;gap:8px">
+          ${productos.length?`<button class="btn btn-secondary btn-sm" onclick="descargarInformeCoccion()">${ico('download',13)} Informe para producción</button>`:''}
+          <button class="btn btn-primary btn-sm" onclick="addEquipo()">+ Nuevo equipo</button>
+        </div>
+      </div>
+      ${equipos.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="min-width:170px">Equipo</th>
+            <th style="width:160px">Tipo</th>
+            <th style="width:130px">Generación / año</th>
+            <th style="width:110px;text-align:center" title="El equipo que hoy hace el producto bien. Contra este se comparan los demás.">Referencia</th>
+            <th>Notas</th>
+            <th style="width:60px"></th>
+          </tr></thead>
+          <tbody>
+            ${equipos.map(e=>`<tr${e.referencia?' style="background:#EBF3FF"':''}>
+              <td><input type="text" value="${esc(e.nombre||'')}" placeholder="Ej: Horno 1"
+                  style="border:none;background:transparent;padding:4px 0;font-weight:600;width:100%"
+                  onchange="updEquipo('${escJs(e.id)}','nombre',this.value)"></td>
+              <td><select onchange="updEquipo('${escJs(e.id)}','tipo',this.value)" style="width:100%;padding:4px 6px;font-size:12px">
+                  ${Object.entries(TIPOS_EQUIPO).map(([k,v])=>`<option value="${k}"${(e.tipo||'horno')===k?' selected':''}>${v}</option>`).join('')}
+                </select></td>
+              <td><input type="text" value="${esc(e.generacion||'')}" placeholder="—" style="width:110px"
+                  title="Sirve para entender por qué dos equipos del mismo tipo se comportan distinto."
+                  onchange="updEquipo('${escJs(e.id)}','generacion',this.value)"></td>
+              <td style="text-align:center"><input type="radio" name="equipo-ref" ${e.referencia?'checked':''}
+                  onchange="updEquipo('${escJs(e.id)}','referencia',this.checked)"></td>
+              <td><input type="text" value="${esc(e.notas||'')}" placeholder="Opcional" style="width:100%"
+                  onchange="updEquipo('${escJs(e.id)}','notas',this.value)"></td>
+              <td><button class="btn btn-danger btn-sm" onclick="delEquipo('${escJs(e.id)}')">${ico('trash',13)}</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2);line-height:1.5">
+        Equipos de distinto tipo no se comparan entre sí: una olla volcable y un horno no hacen los mismos productos.
+        La validación tiene sentido entre los equipos que <strong>pueden hacer el mismo producto</strong>.
+      </div>
+      ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
+        Todavía no hay equipos cargados. Empezá por los que hay en la planta, y marcá como referencia el que hoy se usa para casi todo.
+      </div>`}
+    </div>
+
+    ${equipos.length ? `<div class="card">
+      <div class="card-header"><span class="card-title">Estado de validación</span></div>
+      ${productos.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Producto</th>${equipos.filter(e=>(e.tipo||'horno')!=='olla').map(e=>`<th style="text-align:center;min-width:110px">${esc(e.nombre||'sin nombre')}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${productos.map(r=>`<tr>
+              <td><strong>${esc(r.nombre||'Sin nombre')}</strong></td>
+              ${equipos.filter(e=>(e.tipo||'horno')!=='olla').map(e=>{
+                const v = estadoValidacion(r, e.id);
+                const c = ESTADOS_VALIDACION[v.estado];
+                return `<td style="text-align:center">
+                  <span title="${esc(c.desc)}" style="display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:${c.bg};color:${c.tx}">${c.label}</span>
+                  ${v.pruebas?`<div style="font-size:10px;color:var(--gris-2);margin-top:2px">${v.pruebas} prueba${v.pruebas>1?'s':''}</div>`:''}
+                </td>`;
+              }).join('')}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-body" style="font-size:12px;color:var(--gris-2);border-top:1px solid var(--crema-2);line-height:1.5">
+        Un producto queda <strong>validado</strong> en un equipo cuando pasó las dos cargas —mínima y completa— dentro del rango del instructivo.
+        Con una sola queda <strong>parcial</strong>: un equipo que anduvo bien con una lata puede fallar con el carro lleno.
+      </div>
+      ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
+        Ningún producto tiene todavía cargado el estándar de cocción. Abrí una receta y cargá lo que pide el instructivo —temperatura interna y merma— para que aparezca acá.
+      </div>`}
+    </div>` : ''}
+  `);
 }
 
 function renderPuestos(){
@@ -21572,6 +22250,22 @@ function renderModalidades(){
       <p style="margin:0 0 12px;font-size:13px;color:var(--gris-1,#555)">
         Aparte de lo que cuesta la mercadería, cuánto cuesta <em>hacer</em> el producto: los minutos de trabajo de cada etapa, a lo que vale el minuto de cada puesto.
       </p>
+      <label style="display:flex;gap:14px;align-items:flex-start;padding:16px;border:1.5px solid ${op.equiposCoccion?'var(--dorado,#C9A961)':'var(--crema-2,#E8E0D4)'};
+                    border-radius:10px;cursor:pointer;background:${op.equiposCoccion?'rgba(201,169,97,.07)':'transparent'};margin-bottom:14px">
+        <input type="checkbox" id="mod-equipos" ${op.equiposCoccion?'checked':''} style="margin-top:3px;width:17px;height:17px">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:15px;margin-bottom:3px">Equipos de cocción y validación</div>
+          <div style="font-size:13px;color:var(--gris-1,#555);line-height:1.45">
+            Cuando hay varios equipos —hornos de distinta generación, un horno combinado, una olla volcable— y hace falta que el mismo producto salga igual en todos.
+            Guarda el <strong>programa de cada equipo</strong> —temperatura, tiempo, humedad— y las <strong>pruebas de estandarización</strong> contra lo que pide el instructivo.
+          </div>
+          <div style="font-size:12px;color:var(--gris-2,#888);margin-top:6px"><em>Plantas donde casi todo se cocina en un solo equipo porque los demás nunca se configuraron</em></div>
+          <div style="font-size:12px;color:var(--gris-2,#888);margin-top:8px;line-height:1.45">
+            No reemplaza el registro de calidad de la producción diaria: esto es para los <strong>ensayos</strong> de estandarización, que normalmente no tienen dónde vivir. El entregable es un informe por producto para llevar a producción.
+          </div>
+        </div>
+      </label>
+
       <label style="display:flex;gap:14px;align-items:flex-start;padding:16px;border:1.5px solid ${op.costeoManoObra?'var(--dorado,#C9A961)':'var(--crema-2,#E8E0D4)'};
                     border-radius:10px;cursor:pointer;background:${op.costeoManoObra?'rgba(201,169,97,.07)':'transparent'}">
         <input type="checkbox" id="mod-mano-obra" ${op.costeoManoObra?'checked':''} style="margin-top:3px;width:17px;height:17px">
@@ -21604,6 +22298,9 @@ function renderModalidades(){
           <tr><td>📋 Cubierto contratado</td><td>Evento / Presupuesto</td></tr>
           <tr><td>🍲 Cubierto continuo</td><td>Buffet, Cierre de servicio, historial de consumo por cubierto</td></tr>
           <tr><td>🏭 Centro de producción</td><td>Catálogo, despacho a locales, precio de transferencia</td></tr>
+          <tr><td>🔥 Equipos de cocción <span style="color:var(--gris-2,#888);font-size:11px">(proceso)</span></td>
+              <td>Suma <em>Equipos de cocción</em> y <em>Pruebas de cocción</em> al menú, y dentro de cada receta el <strong>estándar del instructivo</strong> y el <strong>programa de cada equipo</strong>.
+              Genera un informe por producto con qué equipos quedaron validados. <strong>No toca costos ni reemplaza el registro de calidad.</strong></td></tr>
           <tr><td>⏱ Costo de mano de obra <span style="color:var(--gris-2,#888);font-size:11px">(costeo)</span></td>
               <td>Suma <em>Puestos de trabajo</em> al menú, y dentro de cada receta el <strong>proceso por etapas</strong> con sus tiempos.
               Agrega un costo de producción al lado del de mercadería — <strong>no toca el food cost, el prime cost ni el EBITDA</strong>.</td></tr>
@@ -21630,6 +22327,8 @@ async function guardarModalidades(){
   if(_chkD) op.tieneDelivery = _chkD.checked && elegidas.indexOf('carta')>=0;
   const _chkMO = document.getElementById('mod-mano-obra');
   if(_chkMO) op.costeoManoObra = _chkMO.checked;
+  const _chkEq = document.getElementById('mod-equipos');
+  if(_chkEq) op.equiposCoccion = _chkEq.checked;
   await guardarEnFirestore();
   showToast('Modalidades guardadas');
   buildSidebar(currentUser?.rol||'cliente');
