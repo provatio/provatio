@@ -15991,6 +15991,23 @@ const CARGAS_PRUEBA = {
 };
 // Lo que se mide en cada prueba. El peso inicial y final no se comparan contra
 // nada: de ellos sale la merma, que es la que tiene rango.
+// Cómo trabaja el equipo en cada paso. En un horno combinado no es lo mismo
+// 180° en seco que 180° con vapor: es otro producto. Y la velocidad del
+// convector cambia cuánto se seca la superficie a la misma temperatura.
+// Son parte del programa, no del resultado: cada equipo puede usar los suyos.
+const MODOS_COCCION = {
+  seco:      'Seco / aire caliente',
+  combinado: 'Combinado',
+  humedo:    'Húmedo / vapor',
+  regenerar: 'Regeneración',
+};
+const VELOCIDADES_CONVECTOR = {
+  '':   '—',
+  baja: 'Baja',
+  media:'Media',
+  alta: 'Alta',
+  off:  'Apagado',
+};
 const PARAMETROS_PRUEBA = {
   tempInterna: { label:'Temperatura interna', unidad:'°C', dec:1 },
   merma:       { label:'Merma de cocción',    unidad:'%',  dec:1, derivado:true },
@@ -16043,10 +16060,15 @@ function evaluarPrueba(pr, r){
                    unidad:'°C', dentro: t >= min && t <= max });
   }
   const medidos = detalle.length;
+  // Dos motivos distintos para no poder evaluar, y conviene no confundirlos:
+  // que la receta no tenga rangos cargados, o que la prueba no tenga los pesos.
+  // El primero se arregla en la receta, el segundo en esta fila.
+  const hayRangos = (+est.tempMin > 0 || +est.tempMax > 0 || +est.mermaMin > 0 || +est.mermaMax > 0);
+  const hayMedidas = (merma !== null) || (+pr.tempInterna > 0);
   return {
-    detalle, medidos,
-    // Sin estándar cargado no se puede evaluar nada. Decirlo, no dar por buena.
-    sinEstandar: medidos === 0,
+    detalle, medidos, hayRangos, hayMedidas,
+    sinEstandar: !hayRangos,
+    sinDatos: hayRangos && !hayMedidas,
     dentro: medidos > 0 && detalle.every(d => d.dentro),
     fuera: detalle.filter(d => !d.dentro),
   };
@@ -16899,7 +16921,8 @@ function updEstandar(campo, val){
 function addPasoPrograma(equipoId){
   const r = recetaEditando; if(!r) return;
   const pr = getPrograma(r, equipoId);
-  pr.pasos.push({ id: uid(), nombre:'', temperatura:'', tiempoMin:'', humedad:'', notas:'' });
+  pr.pasos.push({ id: uid(), nombre:'', modo:'seco', temperatura:'', tiempoMin:'',
+                  humedad:'', convector:'', notas:'' });
   renderEditorReceta(); programarAutoguardadoReceta();
 }
 function updPasoPrograma(equipoId, pasoId, campo, val){
@@ -17003,11 +17026,13 @@ function _htmlCoccion(r){
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th style="min-width:150px">Paso</th>
-          <th style="text-align:right;width:110px">Temperatura</th>
-          <th style="text-align:right;width:100px">Tiempo</th>
-          <th style="text-align:right;width:100px">Humedad</th>
-          <th>Notas</th>
+          <th style="min-width:130px">Paso</th>
+          <th style="width:150px" title="En un horno combinado no es lo mismo 180° en seco que con vapor.">Modo</th>
+          <th style="text-align:right;width:100px">Temperatura</th>
+          <th style="text-align:right;width:90px">Tiempo</th>
+          <th style="text-align:right;width:90px">Humedad</th>
+          <th style="width:110px" title="Cambia cuánto se seca la superficie a la misma temperatura.">Convector</th>
+          <th style="min-width:130px">Notas</th>
           <th style="width:50px"></th>
         </tr></thead>
         <tbody>
@@ -17015,21 +17040,27 @@ function _htmlCoccion(r){
             <td><input type="text" value="${esc(paso.nombre||'')}" placeholder="Ej: cocción"
                 style="border:none;background:transparent;padding:4px 0;font-weight:600;width:100%"
                 onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','nombre',this.value)"></td>
+            <td><select onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','modo',this.value)" style="width:100%;padding:4px 6px;font-size:12px">
+                ${Object.entries(MODOS_COCCION).map(([k,v])=>`<option value="${k}"${(paso.modo||'seco')===k?' selected':''}>${v}</option>`).join('')}
+              </select></td>
             <td style="text-align:right"><input type="text" inputmode="decimal" value="${paso.temperatura||''}" placeholder="°C" style="width:75px;text-align:right"
                 onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','temperatura',num(this.value))"></td>
             <td style="text-align:right"><input type="text" inputmode="decimal" value="${paso.tiempoMin||''}" placeholder="min" style="width:70px;text-align:right"
                 onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','tiempoMin',num(this.value))"></td>
             <td style="text-align:right"><input type="text" inputmode="decimal" value="${paso.humedad||''}" placeholder="%" style="width:70px;text-align:right"
                 onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','humedad',num(this.value))"></td>
+            <td><select onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','convector',this.value)" style="width:100%;padding:4px 6px;font-size:12px">
+                ${Object.entries(VELOCIDADES_CONVECTOR).map(([k,v])=>`<option value="${k}"${(paso.convector||'')===k?' selected':''}>${v}</option>`).join('')}
+              </select></td>
             <td><input type="text" value="${esc(paso.notas||'')}" placeholder="Opcional" style="width:100%"
                 onchange="updPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}','notas',this.value)"></td>
             <td><button class="btn btn-danger btn-sm" onclick="delPasoPrograma('${escJs(eq.id)}','${escJs(paso.id)}')">${ico('trash',13)}</button></td>
           </tr>`).join('')}
           <tr style="background:var(--crema)">
             <td style="font-weight:700">Total</td>
-            <td></td>
+            <td colspan="2"></td>
             <td style="text-align:right;font-weight:700">${fmtD(pr.pasos.reduce((s,p)=>s+(+p.tiempoMin||0),0),0)} min</td>
-            <td colspan="3"></td>
+            <td colspan="4"></td>
           </tr>
         </tbody>
       </table>
@@ -17106,7 +17137,13 @@ function descargarInformeCoccion(){
           const pr = (r.programas||{})[equipo.id];
           const pasos = (pr&&pr.pasos)||[];
           const resumen = pasos.length
-            ? pasos.map(p=>[p.nombre||'paso', (p.temperatura?p.temperatura+'°C':''), (p.tiempoMin?p.tiempoMin+' min':''), (p.humedad?p.humedad+'% hum':'')].filter(Boolean).join(' · ')).join('<br>')
+            ? pasos.map(p=>[p.nombre||'paso',
+                MODOS_COCCION[p.modo||'seco'],
+                (p.temperatura?p.temperatura+'°C':''),
+                (p.tiempoMin?p.tiempoMin+' min':''),
+                (p.humedad?p.humedad+'% hum':''),
+                (p.convector?'conv. '+VELOCIDADES_CONVECTOR[p.convector].toLowerCase():'')
+              ].filter(Boolean).join(' · ')).join('<br>')
             : '<span style="color:#8A8A80">sin programa cargado</span>';
           const celda = carga => {
             const cc = val.porCarga[carga];
@@ -17212,8 +17249,8 @@ function renderPruebas(){
           <thead><tr>
             <th style="width:110px">Fecha</th>
             <th style="min-width:150px">Producto</th>
-            <th style="width:130px">Equipo</th>
-            <th style="width:130px">Carga</th>
+            <th style="min-width:150px">Equipo</th>
+            <th style="min-width:145px">Carga</th>
             <th style="text-align:right;width:105px">Peso inicial</th>
             <th style="text-align:right;width:105px">Peso final</th>
             <th style="text-align:right;width:95px">Merma</th>
@@ -17248,7 +17285,8 @@ function renderPruebas(){
                 <td style="text-align:right"><input type="text" inputmode="decimal" value="${pr.tempInterna||''}" placeholder="°C" style="width:75px;text-align:right"
                     onchange="updPrueba('${escJs(pr.id)}','tempInterna',num(this.value))"></td>
                 <td>${!ev ? '<span style="color:#C02626;font-size:12px">receta borrada</span>'
-                  : ev.sinEstandar ? '<span style="color:#6B4A08;font-size:12px">sin estándar</span>'
+                  : ev.sinEstandar ? '<span style="color:#6B4A08;font-size:12px">falta el estándar<div style="font-size:10px">cargalo en la receta</div></span>'
+                  : ev.sinDatos ? '<span style="color:var(--gris-2);font-size:12px">faltan los pesos</span>'
                   : ev.dentro ? '<span style="display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:#E4F3E6;color:#1B7A34">Dentro</span>'
                   : `<span title="${esc(ev.fuera.map(d=>d.label+' '+fmtD(d.valor,1)+d.unidad+' (esperado '+fmtD(d.min,1)+' a '+fmtD(d.max,1)+')').join(' · '))}" style="display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:#FCE8E8;color:#C02626">Fuera</span>
                      <div style="font-size:10px;color:#C02626;margin-top:2px">${ev.fuera.map(d=>esc(d.label)).join(', ')}</div>`}</td>
