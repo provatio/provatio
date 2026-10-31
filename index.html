@@ -2746,6 +2746,18 @@ function fmt(n){ return Math.round(n||0).toLocaleString('es-AR'); }
 // número siempre estuvo bien calculado; se leía mal.
 // Se usa solo para MOSTRAR: no alimenta ningún campo editable ni ninguna
 // exportación, así que no rompe nada que después haya que volver a leer.
+// Plata con los decimales que el número necesita.
+// fmt() redondea a entero, y eso está bien para el costo de un plato pero miente
+// en un costo POR GRAMO: medio peso el gramo se mostraba como "$0", que se lee
+// como "no cuesta nada" cuando en realidad son $500 el kilo.
+function fmtMon(n){
+  const v = +n || 0;
+  if(v === 0) return '0';
+  const a = Math.abs(v);
+  if(a >= 100)  return fmt(v);        // $1.235
+  if(a >= 0.01) return fmtD(v, 2);    // $20,53 · $0,50
+  return fmtD(v, 4);                  // $0,0037
+}
 function fmtD(n,d=1){
   return Number(n||0).toLocaleString('es-AR', {minimumFractionDigits:d, maximumFractionDigits:d});
 }
@@ -8248,7 +8260,7 @@ function renderEditorReceta(){
                    </div>`)
             : '—'}
         </td>
-        <td data-col="cantidad"><input type="text" inputmode="decimal" value="${gramosUsados||''}" placeholder="${enUnid?'unidades':'g/ml'}" title="${enUnid?'Cuántas unidades de esta preparación lleva el plato.':'Cuántos gramos de esta preparación lleva el plato.'}" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
+        <td data-col="cantidad"><input type="text" inputmode="decimal" value="${enUnid?(gramosUsados||''):_valPeso(r,gramosUsados)}" placeholder="${enUnid?'unidades':_unidadPeso(r)}" title="${enUnid?'Cuántas unidades de esta preparación lleva el plato.':'Cuánto de esta preparación lleva el plato, en '+(_enKg(r)?'kilos':'gramos')+'.'}" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',${enUnid?'num(this.value)':'_pesoGuardar(recetaEditando,this.value)'})"></td>
         <td data-col="merma" style="text-align:right;color:var(--gris-2)">—</td>
         <td data-col="bruto" style="text-align:right;color:var(--gris-2)">—</td>
         <td data-col="costo" style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:''}</td>
@@ -8282,9 +8294,9 @@ function renderEditorReceta(){
       return `<tr style="background:#FFF6EC">
         <td data-col="ingrediente" style="white-space:nowrap">🏭 ${prod?prod.nombre:'<span style="color:var(--bordo)">insumo CP no encontrado</span>'} <span style="font-size:10px;color:#B8540A;font-weight:700">${badgeCP}</span> <span style="font-size:11px;color:var(--gris-2)">${prod&&prod.costoXkg>0?'$'+fmt(prod.costoXkg)+'/kg':''}</span></td>
         <td data-col="tecnica">${tecCell}</td>
-        <td data-col="cantidad"><input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))"></td>
+        <td data-col="cantidad"><input type="text" inputmode="decimal" value="${_valPeso(r,ing.neto)}" placeholder="${_unidadPeso(r)}" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',_pesoGuardar(recetaEditando,this.value))"></td>
         <td data-col="merma" style="text-align:right">${modo==='granel'&&ing.tecnica?`<span class="calc">${fmtD(mermaPct)}%</span>`:'<span style="color:var(--gris-2)">—</span>'}</td>
-        <td data-col="bruto" style="text-align:right">${modo==='granel'&&costoItem!==null?`<span class="calc">${fmtD(brutoG)}g</span>`:'—'}</td>
+        <td data-col="bruto" style="text-align:right">${modo==='granel'&&costoItem!==null?`<span class="calc">${fmtPeso(r,brutoG)}</span>`:'—'}</td>
         <td data-col="costo" style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem)}</span>`:(prod&&!(prod.costoXkg>0)?'<span class="calc calc-err">sin precio CP</span>':'')}</td>
         <td data-col="total" style="text-align:right">${costoItem!==null?`<span class="calc">$${fmt(costoItem*porciones)}</span>`:''}</td>
         <td data-col="kg" style="text-align:right">${costoItem!==null?`<span class="calc">${fmtD(brutoG*porciones/1000,2)}kg</span>`:''}</td>
@@ -8326,10 +8338,10 @@ function renderEditorReceta(){
               ? `⚠ quedó en ${fmtD(+ing.porcionesCP||0,2)} — redondealo`
               : `de ${fmtD(ingObj._gramosPorcion,0)} g · $${fmt(ingObj._precioPorcion)} c/u`}
           </div>`
-        : `<input type="text" inputmode="decimal" value="${ing.neto||''}" placeholder="g" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',num(this.value))">`}
+        : `<input type="text" inputmode="decimal" value="${_valPeso(r,ing.neto)}" placeholder="${_unidadPeso(r)}" style="width:80px;text-align:right" onchange="updIngReceta(${idx},'neto',_pesoGuardar(recetaEditando,this.value))">`}
       </td>
       <td data-col="merma" style="text-align:right">${porcionCP?'<span style="color:var(--gris-3)">—</span>':(c&&!c.error?`<span class="calc">${fmtD(c.merma_pct)}%</span>`:c&&c.error?`<span class="calc calc-err" title="${c.error}">⚠ ${c.pesoUnitarioFalta?'falta el peso':'Sin merma'}</span>`:'')}</td>
-      <td data-col="bruto" style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.bruto_con_desperdicio||c.bruto)}g</span>`:''}</td>
+      <td data-col="bruto" style="text-align:right">${c&&!c.error?`<span class="calc">${fmtPeso(r,c.bruto_con_desperdicio||c.bruto)}</span>`:''}</td>
       <td data-col="costo" style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_porcion)}</span>`:''}</td>
       <td data-col="total" style="text-align:right">${c&&!c.error?`<span class="calc">$${fmt(c.costo_total)}</span>`:''}</td>
       <td data-col="kg" style="text-align:right">${c&&!c.error?`<span class="calc">${fmtD(c.kg_total,2)}kg</span>`:''}</td>
@@ -8501,11 +8513,11 @@ ${_rindeEnUnidades(r)
     <div class="metric-grid">
       ${esLoteCP ? `
         <div class="metric">
-          <div class="metric-label">Cuánto pesa el lote terminado (g)</div>
-          <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2400"
+          <div class="metric-label">Cuánto pesa el lote terminado (${_unidadPeso(r)})</div>
+          <input type="text" inputmode="decimal" value="${_valPeso(r,r.rendimientoG)}" placeholder="${_enKg(r)?'ej: 2,4':'ej: 2400'}"
             style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
             title="Pesá el resultado final ya cocinado del lote entero. No es la suma de los ingredientes crudos: al cocinar se pierde o se gana peso, y eso solo se sabe pesando."
-            onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+            onchange="recetaEditando.rendimientoG=_pesoGuardar(recetaEditando,this.value);renderEditorReceta();programarAutoguardadoReceta()">
         </div>
         <div class="metric">
           <div class="metric-label">Unidades que salen del lote</div>
@@ -8553,15 +8565,15 @@ ${_rindeEnUnidades(r)
               + (usadaComoInsumo ? ' · la usan ' + _recetasQueLaUsan.length + ' plato' + (_recetasQueLaUsan.length>1?'s':'') : '')
             : 'cuántas piezas debería dar este lote'}</div>
         </div>` : `<div class="metric">
-          <div class="metric-label">Cuánto rinde (g / ml)
+          <div class="metric-label">Cuánto rinde (${_unidadPeso(r)} / ml)
             ${esPrep?`<button onclick="cambiarRindeEn('unidades')" style="border:none;background:transparent;color:var(--azul);font-size:10px;cursor:pointer;text-decoration:underline;padding:0 0 0 6px">rinde en unidades</button>`:''}
           </div>
-          <input type="text" inputmode="decimal" value="${r.rendimientoG||''}" placeholder="ej: 2000" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
+          <input type="text" inputmode="decimal" value="${_valPeso(r,r.rendimientoG)}" placeholder="${_enKg(r)?'ej: 2':'ej: 2000'}" style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
             title="Pesá o medí el resultado final de esta preparación, ya lista, tal como la definiste arriba (porciones de referencia) — no es la suma de los ingredientes crudos: al cocinar se pierde o se gana peso, y eso solo se sabe pesando."
-            onchange="recetaEditando.rendimientoG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+            onchange="recetaEditando.rendimientoG=_pesoGuardar(recetaEditando,this.value);renderEditorReceta();programarAutoguardadoReceta()">
           <div class="metric-sub">${(+r.rendimientoG>0)
-            ? '<span style="color:var(--azul);font-weight:700">$'+fmtD(merc/(+r.rendimientoG),2)+' por gramo</span>'
-              + ' · $'+fmt(Math.round(merc/(+r.rendimientoG)*1000))+' el kilo'
+            ? '<span style="color:var(--azul);font-weight:700">$'+fmtMon(merc/(+r.rendimientoG)*(_enKg(r)?1000:1))+' por '+(_enKg(r)?'kilo':'gramo')+'</span>'
+              + (_enKg(r) ? '' : ' · $'+fmt(Math.round(merc/(+r.rendimientoG)*1000))+' el kilo')
               + (usadaComoInsumo ? ' · la usan ' + _recetasQueLaUsan.length + ' plato' + (_recetasQueLaUsan.length>1?'s':'') : '')
             : 'pesá la olla terminada y cargá acá cuánto dio'}</div>
         </div>`) : ''}
@@ -8575,11 +8587,11 @@ ${_rindeEnUnidades(r)
           <div class="metric-sub">${_prepTieneRendimiento(r)?'cuesta $'+fmt(costoComparableReceta(r, merc)):'falta cuántas salen del lote'}</div>
         </div>` : `
         <div class="metric">
-          <div class="metric-label">Porción que vendés (g)</div>
-          <input type="text" inputmode="decimal" value="${r.porcionVentaG||''}" placeholder="ej: 200"
+          <div class="metric-label">Porción que vendés (${_unidadPeso(r)})</div>
+          <input type="text" inputmode="decimal" value="${_valPeso(r,r.porcionVentaG)}" placeholder="${_enKg(r)?'ej: 0,2':'ej: 200'}"
             style="font-size:22px;font-weight:700;width:100%;border:none;background:transparent;padding:0;color:var(--azul)"
-            title="Cuántos gramos lleva la porción que sale al salón. Sin esto el food cost compararía el precio de una porción contra el costo de la olla entera."
-            onchange="recetaEditando.porcionVentaG=num(this.value);renderEditorReceta();programarAutoguardadoReceta()">
+            title="Cuánto pesa la porción que sale al salón. Sin esto el food cost compararía el precio de una porción contra el costo de la olla entera."
+            onchange="recetaEditando.porcionVentaG=_pesoGuardar(recetaEditando,this.value);renderEditorReceta();programarAutoguardadoReceta()">
           <div class="metric-sub">${(+r.porcionVentaG>0 && +r.rendimientoG>0)
             ? 'cuesta $'+fmt(_costoUnidadVenta(r))+' · salen '+fmtD((+r.rendimientoG)/(+r.porcionVentaG),1)+' porciones por olla'
             : 'de la olla salen varias: cuánto pesa cada una'}</div>
@@ -8610,7 +8622,8 @@ ${_rindeEnUnidades(r)
     <div class="card">
       <div class="card-header">
         <span class="card-title">Ingredientes</span>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
+          ${_switchUnidadPeso(r)}
           <button class="btn btn-secondary btn-sm" onclick="agregarIngReceta()">+ Ingrediente</button>
           <button class="btn btn-secondary btn-sm" onclick="agregarCondReceta()">+ Condimentos</button>
           <button class="btn btn-secondary btn-sm" style="border-color:var(--azul);color:var(--azul)" title="Otra receta tuya que este plato usa por gramos: una salsa fileto dentro de una bolognesa, un chimichurri, una masa. El costo sale del rendimiento de esa preparación." onclick="agregarRecetaEnReceta()">+ Subreceta</button>
@@ -8625,8 +8638,8 @@ ${_rindeEnUnidades(r)
             <col style="width:90px"><col style="width:96px">
           </colgroup>
           <thead><tr>
-            <th>Ingrediente</th><th>Técnica</th><th style="text-align:right">${esPrep?'Cantidad<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">'+(_rindeEnUnidades(r)?'del lote entero':'de la olla entera')+'</div>':'Cantidad'}</th>
-            <th style="text-align:right">Merma</th><th style="text-align:right">Bruto/p</th>
+            <th>Ingrediente</th><th>Técnica</th><th style="text-align:right" title="Es el NETO: lo que queda después de la merma. El bruto —lo que hay que comprar— lo calcula el sistema y está dos columnas a la derecha.">Cantidad neta (${_unidadPeso(r)})<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">${esPrep?(_rindeEnUnidades(r)?'del lote entero · ya sin merma':'de la olla entera · ya sin merma'):'ya sin merma'}</div></th>
+            <th style="text-align:right">Merma</th><th style="text-align:right">Bruto (${_unidadPeso(r)})</th>
             <th style="text-align:right">Costo/p</th><th style="text-align:right">Costo total</th>
             <th style="text-align:right">Kg total</th><th></th>
           </tr></thead>
@@ -15692,6 +15705,74 @@ function _htmlCruceCanales(km){
 // huevo más el pan rallado, todo lo que quedó pegado, dividido por las piezas
 // que salieron. Por eso el conteo va DESPUÉS de producir, nunca antes.
 function _rindeEnUnidades(r){ return !!(r && r.rindeEn === 'unidades'); }
+
+// ── EN QUÉ UNIDAD SE ESCRIBE EL PESO: GRAMOS O KILOS ───────────────────────
+//
+// Un restaurante piensa en gramos: 170 de nalga, 80 de muzzarella. Una planta
+// piensa en kilos: 73,8 de suprema, 61,2 de cebolla. Es la misma receta escrita
+// a otra escala, y leer "113636 g" donde debería decir "113,636 kg" obliga a
+// contar ceros cada vez.
+//
+// CÓMO LO ESCRIBE UNA PLANTA DE VERDAD. Los instructivos de Cañón (Pan Nube,
+// Relleno de pollo) ponen TODO en kg, sin una sola excepción: el ají molido
+// figura como "0,0012 kg", no como "1,2 g". Prefieren cuatro decimales antes
+// que cambiar de unidad en el medio de una tabla, porque si no, quien lee
+// tiene que cambiar de escala mental en cada renglón. Por eso el selector es
+// POR RECETA y no por línea: una receta se lee entera en kg o entera en gramos.
+//
+// LO QUE NO SE NEGOCIA: el dato se guarda SIEMPRE en gramos. La unidad es cómo
+// se muestra y cómo se escribe, nunca lo que queda grabado. Cambiar de kg a g
+// no convierte ni rompe nada, y el resto del sistema —costos, mermas, informes,
+// producciones— sigue leyendo gramos como siempre.
+function _unidadPeso(r){ return (r && r.unidadPeso === 'kg') ? 'kg' : 'g'; }
+function _enKg(r){ return _unidadPeso(r) === 'kg'; }
+// Lo que se escribió en pantalla -> gramos para guardar.
+function _pesoGuardar(r, v){
+  const g = _enKg(r) ? num(v) * 1000 : num(v);
+  return Math.round(g * 1000) / 1000;   // sin basura de coma flotante
+}
+// Gramos guardados -> texto para MOSTRAR. Mismo criterio que con la plata: un
+// número chico no puede redondearse a cero. 0,78 de sal y 44,4 de cebolla se
+// escriben como los escribe la planta, sin ceros de relleno al final.
+function fmtPesoNum(r, g){
+  const enKg = _enKg(r);
+  const v = enKg ? (+g||0)/1000 : (+g||0);
+  const a = Math.abs(v);
+  const d = enKg ? (a>=100 ? 1 : a>=10 ? 2 : a>=1 ? 3 : 4)
+                 : (a>0 && a<10 ? 1 : 0);
+  let t = fmtD(v, d);
+  if(t.indexOf(',') >= 0) t = t.replace(/0+$/,'').replace(/,$/,'');
+  return t;
+}
+function fmtPeso(r, g){ return fmtPesoNum(r, g) + ' ' + _unidadPeso(r); }
+// Para el value= de un input es OTRA cuenta: acá no se redondea nada, porque
+// lo que está en el campo es lo que se va a volver a guardar. Si mostrara
+// "113,6" donde hay 113636 g, el próximo cambio guardaría 113600 y nadie se
+// enteraría. Vacío cuando no hay dato, para que se vea el placeholder.
+function _valPeso(r, g){
+  const nn = +g || 0;
+  if(!(nn > 0)) return '';
+  let t = fmtD(_enKg(r) ? nn/1000 : nn, 5);
+  if(t.indexOf(',') >= 0) t = t.replace(/0+$/,'').replace(/,$/,'');
+  return t;
+}
+function cambiarUnidadPeso(u){
+  const r = recetaEditando; if(!r) return;
+  r.unidadPeso = (u === 'kg') ? 'kg' : 'g';
+  renderEditorReceta(); programarAutoguardadoReceta();
+  showToast('Las cantidades de esta receta se escriben y se leen en '
+    + (r.unidadPeso==='kg' ? 'kilos' : 'gramos')
+    + '. Ningún dato guardado cambió.', 'info');
+}
+// El selector, para meter en el encabezado de la tabla de ingredientes.
+function _switchUnidadPeso(r){
+  const kg = _enKg(r);
+  const bt = (u, txt, act) => '<button onclick="cambiarUnidadPeso(\''+u+'\')" style="border:none;cursor:pointer;padding:3px 11px;font-size:12px;font-weight:700;'
+    + (act ? 'background:var(--azul);color:#fff' : 'background:transparent;color:var(--gris-2)') + '">' + txt + '</button>';
+  return '<span style="display:inline-flex;border:1px solid var(--crema-2);border-radius:8px;overflow:hidden"'
+    + ' title="En qué unidad se escriben y se leen las cantidades de esta receta. El dato se guarda siempre en gramos: esto solo cambia cómo se ve y cómo se escribe.">'
+    + bt('g','g',!kg) + bt('kg','kg',kg) + '</span>';
+}
 function _unidadRinde(r){ return _rindeEnUnidades(r) ? 'unidades' : 'g'; }
 // Cuánto cuesta una unidad de la preparación (o un gramo, según cómo rinda).
 function _costoPorUnidadPrep(r){
@@ -15705,6 +15786,53 @@ function _costoPorUnidadPrep(r){
 }
 function _prepTieneRendimiento(r){
   return _rindeEnUnidades(r) ? (+r.rendimientoUnid > 0) : (+r.rendimientoG > 0);
+}
+
+// ── DOBLE CONTEO DE LA MERMA DE COCCIÓN ────────────────────────────────────
+//
+// En una preparación hay dos mermas y viven en lugares distintos:
+//
+//   LA DEL INGREDIENTE — lo que se pierde ANTES de la olla: limpieza, recorte,
+//   despostado. Es una propiedad del ingrediente y su técnica.
+//
+//   LA DE LA OLLA — lo que se pierde COCINANDO. Esa es el rendimiento de la
+//   preparación, y se mide pesando lo que sale.
+//
+// Si la pérdida de cocción se carga en las dos, se descuenta dos veces y el
+// costo por gramo sube sin que nada lo muestre. Pasó cargando una carne
+// desmechada: la paleta tenía técnica "cocción al horno" con 12 % Y además el
+// rendimiento recogía ese mismo 12 %. El costo salía 13,6 % más caro.
+//
+// No hay forma de saberlo con certeza desde el dato —una técnica se llama como
+// la bautizaron— así que esto reconoce los nombres habituales de cocción y
+// AVISA. No corrige nada: el que sabe si ese 12 % es de cocción o de limpieza
+// es quien está parado en la cocina.
+const _RE_COCCION = /cocc|cocid|cocin|horno|herv|plancha|frit|brase|guis|vapor|parrilla|asad|saltead|grill|estofad|confit|pocha/i;
+function _esTecnicaDeCoccion(tecnica){
+  return !!tecnica && _RE_COCCION.test(String(tecnica));
+}
+// Las líneas de una preparación que traen merma de cocción en el ingrediente.
+function _ingredientesConMermaDeCoccion(r){
+  if(!r || !r.esPreparacion) return [];
+  return (r.ingredientes||[]).filter(ln=>{
+    if(!ln || ln.esCondimento || ln.recetaId) return false;
+    if(!_esTecnicaDeCoccion(ln.tecnica)) return false;
+    const ing = getIngrediente(ln.ingId);
+    if(!ing) return false;
+    const m = getMerma(ing.nombre, ln.tecnica);
+    return !!(m && +m.pct > 0);
+  }).map(ln=>{
+    const ing = getIngrediente(ln.ingId);
+    const m = getMerma(ing.nombre, ln.tecnica);
+    return { nombre: ing.nombre, tecnica: ln.tecnica, pct: +m.pct || 0 };
+  });
+}
+function _hayDobleConteoCoccion(r){
+  if(!r || !r.esPreparacion) return null;
+  const rinde = _rindeEnUnidades(r) ? (+r.rendimientoUnid||0) : (+r.rendimientoG||0);
+  if(!(rinde > 0)) return null;           // sin rendimiento no hay segundo descuento
+  const lineas = _ingredientesConMermaDeCoccion(r);
+  return lineas.length ? lineas : null;
 }
 
 function _pesoQueEntra(r){
@@ -15736,13 +15864,200 @@ function _statsProducciones(r){
 // haber sido esa vez. Son dos cosas distintas y el sistema no puede saber cuál
 // es. Entonces no adivina: anota la tanda igual, NO toca el costeo, y pregunta.
 // Quien conoce la cocina decide.
+// ── ESCALAR UNA PREPARACIÓN A UN RENDIMIENTO OBJETIVO ──────────────────────
+//
+// Provatio piensa desde los ingredientes hacia el rendimiento: cargás lo que
+// ponés y te dice lo que sale. Una planta piensa al revés: "necesito 100 kg de
+// desmechada, ¿cuánta carne pongo?". Hasta ahora esa división había que hacerla
+// a mano y escribir el resultado, cada vez que cambiaba el pedido.
+//
+// Esto hace la cuenta inversa: se pide el rendimiento que se quiere y se
+// recalculan todas las cantidades en la misma proporción. La merma no cambia
+// —es la misma carne y la misma cocción—, solo cambia el tamaño de la tanda.
+//
+// LOS TIEMPOS DEL PROCESO NO SE TOCAN, a propósito. El trabajo no escala igual
+// que la materia prima: una tanda del doble no lleva el doble de minutos si
+// entra en el mismo equipo, y si no entra son dos tandas, que es otra cosa.
+// Multiplicarlos automáticamente daría un costo de mano de obra inventado.
+async function escalarPreparacion(){
+  const r = recetaEditando; if(!r) return;
+  const enUnid = _rindeEnUnidades(r);
+  const rendActual = enUnid ? (+r.rendimientoUnid||0) : (+r.rendimientoG||0);
+  const unidTxt = enUnid ? 'unidades' : 'gramos';
+  if(!(rendActual > 0)){
+    showToast('Primero cargá cuánto rinde hoy esta preparación: sin eso no hay proporción que mantener','error');
+    return;
+  }
+  const entraHoy = _pesoQueEntra(r);
+  const txt = await pedirTexto(
+    '¿Cuánto querés que rinda' + (enUnid ? '' : ', en ' + (_enKg(r)?'kilos':'gramos')) + '?',
+    enUnid ? String(rendActual) : _valPeso(r, rendActual),
+    'Hoy rinde ' + (enUnid ? fmt(rendActual) + ' ' + unidTxt : fmtPeso(r, rendActual))
+    + ' con ' + fmtPeso(r, entraHoy) + ' de ingredientes. '
+    + 'Se recalculan todas las cantidades en la misma proporción y la merma queda igual. '
+    + 'Los tiempos del proceso no se tocan.'
+  );
+  if(txt === null || txt === undefined || txt === '') return;
+  const objetivo = enUnid ? num(txt) : _pesoGuardar(r, txt);
+  if(!(objetivo > 0)){ showToast('Poné un número mayor que cero','error'); return; }
+  if(Math.abs(objetivo - rendActual) < 0.001){ showToast('Ya rinde eso','info'); return; }
+
+  const factor = objetivo / rendActual;
+  let tocados = 0;
+  (r.ingredientes||[]).forEach(ln=>{
+    if(!ln || ln.esCondimento) return;     // el condimento es fijo por porción
+    if(+ln.neto > 0){
+      ln.neto = Math.round((+ln.neto) * factor * 100) / 100;
+      tocados++;
+    }
+  });
+  if(enUnid) r.rendimientoUnid = Math.round(objetivo);
+  else r.rendimientoG = Math.round(objetivo * 1000) / 1000;
+
+  renderEditorReceta(); programarAutoguardadoReceta();
+  showToast('Escalada ×' + fmtD(factor,2) + ': ' + tocados + ' ingrediente' + (tocados===1?'':'s')
+    + ' y el rendimiento. Los tiempos del proceso quedaron como estaban — revisalos.', 'success');
+}
+
+
+// ── LA MISMA RECETA A OTRA ESCALA ──────────────────────────────────────────
+//
+// Un instructivo de planta escribe la misma fórmula tres veces: por unidad, por
+// kilo y por batch. No es redundancia — es que cada una se usa en un momento
+// distinto. Por kilo se pide la materia prima, por batch se produce, por unidad
+// se cuesta y se controla el gramaje.
+//
+// Provatio ya sabía escalar, pero PISANDO la receta ("Escalar para rendir…").
+// Eso sirve cuando el lote cambió de verdad y no sirve cuando uno solo quiere
+// mirar. Esto no toca nada: calcula las tres escalas y las muestra. Lo que está
+// cargado queda exactamente como estaba.
+//
+// Las cantidades salen de las mismas funciones que la tabla de ingredientes,
+// así que si acá dice otra cosa que allá, hay un error en una sola de las dos
+// —no dos cuentas distintas conviviendo.
+function _lineasPeso(r){
+  const out = [];
+  (r.ingredientes||[]).forEach(ln=>{
+    if(!ln || ln.esCondimento) return;          // el condimento no tiene peso cargado
+    const neto = +ln.neto || 0;
+    if(!(neto > 0)) return;
+    if(ln.recetaId){
+      const sub = getRecetas().find(x=>x.id===ln.recetaId);
+      out.push({nombre: sub ? sub.nombre : '— subreceta sin elegir —',
+                tecnica: 'subreceta', neto, bruto: neto, merma: 0});
+      return;
+    }
+    if(ln.productoCP !== undefined){
+      const prod = resolverInsumoCP(ln.productoCP);
+      let merma = 0, bruto = neto;
+      if(prod && (ln.modoUso || prod.modoUso) === 'granel' && ln.tecnica){
+        const mRec = getMermasDisponibles().find(m=>m.ingrediente===prod.nombre && m.tecnica===ln.tecnica);
+        merma = mRec ? (+mRec.pct||0) : 0;
+        if(merma > 0 && merma < 100) bruto = neto/(1-merma/100);
+      }
+      out.push({nombre: prod ? prod.nombre : '— insumo CP —',
+                tecnica: ln.tecnica || '', neto, bruto, merma});
+      return;
+    }
+    const ing = getIngrediente(ln.ingId);
+    if(!ing) return;
+    const c = calcIngrediente(ln.ingId, ln.tecnica, neto, 1, false, null, ln);
+    const ok = c && !c.error;
+    out.push({nombre: ing.nombre, tecnica: ln.tecnica || '', neto,
+              bruto: ok ? (+(c.bruto_con_desperdicio || c.bruto) || neto) : neto,
+              merma: ok ? (+c.merma_pct || 0) : 0});
+  });
+  return out;
+}
+
+function verEscalas(){
+  const r = recetaEditando; if(!r) return;
+  const enUnid = _rindeEnUnidades(r);
+  const rend = enUnid ? (+r.rendimientoUnid||0) : (+r.rendimientoG||0);
+  if(!(rend > 0)){
+    showToast('Primero cargá cuánto rinde: sin eso no hay proporción de la cual escalar','error');
+    return;
+  }
+  const lineas = _lineasPeso(r);
+  if(!lineas.length){ showToast('Esta receta todavía no tiene ingredientes con cantidad cargada','error'); return; }
+
+  // Las escalas, de la más chica a la más grande, igual que el instructivo.
+  const escalas = [];
+  if(enUnid){
+    escalas.push({tit:'Por 1 unidad', sub:'una pieza terminada', f: 1/rend});
+    if(rend !== 100) escalas.push({tit:'Por 100 unidades', sub:'para pedir materia prima', f: 100/rend});
+  } else {
+    const pv = +r.porcionVentaG || 0;
+    if(pv > 0) escalas.push({tit:'Por 1 porción', sub: fmtPeso(r, pv) + ' terminados', f: pv/rend});
+    if(rend !== 1000) escalas.push({tit:'Por 1 kilo', sub:'1 kg terminado', f: 1000/rend});
+  }
+  escalas.push({tit:'El lote como está cargado',
+                sub: enUnid ? fmt(rend)+' unidades' : fmtPeso(r, rend) + ' terminados',
+                f: 1, esLote: true});
+
+  const u = _unidadPeso(r);
+  const tablas = escalas.map(e=>{
+    let tBruto = 0, tNeto = 0;
+    const filas = lineas.map(l=>{
+      const b = l.bruto * e.f, nt = l.neto * e.f;
+      tBruto += b; tNeto += nt;
+      return '<tr>'
+        + '<td style="font-size:12px">' + esc(l.nombre) + '</td>'
+        + '<td style="font-size:11px;color:var(--gris-2)">' + esc(l.tecnica || '—') + '</td>'
+        + '<td style="text-align:right;font-variant-numeric:tabular-nums">' + fmtPesoNum(r, b) + '</td>'
+        + '<td style="text-align:right;font-size:12px;color:' + (l.merma>0?'#6B4A08':'var(--gris-3)') + '">'
+        + (l.merma>0 ? fmtD(l.merma,1)+'%' : '—') + '</td>'
+        + '<td style="text-align:right;font-weight:600;font-variant-numeric:tabular-nums">' + fmtPesoNum(r, nt) + '</td>'
+        + '</tr>';
+    }).join('');
+    // La merma global no se promedia: es lo que se perdió sobre lo que entró.
+    const mermaTot = tBruto > 0 ? (1 - tNeto/tBruto) * 100 : 0;
+    return '<div style="margin-bottom:22px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;'
+      + 'background:' + (e.esLote ? 'var(--azul-c,#EBF3FF)' : 'var(--crema)') + ';border-radius:8px 8px 0 0;padding:9px 12px">'
+      +   '<div><strong style="font-size:13px">' + esc(e.tit) + '</strong>'
+      +   '<span style="font-size:11px;color:var(--gris-2)"> · ' + esc(e.sub) + '</span></div>'
+      +   '<div style="font-size:12px;font-variant-numeric:tabular-nums">'
+      +     'bruto <strong>' + fmtPesoNum(r, tBruto) + ' ' + u + '</strong>'
+      +     ' · merma <strong>' + fmtD(mermaTot,1) + '%</strong>'
+      +     ' · neto <strong>' + fmtPesoNum(r, tNeto) + ' ' + u + '</strong>'
+      +   '</div></div>'
+      + '<div class="table-wrap"><table style="margin:0">'
+      +   '<thead><tr><th>Ingrediente</th><th>Técnica</th>'
+      +   '<th style="text-align:right">Cant. bruta (' + u + ')</th>'
+      +   '<th style="text-align:right">Merma</th>'
+      +   '<th style="text-align:right">Cant. neta (' + u + ')</th></tr></thead>'
+      +   '<tbody>' + filas + '</tbody>'
+      + '</table></div></div>';
+  }).join('');
+
+  openModal(
+    '<div class="modal-header">'
+    + '<span class="modal-title">' + esc(r.nombre||'Receta') + ' — a otra escala</span>'
+    + '<button class="btn btn-icon" onclick="closeModal()">✕</button></div>'
+    + '<div class="modal-body">'
+    + '<div style="font-size:12px;color:var(--gris-1);background:var(--crema);border-radius:8px;padding:10px 13px;margin-bottom:16px;line-height:1.5">'
+    +   'La misma receta escrita a distintas escalas, como en un instructivo de planta. '
+    +   '<strong>No cambia nada:</strong> es solo para mirar, pedir materia prima o imprimir. '
+    +   'Si querés que el lote pase a ser otro de verdad, eso es “Escalar para rendir…”.'
+    + '</div>'
+    + tablas
+    + '<div style="font-size:11px;color:var(--gris-2);line-height:1.5">'
+    +   'La merma de cada línea es la de su técnica; la merma de arriba es la del total: '
+    +   'lo que se pierde sobre todo lo que entra, no el promedio de los porcentajes. '
+    +   'Los condimentos básicos no figuran porque no tienen peso cargado.'
+    + '</div></div>'
+  );
+}
+
 function registrarProduccion(){
   const r = recetaEditando; if(!r) return;
-  const entra = num((document.getElementById('prod-entra')||{}).value);
-  const sale  = num((document.getElementById('prod-sale')||{}).value);
+  // Se escribe en la unidad de la receta y se guarda en gramos, como todo.
+  const entra = _pesoGuardar(r, (document.getElementById('prod-entra')||{}).value);
+  const sale  = _pesoGuardar(r, (document.getElementById('prod-sale')||{}).value);
   const quien = ((document.getElementById('prod-quien')||{}).value||'').trim();
   const nota  = ((document.getElementById('prod-nota')||{}).value||'').trim();
-  if(!(entra>0) || !(sale>0)){ showToast('Cargá cuánto entró y cuánto salió, en gramos','error'); return; }
+  if(!(entra>0) || !(sale>0)){ showToast('Cargá cuánto entró y cuánto salió, en '+(_enKg(r)?'kilos':'gramos'),'error'); return; }
   if(sale > entra*1.2){ showToast('Sale más de lo que entró: revisá los números','error'); return; }
 
   const previo = _statsProducciones(r);           // lo de antes de esta tanda
@@ -15759,14 +16074,14 @@ function registrarProduccion(){
     // Primera tanda: es el único dato que hay, se adopta.
     r.rendimientoG = rendSegunEstaTanda;
     window._prodDuda = null;
-    showToast('Rindió '+fmtD(pctNuevo,1)+'% (merma '+fmtD(100-pctNuevo,1)+'%). El costeo ya usa '+fmt(rendSegunEstaTanda)+' g.','success');
+    showToast('Rindió '+fmtD(pctNuevo,1)+'% (merma '+fmtD(100-pctNuevo,1)+'%). El costeo ya usa '+fmtPeso(r, rendSegunEstaTanda)+'.','success');
   } else {
     const umbral = Math.max(5, previo.desv*2);
     const dif = pctNuevo - previo.prom;
     if(Math.abs(dif) <= umbral){
       r.rendimientoG = rendSegunEstaTanda;
       window._prodDuda = null;
-      showToast('Rindió '+fmtD(pctNuevo,1)+'% (merma '+fmtD(100-pctNuevo,1)+'%), en línea con las anteriores. El costeo usa '+fmt(rendSegunEstaTanda)+' g.','success');
+      showToast('Rindió '+fmtD(pctNuevo,1)+'% (merma '+fmtD(100-pctNuevo,1)+'%), en línea con las anteriores. El costeo usa '+fmtPeso(r, rendSegunEstaTanda)+'.','success');
     } else {
       // Se aparta: se anota, pero el costeo no se mueve hasta que alguien diga.
       window._prodDuda = {recetaId:r.id, pct:pctNuevo, prom:previo.prom, dif, rendSugerido:rendSegunEstaTanda};
@@ -15780,7 +16095,7 @@ function resolverDudaProduccion(adoptar){
   if(!d || !r || r.id !== d.recetaId){ window._prodDuda = null; renderEditorReceta(); return; }
   if(adoptar){
     r.rendimientoG = d.rendSugerido;
-    showToast('Listo: el costeo ahora usa '+fmt(d.rendSugerido)+' g.','success');
+    showToast('Listo: el costeo ahora usa '+fmtPeso(r, d.rendSugerido)+'.','success');
   } else {
     showToast('La tanda queda anotada y el costeo sigue igual.','success');
   }
@@ -15813,7 +16128,7 @@ function adoptarRendimientoPromedio(){
   if(!(nuevo>0)) return;
   r.rendimientoG = nuevo;
   renderEditorReceta(); programarAutoguardadoReceta();
-  showToast('Rendimiento actualizado a '+fmt(nuevo)+' g, el promedio de las últimas '+st.n,'success');
+  showToast('Rendimiento actualizado a '+fmtPeso(r, nuevo)+', el promedio de las últimas '+st.n,'success');
 }
 function _htmlProducciones(r){
   const entraActual = _pesoQueEntra(r);
@@ -15826,8 +16141,32 @@ function _htmlProducciones(r){
   const inconsistente = st.n>=3 && st.amplitud>10;
   return `
   <div class="card">
-    <div class="card-header"><span class="card-title">Cuánto rinde de verdad</span></div>
+    <div class="card-header">
+      <span class="card-title">Cuánto rinde de verdad</span>
+      ${(_rindeEnUnidades(r) ? (+r.rendimientoUnid>0) : (+r.rendimientoG>0))
+        ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
+             <button class="btn btn-secondary btn-sm" onclick="verEscalas()"
+               title="La misma receta por unidad, por kilo y por lote, una al lado de la otra. No cambia nada: es para mirar, pedir materia prima o imprimir.">Ver a otra escala</button>
+             <button class="btn btn-secondary btn-sm" onclick="escalarPreparacion()"
+               title="Para cuando sabés cuánto necesitás que salga y querés que el sistema calcule cuánta materia prima hace falta. Esto SÍ cambia las cantidades cargadas.">Escalar para rendir…</button>
+           </div>`
+        : ''}
+    </div>
     <div class="card-body">
+      ${(()=>{
+        // La merma de cocción contada dos veces: en el ingrediente y en el
+        // rendimiento. Se avisa, no se corrige — el que sabe cuál de las dos
+        // corresponde es quien conoce el proceso.
+        const dob = _hayDobleConteoCoccion(r);
+        if(!dob) return '';
+        const lista = dob.map(d=>esc(d.nombre)+' ('+esc(d.tecnica)+', '+fmtD(d.pct,1)+'%)').join(' · ');
+        return `<div style="background:#FCE8E8;border:1px solid #EFB2B2;color:#C02626;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5">
+          <strong>Ojo: la cocción puede estar descontada dos veces.</strong><br>
+          ${dob.length===1?'Este ingrediente tiene':'Estos ingredientes tienen'} una merma de cocción cargada en la técnica — ${lista} — y además esta preparación tiene un rendimiento, que ya recoge lo que se pierde en la olla.
+          <div style="margin-top:6px">Va en uno de los dos lados, no en los dos. Si la carne entra limpia y lo único que se pierde es cocinando, la técnica va <strong>sin merma</strong> y la pérdida queda en el rendimiento, que es el que se mide pesando.</div>
+          <div style="margin-top:6px;font-size:12px">Si esa merma es de limpieza y no de cocción, ignorá este aviso: está bien donde está.</div>
+        </div>`;
+      })()}
       ${(()=>{
         // Hay dos preguntas distintas según cómo rinda la preparación.
         //
@@ -15852,7 +16191,7 @@ function _htmlProducciones(r){
           return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
             <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
               <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Materia prima</div>
-              <div style="font-size:20px;font-weight:700">${fmt(entraActual)} g</div>
+              <div style="font-size:20px;font-weight:700">${fmtPeso(r, entraActual)}</div>
               <div style="font-size:11px;color:var(--gris-2)">suma de los ingredientes netos</div>
             </div>
             <div style="flex:1;min-width:150px;background:${colU};border-radius:10px;padding:12px 14px">
@@ -15866,7 +16205,7 @@ function _htmlProducciones(r){
             </div>
             <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
               <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Peso por unidad</div>
-              <div style="font-size:20px;font-weight:700">${pesoUnid?fmtD(pesoUnid,0)+' g':'—'}</div>
+              <div style="font-size:20px;font-weight:700">${pesoUnid?fmtD(pesoUnid,0)+' g':'—'}</div><!-- una pieza siempre se lee en gramos: 45 g, no 0,045 kg -->
               <div style="font-size:11px;color:var(--gris-2)">${pesoUnid?'ya armada, con el apanado':'se calcula al anotar una producción'}</div>
             </div>
             <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
@@ -15883,12 +16222,12 @@ function _htmlProducciones(r){
         return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
           <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Entra a la olla</div>
-            <div style="font-size:20px;font-weight:700">${fmt(entraActual)} g</div>
+            <div style="font-size:20px;font-weight:700">${fmtPeso(r, entraActual)}</div>
             <div style="font-size:11px;color:var(--gris-2)">suma de los ingredientes netos</div>
           </div>
           <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Sale de la olla</div>
-            <div style="font-size:20px;font-weight:700">${rendActual>0?fmt(rendActual)+' g':'—'}</div>
+            <div style="font-size:20px;font-weight:700">${rendActual>0?fmtPeso(r, rendActual):'—'}</div>
             <div style="font-size:11px;color:var(--gris-2)">el rendimiento que usa el costeo</div>
           </div>
           <div style="flex:1;min-width:150px;background:${col};border-radius:10px;padding:12px 14px">
@@ -15897,8 +16236,8 @@ function _htmlProducciones(r){
             <div style="font-size:11px;color:var(--gris-2)">${pctActual===null
               ? 'falta el rendimiento'
               : gana
-                ? fmt(rendActual-entraActual)+' g de agua absorbida'
-                : fmt(entraActual-rendActual)+' g de agua y evaporación'}</div>
+                ? fmtPeso(r, rendActual-entraActual)+' de agua absorbida'
+                : fmtPeso(r, entraActual-rendActual)+' de agua y evaporación'}</div>
           </div>
         </div>`;
       })()}
@@ -15910,7 +16249,7 @@ function _htmlProducciones(r){
           <div style="margin-bottom:10px">Puede ser un cambio real —otro proveedor, otra cocción, otra persona— o puede haber sido solo esta vez. Yo no lo puedo saber; vos sí.
           Mientras tanto <strong>quedó anotada y el costeo no se movió</strong>.</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-secondary btn-sm" onclick="resolverDudaProduccion(true)">Cambió: usar ${fmt(d.rendSugerido)} g</button>
+            <button class="btn btn-secondary btn-sm" onclick="resolverDudaProduccion(true)">Cambió: usar ${fmtPeso(r, d.rendSugerido)}</button>
             <button class="btn btn-secondary btn-sm" onclick="resolverDudaProduccion(false)">Fue esa vez: dejar como está</button>
           </div>
         </div>`;
@@ -15935,8 +16274,8 @@ function _htmlProducciones(r){
               const dif = pct - st.prom;
               return `<tr>
                 <td>${fmtFechaCorta(x.fecha)}</td>
-                <td style="text-align:right">${fmt(x.entraG)} g</td>
-                <td style="text-align:right">${fmt(x.saleG)} g</td>
+                <td style="text-align:right">${fmtPeso(r, x.entraG)}</td>
+                <td style="text-align:right">${fmtPeso(r, x.saleG)}</td>
                 ${_rindeEnUnidades(r)?(()=>{
                   // El peso de cada pieza no es el de su ingrediente principal:
                   // es todo lo que quedó pegado —carne, huevo, pan rallado—
@@ -15972,16 +16311,16 @@ function _htmlProducciones(r){
         </table></div>
         ${sugerido>0 && Math.abs(sugerido-rendActual) > Math.max(5, rendActual*0.03) ? `
         <div style="margin-top:12px;background:#EBF3FF;border:1px solid #A9C4E8;border-radius:8px;padding:10px 14px;font-size:13px;color:#1F4E79;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <div style="flex:1;min-width:240px">Según estas tandas, esta olla rinde <strong>${fmt(sugerido)} g</strong> y el costeo está usando ${fmt(rendActual)} g.</div>
-          <button class="btn btn-secondary btn-sm" onclick="adoptarRendimientoPromedio()">Usar ${fmt(sugerido)} g</button>
+          <div style="flex:1;min-width:240px">Según estas tandas, esta olla rinde <strong>${fmtPeso(r, sugerido)}</strong> y el costeo está usando ${fmtPeso(r, rendActual)}.</div>
+          <button class="btn btn-secondary btn-sm" onclick="adoptarRendimientoPromedio()">Usar ${fmtPeso(r, sugerido)}</button>
         </div>` : ''}
       </div>` : ''}
 
       <div style="border-top:1px solid var(--crema-2);margin-top:14px;padding-top:14px">
         <div style="font-size:13px;font-weight:600;margin-bottom:8px">Anotar una producción</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input type="text" inputmode="decimal" id="prod-entra" value="${entraActual||''}" placeholder="entró (g)" style="width:120px;text-align:right" title="Gramos que pusiste en la olla. Viene con la suma de la receta, cambialo si esta vez hiciste más o menos.">
-          <input type="text" inputmode="decimal" id="prod-sale" placeholder="salió (g)" style="width:120px;text-align:right" title="Pesá el resultado terminado.">
+          <input type="text" inputmode="decimal" id="prod-entra" value="${_valPeso(r, entraActual)}" placeholder="entró (${_unidadPeso(r)})" style="width:120px;text-align:right" title="Lo que pusiste en la olla. Viene con la suma de la receta, cambialo si esta vez hiciste más o menos.">
+          <input type="text" inputmode="decimal" id="prod-sale" placeholder="salió (${_unidadPeso(r)})" style="width:120px;text-align:right" title="Pesá el resultado terminado.">
 ${_rindeEnUnidades(r)?`<input type="text" inputmode="decimal" id="prod-unid" placeholder="unidades" style="width:110px;text-align:right" title="Cuántas piezas salieron de verdad. Se cuentan al terminar: ahí se ve si se cortaron más grandes o si faltó alguna.">`:''}
           <input type="text" id="prod-quien" placeholder="quién la hizo" style="width:150px">
           <input type="text" id="prod-nota" placeholder="nota (proveedor, cocción, lo que sea)" style="flex:1;min-width:200px">
@@ -16623,7 +16962,7 @@ function _htmlProceso(r){
                     : `<input type="text" inputmode="decimal" value="${e.minTotal||''}" placeholder="0" style="width:80px;text-align:right"
                         title="Minutos en que hay alguien trabajando, para toda la tanda."
                         onchange="updEtapa('${escJs(e.id)}','minTotal',num(this.value))">
-                       ${(+e.minTotal>0 && mo.unidades>0)?`<div style="font-size:10px;color:var(--gris-2)">${fmtD((+e.minTotal)/mo.unidades,2)} por ${unidLabel}</div>`:''}`}
+                       ${(+e.minTotal>0 && mo.unidades>0)?`<div style="font-size:10px;color:var(--gris-2)">${unidLabel==='gramo'?fmtD((+e.minTotal)/mo.unidades*1000,2)+' por kilo':fmtD((+e.minTotal)/mo.unidades,2)+' por '+unidLabel}</div>`:''}`}
                   <label style="display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:10px;color:var(--gris-2);margin-top:4px;cursor:pointer"
                          title="Para las etapas donde la persona está de punta a punta: apanado con alguien en cada extremo, envasado. Los minutos de trabajo se toman de la duración.">
                     <input type="checkbox" ${e.todaLaEtapa?'checked':''} style="width:13px;height:13px"
@@ -16650,7 +16989,7 @@ function _htmlProceso(r){
                 : xmin===null
                   ? '<span style="color:#C02626">falta el puesto</span>'
                   : `${costoEtapaLote?'<div>$'+fmt(costoEtapaLote)+' <span style="color:var(--gris-2);font-size:10px">el lote</span></div>':''}
-                     ${costoEtapaUnid?'<div>$'+fmt(costoEtapaUnid)+' <span style="color:var(--gris-2);font-size:10px">c/'+unidLabel+'</span></div>':''}`}</td>
+                     ${costoEtapaUnid?'<div>$'+fmtMon(costoEtapaUnid)+' <span style="color:var(--gris-2);font-size:10px">c/'+unidLabel+'</span></div>':''}`}</td>
               <td><button class="btn btn-danger btn-sm" onclick="delEtapa('${escJs(e.id)}')">${ico('trash',13)}</button></td>
             </tr>`;
           }).join('')}
@@ -16672,7 +17011,11 @@ function _htmlProceso(r){
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Minutos-hombre</div>
           <div style="font-size:20px;font-weight:700">${fmtD(mo.minTotalLote,0)} <span style="font-size:12px;font-weight:400;color:var(--gris-2)">todo el lote</span></div>
           <div style="font-size:11px;color:var(--gris-2)">${mo.minHombrePorUnidad!==null
-            ? fmtD(mo.minHombrePorUnidad,2)+' por '+unidLabel+(mo.minLoteH>0?' · '+fmtD(mo.minLoteH,0)+' fijos + el resto escala':'')
+            ? (unidLabel==='gramo'
+                // Por gramo da 0,00125 y no se lee. Por kilo es el mismo dato legible.
+                ? fmtD(mo.minHombrePorUnidad*1000,2)+' por kilo'
+                : fmtD(mo.minHombrePorUnidad,2)+' por '+unidLabel)
+              +(mo.minLoteH>0?' · '+fmtD(mo.minLoteH,0)+' fijos + el resto escala':'')
             : 'falta el rendimiento'}</div>
         </div>
         <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
@@ -16682,13 +17025,13 @@ function _htmlProceso(r){
         </div>
         <div style="flex:1;min-width:150px;background:${mo.listo?'#EBF3FF':'var(--crema)'};border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${mo.listo?'#1F4E79':'var(--gris-2)'}">Mano de obra</div>
-          <div style="font-size:20px;font-weight:700;color:${mo.listo?'#1F4E79':'inherit'}">${mo.costoPorUnidad!==null?'$'+fmt(mo.costoPorUnidad):'—'}</div>
-          <div style="font-size:11px;color:var(--gris-2)">por ${unidLabel}</div>
+          <div style="font-size:20px;font-weight:700;color:${mo.listo?'#1F4E79':'inherit'}">${mo.costoPorUnidad!==null?'$'+fmtMon(mo.costoPorUnidad):'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">por ${unidLabel}${(unidLabel==='gramo'&&mo.costoPorUnidad)?' · $'+fmt(mo.costoPorUnidad*1000)+' el kilo':''}</div>
         </div>
         <div style="flex:1;min-width:170px;background:${mo.listo?'#E4F3E6':'var(--crema)'};border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${mo.listo?'#1B7A34':'var(--gris-2)'}">Costo de producción</div>
-          <div style="font-size:20px;font-weight:700;color:${mo.listo?'#1B7A34':'inherit'}">${(mo.costoPorUnidad!==null&&mpUnidad!==null)?'$'+fmt(mpUnidad+mo.costoPorUnidad):'—'}</div>
-          <div style="font-size:11px;color:var(--gris-2)">${mpUnidad!==null?'mercadería $'+fmt(mpUnidad)+' + mano de obra':'mercadería + mano de obra'}</div>
+          <div style="font-size:20px;font-weight:700;color:${mo.listo?'#1B7A34':'inherit'}">${(mo.costoPorUnidad!==null&&mpUnidad!==null)?'$'+fmtMon(mpUnidad+mo.costoPorUnidad):'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">${mpUnidad!==null?'mercadería $'+fmtMon(mpUnidad)+' + mano de obra $'+fmtMon(mo.costoPorUnidad||0):'mercadería + mano de obra'}</div>
         </div>
       </div>
       <div style="font-size:12px;color:var(--gris-2);margin-top:12px;line-height:1.5">
