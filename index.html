@@ -3092,8 +3092,28 @@ function calcIngrediente(ingId, tecnica, neto, porciones, esCondimento, unidadRe
   }
 }
 
+// Recetas que se están calculando en este momento. Una preparación puede usar
+// otra, y esa otra una tercera —pollo cocido dentro de un relleno, el relleno
+// dentro de un bocadito—, así que el cálculo se llama a sí mismo. Si en algún
+// punto una receta termina usándose a sí misma, aunque sea por una vuelta larga
+// de tres o cuatro pasos, el cálculo no termina nunca y la app se congela.
+//
+// No es un caso raro en una planta con decenas de productos encadenados: basta
+// un clic equivocado en un desplegable. Por eso se corta el círculo y se avisa,
+// en vez de dejar que reviente.
+const _calcEnCurso = new Set();
+
 function calcReceta(receta, porciones){
   let merc = 0;
+  const _idRec = receta && receta.id;
+  if(_idRec){
+    if(_calcEnCurso.has(_idRec)){
+      // Ya estamos calculando esta misma receta más arriba en la cadena.
+      return { items: [], merc: 0, circular: true };
+    }
+    _calcEnCurso.add(_idRec);
+  }
+  try {
   const items = (receta.ingredientes||[]).map(ing=>{
     // Item tipo insumo del Centro de Producción
     if(ing.productoCP !== undefined){
@@ -3121,6 +3141,9 @@ function calcReceta(receta, porciones){
       // cantidad usada—; lo único que cambia es en qué se mide esa cantidad.
       const enUnid  = _rindeEnUnidades(recBase);
       const rendG   = recBase ? (enUnid ? (+recBase.rendimientoUnid||0) : (+recBase.rendimientoG||0)) : 0;
+      if(recBase && _calcEnCurso.has(recBase.id)){
+        return {...ing, calc:{error:'Referencia circular: esta preparación se usa a sí misma'}};
+      }
       if(recBase && rendG > 0){
         const costoXg  = _costoPorUnidadPrep(recBase);
         const costoItem = costoXg * (ing.neto||0);
@@ -3140,6 +3163,9 @@ function calcReceta(receta, porciones){
     return {...ing, calc:c};
   });
   return {merc, items, porciones};
+  } finally {
+    if(_idRec) _calcEnCurso.delete(_idRec);
+  }
 }
 
 // Carga el rendimiento de OTRA receta desde el plato que la usa. Es el mismo
@@ -15733,18 +15759,18 @@ function registrarProduccion(){
     // Primera tanda: es el único dato que hay, se adopta.
     r.rendimientoG = rendSegunEstaTanda;
     window._prodDuda = null;
-    showToast('Rindió '+fmtD(pctNuevo,1)+'%. El costeo ya usa '+fmt(rendSegunEstaTanda)+' g.','success');
+    showToast('Rindió '+fmtD(pctNuevo,1)+'% (merma '+fmtD(100-pctNuevo,1)+'%). El costeo ya usa '+fmt(rendSegunEstaTanda)+' g.','success');
   } else {
     const umbral = Math.max(5, previo.desv*2);
     const dif = pctNuevo - previo.prom;
     if(Math.abs(dif) <= umbral){
       r.rendimientoG = rendSegunEstaTanda;
       window._prodDuda = null;
-      showToast('Rindió '+fmtD(pctNuevo,1)+'%, en línea con las anteriores. El costeo usa '+fmt(rendSegunEstaTanda)+' g.','success');
+      showToast('Rindió '+fmtD(pctNuevo,1)+'% (merma '+fmtD(100-pctNuevo,1)+'%), en línea con las anteriores. El costeo usa '+fmt(rendSegunEstaTanda)+' g.','success');
     } else {
       // Se aparta: se anota, pero el costeo no se mueve hasta que alguien diga.
       window._prodDuda = {recetaId:r.id, pct:pctNuevo, prom:previo.prom, dif, rendSugerido:rendSegunEstaTanda};
-      showToast('Rindió '+fmtD(pctNuevo,1)+'% y venía en '+fmtD(previo.prom,1)+'%. Quedó anotada; el costeo no se tocó.','info');
+      showToast('Rindió '+fmtD(pctNuevo,1)+'% (merma '+fmtD(100-pctNuevo,1)+'%) y venía en '+fmtD(previo.prom,1)+'%. Quedó anotada; el costeo no se tocó.','info');
     }
   }
   renderEditorReceta(); programarAutoguardadoReceta();
@@ -15894,7 +15920,7 @@ function _htmlProducciones(r){
       <div style="border-top:1px solid var(--crema-2);padding-top:14px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
           <strong style="font-size:13px">Últimas ${st.n} producción${st.n===1?'':'es'}</strong>
-          <span style="font-size:12px;color:var(--gris-1)">Promedio <strong>${fmtD(st.prom,1)}%</strong> · entre ${fmtD(st.min,1)}% y ${fmtD(st.max,1)}%</span>
+          <span style="font-size:12px;color:var(--gris-1)">Promedio <strong>${fmtD(st.prom,1)}%</strong> de rendimiento <span style="color:var(--gris-2)">(merma ${fmtD(100-st.prom,1)}%)</span> · entre ${fmtD(st.min,1)}% y ${fmtD(st.max,1)}%</span>
         </div>
         ${pocasTandas?`<div style="font-size:12px;color:#6B4A08;background:#FDF0D0;border-radius:8px;padding:8px 12px;margin-bottom:10px">Con ${st.n} tanda${st.n===1?'':'s'} el promedio todavía no dice mucho. Anotá tres o cuatro antes de sacar conclusiones.</div>`:''}
         ${inconsistente?`<div style="font-size:12px;color:#6B4A08;background:#FDF0D0;border-radius:8px;padding:8px 12px;margin-bottom:10px">
@@ -15902,7 +15928,7 @@ function _htmlProducciones(r){
         <div class="table-wrap"><table>
           <thead><tr><th style="width:110px">Fecha</th><th style="text-align:right">Entró</th><th style="text-align:right">Salió</th>
             ${_rindeEnUnidades(r)?'<th style="text-align:right">Unidades</th><th style="text-align:right">Peso c/u</th>':''}
-            <th style="text-align:right">Rindió</th><th style="text-align:right">vs promedio</th><th>Quién</th><th>Nota</th><th style="width:50px"></th></tr></thead>
+            <th style="text-align:right;width:110px" title="Lo que salió sobre lo que entró. Abajo, la merma: las dos son el mismo dato visto al derecho y al revés.">Rindió<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">salió / entró</div></th><th style="text-align:right">vs promedio</th><th>Quién</th><th>Nota</th><th style="width:50px"></th></tr></thead>
           <tbody>
             ${st.regs.map((x,i)=>{
               const pct = x.saleG/x.entraG*100;
@@ -15921,7 +15947,21 @@ function _htmlProducciones(r){
                   return `<td style="text-align:right">${x.unid?`<strong>${fmt(x.unid)}</strong>${dif!==null&&dif!==0?`<div style="font-size:10px;color:${dif<0?'#C02626':'#1B7A34'}">${dif>0?'+':'−'}${fmt(Math.abs(dif))} vs ${fmt(esperadas)}</div>`:''}`:'<span style="color:var(--gris-3)">—</span>'}</td>
                           <td style="text-align:right">${x.unid?fmtD(x.saleG/x.unid,0)+' g':'<span style="color:var(--gris-3)">—</span>'}</td>`;
                 })():''}
-                <td style="text-align:right"><strong>${fmtD(pct,1)}%</strong></td>
+                <td style="text-align:right">
+                  <strong>${fmtD(pct,1)}%</strong>
+                  ${(()=>{
+                    // La merma al lado del rendimiento, siempre. Son el mismo dato
+                    // visto al derecho y al revés, pero quien viene con un número
+                    // esperado en la cabeza lee el que espera: "rindió 9,6 %" se
+                    // leyó como "perdió 9,6 %" y el error quedó invisible.
+                    // Mostrando los dos no hay forma de confundirlos.
+                    const dif = 100 - pct;
+                    if(Math.abs(dif) < 0.05) return '<div style="font-size:10px;color:var(--gris-2)">sin merma</div>';
+                    return dif > 0
+                      ? `<div style="font-size:10px;color:#6B4A08">merma ${fmtD(dif,1)}%</div>`
+                      : `<div style="font-size:10px;color:#1B7A34">gana ${fmtD(-dif,1)}%</div>`;
+                  })()}
+                </td>
                 <td style="text-align:right;color:${Math.abs(dif)<2?'var(--gris-2)':dif<0?'#C02626':'#1B7A34'}">${dif>=0?'+':'−'}${fmtD(Math.abs(dif),1)}</td>
                 <td style="font-size:12px">${esc(x.quien||'—')}</td>
                 <td style="font-size:12px;color:var(--gris-1)">${esc(x.nota||'')}</td>
