@@ -8030,6 +8030,49 @@ function expandirTodoRecetas(abrir){
 }
 
 // Una sola forma de dibujar una fila, para que las dos vistas digan lo mismo.
+// ── EL RESUMEN DE MANO DE OBRA, EN UN SOLO LUGAR ──────────────────────────
+//
+// La ficha, el listado de recetas, el de subrecetas y el editor muestran el
+// mismo costo de producción. Si cada pantalla lo armara por su cuenta, tarde o
+// temprano dos dirían cosas distintas y no habría forma de saber cuál miente.
+// Acá se calcula una vez y las cuatro leen de acá.
+//
+// Devuelve null cuando no hay nada que mostrar: el módulo apagado, o una receta
+// sin etapas propias y sin subrecetas con proceso. Null es "no corresponde", no
+// "cuesta cero".
+function resumenMOReceta(r){
+  if(!r || !costeoMODirectaActivo()) return null;
+  const mo = calcManoObra(r);
+  if(!mo.etapas && !mo.heredada.lineas.length) return null;
+  const {merc} = calcReceta(r, r.porciones||1);
+  // La mercadería y la mano de obra tienen que estar en la misma escala antes
+  // de sumarse: una preparación se divide por lo que rinde, un plato ya viene
+  // por porción. Es la misma regla que usa calcManoObra para lo heredado.
+  const mp = mo.unidades > 0 ? (r.esPreparacion ? merc/mo.unidades : merc) : null;
+  const moU = mo.costoTotalPorUnidad;
+  return {
+    mo, merc,
+    unidLabel: _rindeEnUnidades(r) ? 'unidad' : (r.esPreparacion ? 'gramo' : 'porción'),
+    mercPorUnidad: mp,
+    moPorUnidad: moU,
+    produccionPorUnidad: (moU !== null && mp !== null) ? mp + moU : null,
+    incompleto: moU === null || mp === null,
+    hayHeredada: mo.heredada.lineas.length > 0,
+  };
+}
+// La celda compacta para una tabla: costo de producción arriba, de qué está
+// hecho abajo. Un "—" acá siempre significa que falta un dato, nunca cero.
+function _celdaMOReceta(r){
+  const q = resumenMOReceta(r);
+  if(!q) return '<span style="color:var(--gris-3)">—</span>';
+  if(q.incompleto){
+    return '<span style="color:#C02626;font-size:12px" title="Falta un dato para poder costear el trabajo: puede ser un puesto sin asignar, un rendimiento sin cargar, o una subreceta sin proceso.">falta un dato</span>';
+  }
+  const porKilo = q.unidLabel === 'gramo';
+  return '<span class="calc">$' + fmtMon(porKilo ? q.produccionPorUnidad*1000 : q.produccionPorUnidad) + (porKilo ? '<span style="font-size:11px;color:var(--gris-2)">/kg</span>' : '') + '</span>'
+    + '<div style="font-size:10px;color:var(--gris-2)">+$' + fmtMon(porKilo ? q.moPorUnidad*1000 : q.moPorUnidad) + ' de trabajo'
+    + (q.hayHeredada ? ' ·&nbsp;hereda' : '') + '</div>';
+}
 function _filaReceta(r, opts){
   const conBorrar = !opts || opts.conBorrar !== false;
   const {merc} = calcReceta(r, r.porciones||1);
@@ -8048,6 +8091,7 @@ function _filaReceta(r, opts){
     </td>
     <td>${badgeLinea(r.tipoServicio)}</td>
     <td style="text-align:right;white-space:nowrap">${costo>0?'$'+fmt(costo)+kg:'<span style="color:var(--gris-3)">—</span>'}</td>
+    ${(costeoMODirectaActivo() && !esNivelCocina())?`<td style="text-align:right;white-space:nowrap">${_celdaMOReceta(r)}</td>`:''}
     <td style="text-align:right;white-space:nowrap">${r.precioVenta?'$'+fmt(r.precioVenta)+kg:'<span style="color:var(--gris-3)">—</span>'}</td>
     <td style="text-align:right;white-space:nowrap">${m.valor!==null?fmtD(m.valor)+'%':'<span style="color:var(--gris-3)">—</span>'}</td>
     <td>${semaforoReceta(r, merc)}</td>
@@ -8060,9 +8104,13 @@ function _filaReceta(r, opts){
 }
 
 function _encabezadoTablaRecetas(esCP){
+  // La columna de mano de obra aparece solo con el módulo encendido, y nunca a
+  // nivel cocina: ahí no se muestra plata.
+  const conMO = costeoMODirectaActivo() && !esNivelCocina();
   return `<thead><tr>
     <th>Receta</th><th>Servicio</th>
     <th style="text-align:right">${esCP?'Costo':'Costo merc./p'}</th>
+    ${conMO?'<th style="text-align:right" title="Mercadería más mano de obra. No entra al food cost ni al EBITDA: va al lado.">Costo de producción</th>':''}
     <th style="text-align:right">${esCP?'Precio de transferencia':'Precio de venta'}</th>
     <th style="text-align:right">${esCP?'% de margen':'% de costo'}</th>
     <th>Estado</th><th></th>
@@ -9022,8 +9070,26 @@ function renderFichaPlato(id){
             : `<div class="metric-value" style="font-size:14px;color:var(--gris-2)">— Sin precio</div>`}
         </div>
         <div class="metric"><div class="metric-label">${_esCPFicha?'Margen sobre el costo':'Food cost'}</div><div style="margin-top:8px">${semaforoReceta(receta, merc)}</div></div>
-        ${(receta.esPreparacion && +receta.porcionVentaG>0) ? `<div class="metric"><div class="metric-label">Porción que se vende</div><div class="metric-value">${fmt(receta.porcionVentaG)} g</div><div class="metric-sub">cuesta $${fmt(costoComparableReceta(receta, merc))}</div></div>` : ''}
+        ${(receta.esPreparacion && +receta.porcionVentaG>0) ? `<div class="metric"><div class="metric-label">Porción que se vende</div><div class="metric-value">${fmtPeso(receta, receta.porcionVentaG)}</div><div class="metric-sub">cuesta $${fmt(costoComparableReceta(receta, merc))}</div></div>` : ''}
       `}
+      ${(()=>{
+        // Mercadería más trabajo. Va acá arriba, al lado del food cost, pero
+        // NUNCA adentro de él: son dos carriles y mezclarlos inventa plata.
+        const q = resumenMOReceta(receta);
+        if(!q) return '';
+        const porKilo = q.unidLabel === 'gramo';
+        const esc2 = (x)=> porKilo ? x*1000 : x;
+        const suf  = porKilo ? ' el kilo' : ' por ' + q.unidLabel;
+        return `<div class="metric" style="background:${q.incompleto?'var(--crema)':'#E4F3E6'}">
+          <div class="metric-label">Costo de producción</div>
+          <div class="metric-value" style="color:${q.incompleto?'var(--gris-2)':'#1B7A34'};font-size:${q.incompleto?'14px':''}">
+            ${q.incompleto ? '— falta un dato' : '$'+fmtMon(esc2(q.produccionPorUnidad))}
+          </div>
+          <div class="metric-sub">${q.incompleto
+            ? 'no se puede costear el trabajo todavía'
+            : 'mercadería $'+fmtMon(esc2(q.mercPorUnidad))+' + trabajo $'+fmtMon(esc2(q.moPorUnidad))+suf}</div>
+        </div>`;
+      })()}
       ` : ''}
     </div>
 
@@ -9078,10 +9144,56 @@ function renderFichaPlato(id){
           </div>
         </div>
         ` : `<div style="font-size:13px;color:var(--gris-2);background:var(--crema);border-radius:10px;padding:14px 16px">Todavía no hay costo cargado para mostrar de dónde se va la plata. Completá lo que falta arriba.</div>`}
+        ${_htmlFichaTrabajo(receta)}
       </div>
     </div>
     </div>
   `);
+}
+
+// El trabajo que lleva el plato, en la ficha. Dos renglones: el de esta cocina
+// y el que viene adentro de las subrecetas. Separados porque son dos preguntas
+// distintas —cuánto trabajo hay que organizar hoy, y cuánto trabajo tiene
+// adentro el producto— y juntos porque los dos se pagan.
+function _htmlFichaTrabajo(receta){
+  const q = resumenMOReceta(receta);
+  if(!q) return '';
+  const mo = q.mo;
+  const porKilo = q.unidLabel === 'gramo';
+  const e = (x)=> porKilo ? (x||0)*1000 : (x||0);
+  const suf = porKilo ? 'el kilo' : 'por ' + q.unidLabel;
+  const fila = (etiqueta, valor, nota) =>
+    '<tr><td style="font-size:13px">' + etiqueta
+    + (nota ? '<div style="font-size:11px;color:var(--gris-2)">' + nota + '</div>' : '')
+    + '</td><td style="text-align:right;white-space:nowrap">' + valor + '</td></tr>';
+  const propio = mo.costoPorUnidad !== null
+    ? '<span class="calc">$' + fmtMon(e(mo.costoPorUnidad)) + '</span>'
+    : '<span style="color:#C02626;font-size:12px">falta el puesto</span>';
+  const heredado = !mo.heredada.lineas.length ? null
+    : (mo.heredada.incompleta
+        ? '<span style="color:#C02626;font-size:12px">falta un dato</span>'
+        : '<span class="calc">$' + fmtMon(e(mo.heredadaPorUnidad)) + '</span>');
+  return '<div class="card">'
+    + '<div class="card-header"><span class="card-title">Qué trabajo lleva</span>'
+    +   '<span style="font-size:11px;color:var(--gris-2)">' + suf + '</span></div>'
+    + '<div class="table-wrap"><table style="margin:0"><tbody>'
+    +   fila('Este proceso', propio,
+             mo.etapas ? mo.etapas + (mo.etapas===1?' etapa':' etapas') + ' · ' + fmtD(mo.minTotalLote,0) + ' min-hombre del lote'
+                       : 'sin etapas propias cargadas')
+    +   (heredado !== null
+          ? fila('Viene en las subrecetas', heredado,
+                 mo.heredada.lineas.map(l=>esc(l.nombre)).join(' · '))
+          : '')
+    +   '<tr style="background:var(--crema)"><td style="font-weight:700;font-size:13px">Mano de obra</td>'
+    +     '<td style="text-align:right;font-weight:700">'
+    +     (mo.costoTotalPorUnidad !== null ? '$' + fmtMon(e(mo.costoTotalPorUnidad)) : '—')
+    +     '</td></tr>'
+    + '</tbody></table></div>'
+    + '<div class="card-body" style="border-top:1px solid var(--crema-2);font-size:12px;color:var(--gris-1);padding-top:10px;padding-bottom:10px">'
+    +   (q.incompleto
+        ? 'Falta un dato para cerrar el número, así que el costo de producción de este plato <strong>da de menos</strong>. Abrí la receta y mirá el panel de proceso: ahí dice exactamente qué falta.'
+        : 'Este costo <strong>no entra al food cost ni al EBITDA</strong>: va al lado. El food cost sigue siendo solo mercadería.')
+    + '</div></div>';
 }
 
 // ── VARIANTE DELIVERY: mismo plato, otro canal, otra realidad ──
@@ -16563,7 +16675,92 @@ function _unidadesDelLote(r){
 // El costo de mano de obra de un producto. Devuelve también qué falta, porque
 // un tiempo sin puesto asignado no puede costear: hay que decirlo, no mostrar
 // cero (el cero se lee como "no cuesta nada", que es distinto de "no se sabe").
+// ── LA MANO DE OBRA QUE YA VIENE ADENTRO DE UNA SUBRECETA ─────────────────
+//
+// Cocinar un pollo cuesta trabajo. Ese pollo cocido después entra en una
+// ensalada, en un wrap y en un relleno de tarta. Hasta acá la mercadería del
+// pollo sí viajaba a los tres platos —calcReceta la reparte por gramo— pero el
+// trabajo de cocinarlo se quedaba en la ficha del pollo y los platos lo
+// recibían gratis. El costo de producción de esos platos daba de menos y nada
+// lo mostraba.
+//
+// Es el mismo mecanismo que la mercadería, aplicado al tiempo: la subreceta
+// tiene un costo de mano de obra POR GRAMO (o por unidad, según cómo rinda), y
+// el plato que usa 120 g se lleva 120 veces ese número.
+//
+// SE SUMA, PERO NO SE MEZCLA. El trabajo heredado se guarda aparte del trabajo
+// propio y se muestra en dos renglones. Son dos preguntas distintas: "cuánto
+// trabajo lleva este plato acá" sirve para organizar la cocina de hoy; "cuánto
+// trabajo tiene adentro en total" sirve para costear. Si se sumaran en un solo
+// número, el registro de lotes compararía los minutos cronometrados de este
+// proceso contra un estándar que incluye el trabajo de otra receta, y todos los
+// lotes darían un desvío enorme que no existe.
+//
+// LO QUE NO SE SABE NO VALE CERO. Si la subreceta no tiene proceso cargado, o
+// tiene etapas sin puesto, el heredado no es cero: es desconocido. Se avisa y
+// el total queda marcado como incompleto, igual que con un ingrediente sin
+// precio.
+const _moEnCurso = new Set();
+function _moVacia(){
+  return {etapas:0, minLoteH:0, minUnidH:0, minTotalLote:0, duracionTotal:0,
+          costoLote:0, costoPorUnidad:0, minHombrePorUnidad:0, unidades:0, faltan:[],
+          listo:false, sinUnidades:false,
+          heredada:{costo:0, minutos:0, lineas:[], faltan:[], incompleta:false},
+          costoTotalPorUnidad:0, minTotalPorUnidad:0, circular:true};
+}
+// Lo que aportan las subrecetas de esta receta, en la MISMA escala que la
+// mercadería: para una preparación es el lote entero, para un plato ya es por
+// porción. La conversión a "por unidad" la hace calcManoObra con la misma regla
+// que usa la mercadería, para que los dos números se puedan sumar.
+function _moDeSubrecetas(r){
+  const out = {costo:0, minutos:0, lineas:[], faltan:[], incompleta:false};
+  (r && r.ingredientes || []).forEach(ln=>{
+    if(!ln || !ln.recetaId) return;
+    const cant = +ln.neto || 0;
+    if(!(cant > 0)) return;
+    const sub = getRecetas().find(x=>x.id===ln.recetaId);
+    if(!sub) return;
+    const enUnid = _rindeEnUnidades(sub);
+    const m = calcManoObra(sub);
+    const fila = {nombre: sub.nombre || 'Subreceta sin nombre', cant, enUnid,
+                  costo: null, minutos: null, motivo: null};
+    if(m.circular){
+      fila.motivo = 'se usa a sí misma en algún punto de la cadena';
+      out.incompleta = true;
+    } else if(!m.etapas && !m.heredada.lineas.length){
+      fila.motivo = 'no tiene proceso cargado';
+      out.incompleta = true;
+    } else if(m.sinUnidades){
+      fila.motivo = 'no tiene cargado cuánto rinde';
+      out.incompleta = true;
+    } else if(m.costoTotalPorUnidad === null || m.heredada.incompleta || m.faltan.length){
+      fila.motivo = m.faltan.length ? 'tiene etapas sin puesto asignado' : 'su propia cadena está incompleta';
+      out.incompleta = true;
+    } else {
+      fila.costo   = cant * m.costoTotalPorUnidad;
+      fila.minutos = cant * (m.minTotalPorUnidad || 0);
+      out.costo   += fila.costo;
+      out.minutos += fila.minutos;
+    }
+    if(fila.motivo) out.faltan.push({nombre: fila.nombre, motivo: fila.motivo});
+    out.lineas.push(fila);
+  });
+  return out;
+}
+
 function calcManoObra(r){
+  // Guarda contra cadenas circulares: una subreceta que termina usándose a sí
+  // misma colgaría el navegador. Se corta y se avisa, como en calcReceta.
+  const _idMO = r && r.id;
+  if(_idMO){
+    if(_moEnCurso.has(_idMO)) return _moVacia();
+    _moEnCurso.add(_idMO);
+  }
+  try {
+  return _calcManoObraBase(r);
+  } finally { if(_idMO) _moEnCurso.delete(_idMO); }
+}
+function _calcManoObraBase(r){
   const etapas = getEtapas(r);
   const puestos = getPuestos();
   const unidades = _unidadesDelLote(r);
@@ -16617,14 +16814,47 @@ function calcManoObra(r){
   const loteXUnidad = unidades > 0 ? costoLote / unidades : null;
   const total = (loteXUnidad === null) ? null : loteXUnidad + costoUnidad;
   const minTotalLote = minLoteH + minUnidH * (unidades > 0 ? unidades : 0);
+  const minXUnidad = unidades > 0 ? minLoteH/unidades + minUnidH : null;
+
+  // Lo que aportan las subrecetas. Viene en la escala de la mercadería, así que
+  // se convierte a "por unidad" con la MISMA regla que usa la mercadería en la
+  // pantalla (_htmlProceso): una preparación se divide por lo que rinde, un
+  // plato ya viene por porción. Si los dos no usaran la misma regla, se estaría
+  // sumando un costo por lote con uno por porción.
+  const her = _moDeSubrecetas(r);
+  const herXUnidad = r.esPreparacion
+    ? (unidades > 0 ? her.costo / unidades : null)
+    : her.costo;
+  const herMinXUnidad = r.esPreparacion
+    ? (unidades > 0 ? her.minutos / unidades : null)
+    : her.minutos;
+  // El total solo existe si las dos partes se conocen. Una subreceta sin
+  // proceso cargado no aporta cero: aporta un dato que falta, y un total que
+  // ignora eso es peor que no mostrar total.
+  const hayPropio = etapas.length > 0;
+  const costoTotalPorUnidad = (her.incompleta || herXUnidad === null) ? null
+    : (hayPropio ? (total === null ? null : total + herXUnidad) : herXUnidad);
+  const minTotalPorUnidad = (her.incompleta || herMinXUnidad === null) ? null
+    : (hayPropio ? (minXUnidad === null ? null : minXUnidad + herMinXUnidad) : herMinXUnidad);
+
   return {
     etapas: etapas.length,
     minLoteH, minUnidH, minTotalLote, duracionTotal,
-    costoLote, costoPorUnidad: total,
-    minHombrePorUnidad: unidades > 0 ? minLoteH/unidades + minUnidH : null,
+    costoLote,
+    // costoPorUnidad = SOLO las etapas de esta receta. El registro de lotes
+    // cronometra este proceso y nada más: si acá viniera el trabajo heredado,
+    // todos los lotes darían un desvío gigante que no existe.
+    costoPorUnidad: total,
+    minHombrePorUnidad: minXUnidad,
+    // Lo que viene adentro de las subrecetas, separado y también sumado.
+    heredada: her,
+    heredadaPorUnidad: herXUnidad,
+    heredadaMinPorUnidad: herMinXUnidad,
+    costoTotalPorUnidad, minTotalPorUnidad,
     unidades, faltan,
-    listo: etapas.length > 0 && faltan.length === 0 && total !== null,
-    sinUnidades: etapas.length > 0 && !(unidades > 0),
+    listo: etapas.length > 0 && faltan.length === 0 && total !== null && !her.incompleta,
+    sinUnidades: (etapas.length > 0 || her.lineas.length > 0) && !(unidades > 0),
+    circular: false,
   };
 }
 
@@ -16896,6 +17126,7 @@ function _htmlProceso(r){
   const unidLabel = _rindeEnUnidades(r) ? 'unidad' : (r.esPreparacion ? 'gramo' : 'porción');
   const conProceso = getRecetas().filter(x=>x.id!==r.id && (x.etapas||[]).length);
   const {merc} = calcReceta(r, r.porciones||1);
+  // La misma cuenta que usa resumenMOReceta para el resto de las pantallas.
   const mpUnidad = mo.unidades > 0 ? (r.esPreparacion ? merc/mo.unidades : merc) : null;
 
   return `
@@ -16995,7 +17226,12 @@ function _htmlProceso(r){
           }).join('')}
         </tbody>
       </table>
-    </div>
+    </div>` : `<div class="card-body" style="font-size:13px;color:var(--gris-2);border-bottom:1px solid var(--crema-2)">
+      Todavía no hay etapas propias. Agregá la primera con el botón de arriba.
+      <div style="margin-top:8px">Podés empezar con una sola etapa llamada <em>Producción</em> y el tiempo total: sirve igual, y después se abre en pasos cuando haga falta.</div>
+    </div>`}
+
+    ${_htmlMOHeredada(r, mo, unidLabel)}
 
     ${mo.faltan.length ? `<div style="background:#FCE8E8;border-top:1px solid #EFB2B2;color:#C02626;padding:12px 16px;font-size:13px">
       <strong>Hay tiempos que todavía no pueden costear:</strong>
@@ -17005,6 +17241,7 @@ function _htmlProceso(r){
       El tiempo de lote no se puede repartir porque no está cargado cuánto rinde este producto. Sin eso no hay costo por ${unidLabel}.
     </div>` : ''}
 
+    ${(etapas.length || mo.heredada.lineas.length) ? `
     <div class="card-body" style="border-top:1px solid var(--crema-2)">
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
@@ -17015,23 +17252,28 @@ function _htmlProceso(r){
                 // Por gramo da 0,00125 y no se lee. Por kilo es el mismo dato legible.
                 ? fmtD(mo.minHombrePorUnidad*1000,2)+' por kilo'
                 : fmtD(mo.minHombrePorUnidad,2)+' por '+unidLabel)
-              +(mo.minLoteH>0?' · '+fmtD(mo.minLoteH,0)+' fijos + el resto escala':'')
             : 'falta el rendimiento'}</div>
+          ${mo.heredada.lineas.length ? `<div style="font-size:11px;color:var(--gris-2);margin-top:4px;border-top:1px dashed var(--crema-2);padding-top:4px">
+            + ${mo.heredada.incompleta?'<span style="color:#C02626">?</span>':fmtD(mo.heredada.minutos,0)} de las subrecetas
+          </div>` : ''}
         </div>
         <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Duración del proceso</div>
           <div style="font-size:20px;font-weight:700">${mo.duracionTotal>0?_hhmm(mo.duracionTotal):'—'}</div>
           <div style="font-size:11px;color:var(--gris-2)">${mo.duracionTotal>0?'de punta a punta · no cuesta mano de obra':'para planificar a qué hora arrancar'}</div>
         </div>
-        <div style="flex:1;min-width:150px;background:${mo.listo?'#EBF3FF':'var(--crema)'};border-radius:10px;padding:12px 14px">
+        <div style="flex:1;min-width:170px;background:${mo.listo?'#EBF3FF':'var(--crema)'};border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${mo.listo?'#1F4E79':'var(--gris-2)'}">Mano de obra</div>
-          <div style="font-size:20px;font-weight:700;color:${mo.listo?'#1F4E79':'inherit'}">${mo.costoPorUnidad!==null?'$'+fmtMon(mo.costoPorUnidad):'—'}</div>
-          <div style="font-size:11px;color:var(--gris-2)">por ${unidLabel}${(unidLabel==='gramo'&&mo.costoPorUnidad)?' · $'+fmt(mo.costoPorUnidad*1000)+' el kilo':''}</div>
+          <div style="font-size:20px;font-weight:700;color:${mo.listo?'#1F4E79':'inherit'}">${mo.costoTotalPorUnidad!==null?'$'+fmtMon(mo.costoTotalPorUnidad):'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">por ${unidLabel}${(unidLabel==='gramo'&&mo.costoTotalPorUnidad)?' · $'+fmt(mo.costoTotalPorUnidad*1000)+' el kilo':''}</div>
+          ${mo.heredada.lineas.length ? `<div style="font-size:11px;color:var(--gris-2);margin-top:4px;border-top:1px dashed var(--crema-2);padding-top:4px">
+            este proceso $${fmtMon(mo.costoPorUnidad||0)} + subrecetas ${mo.heredada.incompleta?'<span style="color:#C02626">?</span>':'$'+fmtMon(mo.heredadaPorUnidad||0)}
+          </div>` : ''}
         </div>
         <div style="flex:1;min-width:170px;background:${mo.listo?'#E4F3E6':'var(--crema)'};border-radius:10px;padding:12px 14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:${mo.listo?'#1B7A34':'var(--gris-2)'}">Costo de producción</div>
-          <div style="font-size:20px;font-weight:700;color:${mo.listo?'#1B7A34':'inherit'}">${(mo.costoPorUnidad!==null&&mpUnidad!==null)?'$'+fmtMon(mpUnidad+mo.costoPorUnidad):'—'}</div>
-          <div style="font-size:11px;color:var(--gris-2)">${mpUnidad!==null?'mercadería $'+fmtMon(mpUnidad)+' + mano de obra $'+fmtMon(mo.costoPorUnidad||0):'mercadería + mano de obra'}</div>
+          <div style="font-size:20px;font-weight:700;color:${mo.listo?'#1B7A34':'inherit'}">${(mo.costoTotalPorUnidad!==null&&mpUnidad!==null)?'$'+fmtMon(mpUnidad+mo.costoTotalPorUnidad):'—'}</div>
+          <div style="font-size:11px;color:var(--gris-2)">${mpUnidad!==null?'mercadería $'+fmtMon(mpUnidad)+' + mano de obra $'+fmtMon(mo.costoTotalPorUnidad||0):'mercadería + mano de obra'}</div>
         </div>
       </div>
       <div style="font-size:12px;color:var(--gris-2);margin-top:12px;line-height:1.5">
@@ -17040,13 +17282,66 @@ function _htmlProceso(r){
         Si en una etapa la persona está de punta a punta —apanado con alguien en cada extremo, envasado— tildá <strong>toda la etapa</strong> y los minutos de trabajo se toman de la duración.
         La <strong>duración</strong> no cuesta mano de obra — una masa que leva dos horas no tiene a nadie mirándola; sirve para saber a qué hora arrancar y cuántos lotes entran en el día.
         Este costo <strong>no entra al food cost ni al EBITDA</strong>: va al lado.
+        ${mo.heredada.lineas.length ? '<div style="margin-top:8px">El trabajo de las <strong>subrecetas</strong> se suma acá: cocinar un pollo cuesta, y ese costo viaja a todo lo que lo lleva, igual que su mercadería. Va en un renglón aparte porque el registro de lotes cronometra solo las etapas de este proceso.</div>' : ''}
       </div>
-    </div>
-    ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
-      Todavía no hay etapas. Agregá la primera con el botón de arriba.
-      <div style="margin-top:8px">Podés empezar con una sola etapa llamada <em>Producción</em> y el tiempo total: sirve igual, y después se abre en pasos cuando haga falta.</div>
-    </div>`}
+    </div>` : ''}
   </div>`;
+}
+// El trabajo que entra con las subrecetas, desglosado. Se muestra aparte de las
+// etapas propias porque son dos cosas distintas: una se organiza en esta cocina
+// y la otra ya pasó. Juntas dan el costo de producción real del plato.
+function _htmlMOHeredada(r, mo, unidLabel){
+  const her = mo.heredada;
+  if(!her || !her.lineas.length) return '';
+  const esPrep = !!r.esPreparacion;
+  const filas = her.lineas.map(l=>{
+    const cantTxt = l.enUnid
+      ? fmt(l.cant) + ' u'
+      : fmtPeso(r, l.cant);
+    return '<tr>'
+      + '<td style="font-size:13px;font-weight:600">' + esc(l.nombre) + '</td>'
+      + '<td style="text-align:right;font-variant-numeric:tabular-nums">' + cantTxt + '</td>'
+      + '<td style="text-align:right">' + (l.minutos !== null
+          ? '<span class="calc">' + fmtD(l.minutos, 1) + '</span>'
+          : '<span style="color:var(--gris-3)">—</span>') + '</td>'
+      + '<td style="text-align:right">' + (l.costo !== null
+          ? '<span class="calc">$' + fmtMon(l.costo) + '</span>'
+          : '<span style="color:#C02626;font-size:12px">' + esc(l.motivo || 'no se puede costear') + '</span>') + '</td>'
+      + '</tr>';
+  }).join('');
+  const porUnidad = her.incompleta ? null : mo.heredadaPorUnidad;
+  return '<div style="border-top:1px solid var(--crema-2)">'
+    + '<div style="padding:11px 16px 7px;display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">'
+    +   '<strong style="font-size:13px">Trabajo que viene dentro de las subrecetas</strong>'
+    +   '<span style="font-size:11px;color:var(--gris-2)">ya se hizo antes, pero este producto lo paga</span>'
+    + '</div>'
+    + '<div class="table-wrap"><table style="margin:0">'
+    +   '<thead><tr><th>Subreceta</th>'
+    +   '<th style="text-align:right;width:120px">Cantidad</th>'
+    +   '<th style="text-align:right;width:120px" title="Minutos-hombre que ya se gastaron produciendo esa cantidad de la subreceta.">Min-hombre'
+    +     '<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">'
+    +     (esPrep ? 'de este lote' : 'de esta porción') + '</div></th>'
+    +   '<th style="text-align:right;width:130px">Costo</th></tr></thead>'
+    +   '<tbody>' + filas + '</tbody>'
+    +   '<tfoot><tr style="background:var(--crema)"><td colspan="2" style="font-weight:700;font-size:13px">Total heredado</td>'
+    +     '<td style="text-align:right;font-weight:700">' + (her.incompleta ? '—' : fmtD(her.minutos,1)) + '</td>'
+    +     '<td style="text-align:right;font-weight:700">' + (her.incompleta ? '—' : '$'+fmtMon(her.costo)) + '</td></tr>'
+    +   '</tfoot>'
+    + '</table></div>'
+    + (porUnidad !== null && porUnidad > 0
+        ? '<div style="padding:8px 16px;font-size:12px;color:var(--gris-1)">Son <strong>$'
+          + fmtMon(porUnidad) + '</strong> por ' + unidLabel
+          + (unidLabel === 'gramo' ? ' · $' + fmt(porUnidad*1000) + ' el kilo' : '')
+          + ', que se suman a la mano de obra de este producto.</div>'
+        : '')
+    + (her.faltan.length
+        ? '<div style="background:#FDF0D0;border-top:1px solid #D4B870;color:#6B4A08;padding:11px 16px;font-size:13px;line-height:1.5">'
+          + '<strong>Este trabajo heredado no se está contando:</strong> '
+          + her.faltan.map(f=>esc(f.nombre) + ' — ' + esc(f.motivo)).join(' · ') + '.'
+          + '<div style="margin-top:5px;font-size:12px">No vale cero: es un dato que falta. Mientras tanto el costo de producción de este producto da de menos.</div>'
+          + '</div>'
+        : '')
+    + '</div>';
 }
 function _hhmm(min){
   const h = Math.floor(min/60), m = Math.round(min%60);
@@ -17880,6 +18175,10 @@ function renderSubrecetas(){
   const preps = todas.filter(esPreparacionReceta)
     .sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
 
+  // El trabajo de una preparación es justamente lo que viaja a los platos que
+  // la usan, así que acá es donde conviene ver de un vistazo cuáles ya lo
+  // tienen cargado y cuáles no.
+  const _conMOSub = costeoMODirectaActivo() && !esNivelCocina();
   const filas = preps.map(r=>{
     const {merc} = calcReceta(r, r.porciones||1);
     const enUnid = _rindeEnUnidades(r);
@@ -17911,6 +18210,7 @@ function renderSubrecetas(){
             <th style="text-align:right;width:120px">Rinde</th>
             <th style="text-align:right;width:130px">Costo del lote</th>
             <th style="text-align:right;width:130px">Costo unitario</th>
+            ${_conMOSub?'<th style="text-align:right;width:140px" title="Lo que cuesta producirla: mercadería más el trabajo de hacerla, incluido el que viene dentro de sus propias subrecetas. Este número es el que heredan los platos que la usan.">Costo de producción</th>':''}
             <th>La usan</th>
             <th style="width:170px"></th>
           </tr></thead>
@@ -17923,6 +18223,7 @@ function renderSubrecetas(){
               <td style="text-align:right">${rend>0?fmt(rend)+(enUnid?' un':' g'):'<span style="color:#C02626;font-size:12px">falta cargarlo</span>'}</td>
               <td style="text-align:right">$${fmt(merc)}</td>
               <td style="text-align:right">${xg!==null?'<span class="calc">$'+(enUnid?fmt(xg)+' c/u':fmt(Math.round(xg*1000))+'/kg')+'</span>':'<span style="color:var(--gris-3)">—</span>'}</td>
+              ${_conMOSub?`<td style="text-align:right">${_celdaMOReceta(r)}</td>`:''}
               <td style="font-size:12px;color:var(--gris-1)">${usan.length
                 ? usan.map(x=>esc(x.nombre)).join(', ')
                 : '<span style="color:var(--gris-3)">Todavía no la usa ningún plato</span>'}</td>
@@ -17936,6 +18237,17 @@ function renderSubrecetas(){
       ${filas.some(f=>f.rend<=0)?`<div class="card-body" style="font-size:12px;color:#C02626;border-top:1px solid var(--crema-2)">
         Las filas en rojo no tienen cargado cuánto rinden. Mientras falte, suman <strong>$0</strong> en los platos que las usan y el costo de esos platos da más bajo del real.
       </div>`:''}
+      ${(()=>{
+        if(!_conMOSub) return '';
+        // Una preparación sin proceso cargado no le pasa trabajo a nadie, y los
+        // platos que la llevan muestran un costo de producción que da de menos.
+        const sinProceso = filas.filter(f=>f.usan.length && !resumenMOReceta(f.r));
+        if(!sinProceso.length) return '';
+        return `<div class="card-body" style="font-size:12px;color:#6B4A08;background:#FDF0D0;border-top:1px solid #D4B870">
+          <strong>Sin proceso cargado:</strong> ${sinProceso.map(f=>esc(f.r.nombre||'Sin nombre')).join(' · ')}.
+          Las usan otros platos, así que el trabajo de hacerlas no está llegando a ningún lado y el costo de producción de esos platos da de menos.
+        </div>`;
+      })()}
       ` : `<div class="card-body" style="font-size:13px;color:var(--gris-2)">
         Todavía no tenés preparaciones. Creá una con el botón de arriba, o abrí cualquier receta y cargale cuánto rinde: con eso ya aparece acá.
       </div>`}
