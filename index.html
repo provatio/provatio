@@ -16780,6 +16780,7 @@ function _moDeSubrecetas(r){
       out.incompleta = true;
     } else if(m.costoTotalPorUnidad === null || m.heredada.incompleta || m.faltan.length){
       fila.motivo = m.faltan.length ? 'tiene etapas sin puesto asignado' : 'su propia cadena está incompleta';
+      // (el costo queda en null: lo que no se sabe no viaja como cero)
       out.incompleta = true;
     } else {
       fila.costo   = cant * m.costoTotalPorUnidad;
@@ -16877,7 +16878,14 @@ function _calcManoObraBase(r){
   // proceso cargado no aporta cero: aporta un dato que falta, y un total que
   // ignora eso es peor que no mostrar total.
   const hayPropio = etapas.length > 0;
-  const costoTotalPorUnidad = (her.incompleta || herXUnidad === null) ? null
+  // Una etapa sin puesto asignado aporta CERO al costo porque no hay con qué
+  // multiplicarla, y ese cero se suma como si el trabajo fuera gratis. Un
+  // producto con 5 etapas y 1 sin puesto mostraba el costo de las otras 4 como
+  // si fuera el total: un número que se lee completo y no lo es. Mientras falte
+  // un puesto el costo es DESCONOCIDO. Los minutos sí se saben —no dependen de
+  // ninguna tarifa— y siguen sumando.
+  const propioCompleto = faltan.length === 0;
+  const costoTotalPorUnidad = (!propioCompleto || her.incompleta || herXUnidad === null) ? null
     : (hayPropio ? (total === null ? null : total + herXUnidad) : herXUnidad);
   const minTotalPorUnidad = (her.incompleta || herMinXUnidad === null) ? null
     : (hayPropio ? (minXUnidad === null ? null : minXUnidad + herMinXUnidad) : herMinXUnidad);
@@ -18131,6 +18139,248 @@ function renderEquipos(){
   `);
 }
 
+// ══ INFORME DE COSTO DE PRODUCCIÓN POR PRODUCTO ════════════════════════════
+//
+// Para quién es: gerencia y dueño. Contesta dos preguntas que hoy, en la
+// mayoría de las plantas, no tienen una sola respuesta escrita:
+//
+//   ¿CUÁNTO CUESTA PRODUCIR CADA COSA? — mercadería más trabajo, por unidad y
+//   por lote, con el trabajo que viene adentro de las subrecetas ya incluido.
+//
+//   ¿DÓNDE SE VA EL TIEMPO? — qué peso tiene cada etapa sobre el total. Esa
+//   columna es la que convierte el informe en una herramienta de decisión: sin
+//   ella uno sabe que el producto cuesta mucho, con ella sabe dónde mirar.
+//
+// LO QUE ESTE INFORME NO HACE: no entra al food cost, al prime cost ni al
+// EBITDA. Esos tres se calculan sobre mercadería y los sueldos ya están
+// enteros en gastos fijos; sumar esto ahí contaría la mano de obra dos veces.
+// Es un carril aparte, y la nota del pie lo dice para que nadie lo mezcle.
+//
+// EL COSTO ES DEL PUESTO, NO DE LA PERSONA. Que alguien tarde más no encarece
+// el producto: eso es un desvío de productividad y se mira en el registro de
+// lotes. Acá va el estándar, que es el que sirve para cotizar.
+//
+// Lo que no se puede costear NO sale en cero: sale en una lista aparte con el
+// motivo. Un informe que rellena huecos con ceros es peor que uno incompleto,
+// porque el hueco deja de verse.
+function _detalleEtapasProducto(r, mo){
+  const puestos = getPuestos();
+  const unidades = mo.unidades > 0 ? mo.unidades : 1;
+  const filas = getEtapas(r).map(e=>{
+    const personas = Math.max(1, +e.personas || 1);
+    const minEtapa = e.todaLaEtapa ? (+e.duracion || 0) : (+e.minTotal || 0);
+    const p = puestos.find(x=>x.id===e.puestoId);
+    const xmin = p ? costoMinutoPuesto(p) : null;
+    const minHombre = minEtapa * personas;
+    return {
+      nombre: e.nombre || 'Etapa sin nombre',
+      puesto: p ? (p.nombre || 'Sin nombre') : null,
+      personas, minReloj: minEtapa, minHombre,
+      duracion: +e.duracion || 0,
+      costoLote: xmin !== null ? minHombre * xmin : null,
+      costoUnidad: xmin !== null ? minHombre * xmin / unidades : null,
+      heredada: false, motivo: null,
+    };
+  });
+  // Las subrecetas entran como un renglón más: su trabajo pesa igual que el de
+  // una etapa propia y tiene que competir por el mismo porcentaje.
+  mo.heredada.lineas.forEach(l=>{
+    filas.push({
+      nombre: l.nombre, puesto: null, personas: null,
+      minReloj: null, minHombre: l.minutos || 0, duracion: 0,
+      costoLote:   l.costo !== null ? (r.esPreparacion ? l.costo : l.costo * unidades) : null,
+      costoUnidad: l.costo !== null ? (r.esPreparacion ? l.costo / unidades : l.costo) : null,
+      heredada: true, motivo: l.motivo || null,
+    });
+  });
+  const totalCosto = filas.reduce((a,f)=> a + (f.costoUnidad || 0), 0);
+  filas.forEach(f=>{ f.peso = (totalCosto > 0 && f.costoUnidad !== null) ? f.costoUnidad/totalCosto*100 : null; });
+  return filas;
+}
+
+function descargarInformeProduccion(){
+  const op = getOp();
+  if(!op){ showToast('Abrí una operación primero','error'); return; }
+  if(!costeoMODirectaActivo()){
+    showToast('El costeo de mano de obra está apagado. Prendelo en Modalidades y cargá los puestos.','error'); return;
+  }
+  const puestos = getPuestos();
+  const todos = getRecetas().map(r=>({r, mo: calcManoObra(r), q: resumenMOReceta(r)})).filter(x=>x.q);
+  if(!todos.length){
+    showToast('Ningún producto tiene proceso cargado todavía. Abrí una receta y cargale las etapas.','error'); return;
+  }
+  const listos    = todos.filter(x=>!x.q.incompleto);
+  const faltantes = todos.filter(x=>x.q.incompleto);
+  // Ordenados por cuánto pesa la mano de obra sobre el costo: es lo comparable
+  // entre productos que se miden en unidades distintas, y pone arriba los que
+  // dan margen para mejorar.
+  listos.sort((a,b)=>{
+    const pa = a.q.produccionPorUnidad>0 ? a.q.moPorUnidad/a.q.produccionPorUnidad : 0;
+    const pb = b.q.produccionPorUnidad>0 ? b.q.moPorUnidad/b.q.produccionPorUnidad : 0;
+    return pb - pa;
+  });
+  const fecha = new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'});
+  const w = window.open('', '_blank');
+  if(!w){ showToast('El navegador bloqueó la ventana — permití pop-ups','error'); return; }
+
+  const minTotalPlanta = listos.reduce((a,x)=> a + (x.mo.minTotalLote||0) + (x.mo.heredada.minutos||0), 0);
+  const unidTxt = (r, v) => _rindeEnUnidades(r) ? fmt(v)+' u' : fmtPeso(r, v);
+
+  const tablaResumen = `
+    <table>
+      <thead><tr>
+        <th>Producto</th><th class="num">Rinde el lote</th>
+        <th class="num">Mercadería</th><th class="num">Mano de obra</th>
+        <th class="num">Costo de producción</th>
+        <th class="num">Min-hombre</th><th class="num">% que es trabajo</th>
+      </tr></thead>
+      <tbody>
+        ${listos.map(({r,mo,q})=>{
+          const porKilo = q.unidLabel==='gramo';
+          const e = (x)=> porKilo ? x*1000 : x;
+          const u = porKilo ? 'kg' : q.unidLabel;
+          const pesoMO = q.produccionPorUnidad>0 ? q.moPorUnidad/q.produccionPorUnidad*100 : 0;
+          const minU = mo.minTotalPorUnidad || 0;
+          return `<tr>
+            <td><strong>${esc(r.nombre||'Sin nombre')}</strong>
+              <div style="font-size:11px;color:#5A5A52">por ${u}${mo.heredada.lineas.length?' · hereda de '+mo.heredada.lineas.length+' subreceta'+(mo.heredada.lineas.length>1?'s':''):''}</div></td>
+            <td class="num">${unidTxt(r, mo.unidades)}</td>
+            <td class="num">$${fmtMon(e(q.mercPorUnidad))}</td>
+            <td class="num">$${fmtMon(e(q.moPorUnidad))}</td>
+            <td class="num"><strong>$${fmtMon(e(q.produccionPorUnidad))}</strong></td>
+            <td class="num">${fmtD(porKilo ? minU*1000 : minU, 2)}</td>
+            <td class="num"><strong>${fmtD(pesoMO,1)}%</strong></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+
+  const porProducto = listos.map(({r,mo,q})=>{
+    const porKilo = q.unidLabel==='gramo';
+    const e = (x)=> porKilo ? x*1000 : x;
+    const u = porKilo ? 'kg' : q.unidLabel;
+    const filas = _detalleEtapasProducto(r, mo);
+    return `
+    <h2>${esc(r.nombre||'Sin nombre')}</h2>
+    <div class="sub">Rinde ${unidTxt(r, mo.unidades)} por lote ·
+      costo de producción <strong>$${fmtMon(e(q.produccionPorUnidad))}</strong> por ${u}
+      (mercadería $${fmtMon(e(q.mercPorUnidad))} + trabajo $${fmtMon(e(q.moPorUnidad))})</div>
+    <table>
+      <thead><tr>
+        <th>Etapa</th><th>Puesto</th><th class="num">Personas</th>
+        <th class="num">Min de reloj</th><th class="num">Min-hombre</th>
+        <th class="num">Costo del lote</th><th class="num">Peso</th>
+      </tr></thead>
+      <tbody>
+        ${filas.map(f=>`<tr${f.heredada?' style="background:#F0F5FA"':''}>
+          <td>${esc(f.nombre)}${f.heredada?' <span style="font-size:11px;color:#1F4E79">viene en la subreceta</span>':''}
+            ${(f.duracion>(f.minReloj||0))?`<div style="font-size:11px;color:#5A5A52">${fmtD(f.duracion,0)} min de duración · ${fmtD(f.duracion-(f.minReloj||0),0)} de espera</div>`:''}</td>
+          <td>${f.puesto ? esc(f.puesto) : '<span style="color:#8A8A80">—</span>'}</td>
+          <td class="num">${f.personas !== null ? f.personas : '—'}</td>
+          <td class="num">${f.minReloj !== null ? fmtD(f.minReloj,0) : '—'}</td>
+          <td class="num">${fmtD(f.minHombre||0,1)}</td>
+          <td class="num">${f.costoLote !== null ? '$'+fmt(f.costoLote) : '<span style="color:#C02626">'+esc(f.motivo||'falta el puesto')+'</span>'}</td>
+          <td class="num">${f.peso !== null ? fmtD(f.peso,1)+'%' : '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="concl">
+      ${(()=>{
+        const conPeso = filas.filter(f=>f.peso !== null).sort((a,b)=>b.peso-a.peso);
+        if(!conPeso.length) return 'Sin etapas costeadas.';
+        const top = conPeso[0];
+        const espera = filas.reduce((a,f)=>a+Math.max(0,(f.duracion||0)-(f.minReloj||0)),0);
+        return `<strong>${esc(top.nombre)}</strong> se lleva el <strong>${fmtD(top.peso,1)}%</strong> del costo de producir esto.
+          ${conPeso.length>1?'Le sigue '+esc(conPeso[1].nombre)+' con '+fmtD(conPeso[1].peso,1)+'%. ':''}
+          Cualquier mejora empieza por ahí: bajar un 10% la etapa más pesada vale más que optimizar las tres últimas juntas.
+          ${espera>0?`<div style="margin-top:6px">Hay <strong>${fmtD(espera,0)} minutos de espera</strong> en el proceso. No cuestan sueldo, pero ocupan equipo y definen cuántos lotes entran en el día.</div>`:''}`;
+      })()}
+    </div>`;
+  }).join('');
+
+  w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+  <title>Costo de producción por producto — ${esc(op.nombre||'')}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#1A1A18;max-width:1000px;margin:24px auto;padding:0 20px;line-height:1.5}
+    h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:26px 0 4px;border-bottom:1px solid #D5CFC6;padding-bottom:4px}
+    .sub{font-size:12px;color:#5A5A52;margin-bottom:10px}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px}
+    th{background:#EDE8E0;text-align:left;padding:7px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #D5CFC6}
+    td{padding:7px 9px;border-bottom:1px solid #E8E4DC;vertical-align:top}
+    .num{text-align:right}
+    .concl{background:#F5F0E8;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:6px}
+    .mets{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 20px}
+    .met{background:#F5F0E8;border-radius:8px;padding:10px 14px}
+    .met .l{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#5A5A52}
+    .met .v{font-size:20px;font-weight:700}
+    .falta{background:#FDF0D0;border:1px solid #D4B870;border-radius:8px;padding:12px 16px;font-size:13px;margin:16px 0}
+    .nota{font-size:11px;color:#5A5A52;border-top:1px solid #D5CFC6;margin-top:24px;padding-top:10px}
+    @media print{body{margin:0} h2{page-break-after:avoid} table{page-break-inside:avoid}}
+  </style></head><body>
+    <h1>Costo de producción por producto — ${esc(op.nombre||'')}</h1>
+    <div class="sub">Informe del ${fecha} · costo estándar, calculado sobre el puesto y no sobre la persona</div>
+
+    <div class="mets">
+      <div class="met"><div class="l">Productos costeados</div><div class="v">${listos.length}${faltantes.length?' <span style="font-size:13px;font-weight:400">de '+todos.length+'</span>':''}</div></div>
+      <div class="met"><div class="l">Minutos-hombre por lote</div><div class="v">${fmtD(minTotalPlanta,0)}</div></div>
+      <div class="met"><div class="l">Puestos con costo cargado</div><div class="v">${puestos.filter(p=>costoMinutoPuesto(p)!==null).length}</div></div>
+    </div>
+
+    <h2>Lo que vale una hora en cada puesto</h2>
+    <div class="sub">Todo el informe sale de estos números. Si uno está mal, está mal todo lo de abajo.</div>
+    <table>
+      <thead><tr><th>Puesto</th><th class="num">Costo mensual con cargas</th><th class="num">Horas por mes</th><th class="num">La hora</th><th class="num">El minuto</th></tr></thead>
+      <tbody>
+        ${puestos.map(p=>{
+          const xmin = costoMinutoPuesto(p);
+          return `<tr><td>${esc(p.nombre||'Sin nombre')}</td>
+            <td class="num">${+p.costoMensual>0?'$'+fmt(p.costoMensual):'<span style="color:#C02626">falta</span>'}</td>
+            <td class="num">${+p.horasMes>0?fmt(p.horasMes):'<span style="color:#C02626">falta</span>'}</td>
+            <td class="num">${xmin!==null?'<strong>$'+fmt(xmin*60)+'</strong>':'—'}</td>
+            <td class="num">${xmin!==null?'$'+fmtMon(xmin):'—'}</td></tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <h2>Resumen por producto</h2>
+    <div class="sub">Ordenados por cuánto pesa la mano de obra sobre el costo — arriba, donde hay más para ganar.</div>
+    ${tablaResumen}
+
+    ${faltantes.length ? `<div class="falta">
+      <strong>${faltantes.length===1?'Hay 1 producto que todavía no se puede costear':'Hay '+faltantes.length+' productos que todavía no se pueden costear'}, y no ${faltantes.length===1?'va':'van'} en cero:</strong>
+      <ul style="margin:6px 0 0;padding-left:18px">
+        ${faltantes.map(({r,mo})=>{
+          const motivos = [];
+          if(mo.faltan.length) motivos.push(mo.faltan.map(f=>esc(f.etapa)+' ('+f.motivo+')').join(', '));
+          if(mo.sinUnidades) motivos.push('no está cargado cuánto rinde');
+          mo.heredada.faltan.forEach(f=>motivos.push(esc(f.nombre)+' — '+esc(f.motivo)));
+          return '<li><strong>'+esc(r.nombre||'Sin nombre')+'</strong>: '+(motivos.join(' · ')||'falta un dato')+'</li>';
+        }).join('')}
+      </ul>
+      <div style="margin-top:6px">Mientras falte${faltantes.length===1?'':'n'}, el costo de producción de ${faltantes.length===1?'ese producto':'esos productos'} da de menos.</div>
+    </div>` : ''}
+
+    ${porProducto}
+
+    <div class="nota">
+      <strong>Qué es este número y qué no es.</strong> El costo de producción es mercadería más mano de obra directa, calculado sobre el
+      <strong>puesto</strong> y los tiempos estándar del proceso: lo que el producto DEBE costar. No es lo que costó un lote puntual —
+      eso está en el registro de lotes, y la diferencia entre los dos es eficiencia de la planta ese día, no un cambio de costo del producto.
+      <br><br>
+      <strong>No entra al food cost, al prime cost ni al EBITDA.</strong> Esos tres se calculan sobre mercadería, y los sueldos ya están
+      enteros en gastos fijos: sumar esto ahí contaría la mano de obra dos veces. Es un carril aparte y se lee aparte.
+      <br><br>
+      <strong>La duración no cuesta sueldo.</strong> Una masa que leva dos horas no tiene a nadie mirándola. Los minutos de espera figuran
+      porque definen cuántos lotes entran en un día y qué equipo queda ocupado, no porque se paguen.
+      <br><br>
+      El tiempo muerto estructural —limpieza de fin de turno, pausas, esperas por falta de insumo— no está repartido entre los productos.
+      Repartirlo daría un número que parece un costo y no lo es; eso es eficiencia de planta y se mide aparte.
+    </div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
 function renderPuestos(){
   const op = getOp();
   if(!op){ _panelSinOperacion(); return; }
@@ -18145,7 +18395,11 @@ function renderPuestos(){
     <div class="card">
       <div class="card-header">
         <span class="card-title">Puestos <span style="font-weight:400;color:var(--gris-2);font-size:12px">· ${puestos.length}</span></span>
-        <button class="btn btn-primary btn-sm" onclick="addPuesto()">+ Nuevo puesto</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="descargarInformeProduccion()"
+            title="Qué cuesta producir cada producto y en qué etapa se va el tiempo. Sale listo para imprimir y llevar a una reunión.">${ico('download',13)} Informe de costo de producción</button>
+          <button class="btn btn-primary btn-sm" onclick="addPuesto()">+ Nuevo puesto</button>
+        </div>
       </div>
       ${puestos.length ? `
       <div class="table-wrap">
