@@ -15923,37 +15923,77 @@ const _RE_COCCION = /cocc|cocid|cocin|horno|herv|plancha|frit|brase|guis|vapor|p
 function _esTecnicaDeCoccion(tecnica){
   return !!tecnica && _RE_COCCION.test(String(tecnica));
 }
-// Las líneas de una preparación que traen merma de cocción en el ingrediente.
-function _ingredientesConMermaDeCoccion(r){
-  if(!r || !r.esPreparacion) return [];
-  return (r.ingredientes||[]).filter(ln=>{
-    if(!ln || ln.esCondimento || ln.recetaId) return false;
-    if(!_esTecnicaDeCoccion(ln.tecnica)) return false;
-    const ing = getIngrediente(ln.ingId);
-    if(!ing) return false;
-    const m = getMerma(ing.nombre, ln.tecnica);
-    return !!(m && +m.pct > 0);
-  }).map(ln=>{
-    const ing = getIngrediente(ln.ingId);
-    const m = getMerma(ing.nombre, ln.tecnica);
-    return { nombre: ing.nombre, tecnica: ln.tecnica, pct: +m.pct || 0 };
-  });
-}
-function _hayDobleConteoCoccion(r){
+// Antes este aviso saltaba apenas había una merma de cocción y un rendimiento
+// cargados a la vez, y casi siempre esa combinación está bien: la merma dice
+// cuánto se compra y el rendimiento dice cuánto sale, y los dos números se
+// refieren a la misma pérdida sin pisarse. Avisar siempre era gritar al pedo, y
+// un aviso que grita al pedo se deja de leer.
+//
+// Lo que sí importa es cuando los dos NO COINCIDEN. La técnica es un estándar
+// de tabla: con 35 % de cocción, los netos cargados ya son el peso de salida.
+// El rendimiento es una medición: lo que dio la balanza. Si la tabla dice que
+// tienen que salir 100 kg y la balanza dijo 92, hay un desacuerdo real y el
+// costeo está usando los dos. Eso es lo que hay que mostrar, con los dos
+// números a la vista, para que decida quien estuvo en la cocina.
+function _desacuerdoCoccion(r){
   if(!r || !r.esPreparacion) return null;
-  const rinde = _rindeEnUnidades(r) ? (+r.rendimientoUnid||0) : (+r.rendimientoG||0);
-  if(!(rinde > 0)) return null;           // sin rendimiento no hay segundo descuento
-  const lineas = _ingredientesConMermaDeCoccion(r);
-  return lineas.length ? lineas : null;
+  if(_rindeEnUnidades(r)) return null;              // en piezas no hay balance de peso
+  const rend = +r.rendimientoG || 0;
+  if(!(rend > 0)) return null;
+  const d = _pesoQueEntraDetalle(r);
+  if(!d.hayCoccion) return null;
+  // Los netos YA son el peso después de cocinar: eso es lo que la técnica dice
+  // que tiene que salir.
+  const implicito = d.neto;
+  if(!(implicito > 0)) return null;
+  const dif = (rend - implicito) / implicito * 100;
+  if(Math.abs(dif) < 3) return null;                // coinciden: nada que avisar
+  return {implicito, rend, dif, entra: d.entra, lineas: d.lineasCoccion};
 }
 
-function _pesoQueEntra(r){
-  // Gramos netos que van a la olla. Las líneas de subreceta también pesan.
-  return (r.ingredientes||[]).reduce((s,ln)=>{
-    if(!ln || ln.esCondimento) return s;
-    return s + (+ln.neto || 0);
-  }, 0);
+// ── LO QUE REALMENTE ENTRA A LA OLLA ──────────────────────────────────────
+//
+// Esto sumaba los NETOS, y con una merma de cocción el neto es el peso de
+// DESPUÉS de cocinar, no el de antes. Una pechuga cargada con 100 kg netos y
+// 35 % de cocción se compra en 153,8 kg: esos 153,8 son los que entran al
+// horno y los 100 son los que salen.
+//
+// Sumando netos, el panel comparaba 100 contra 100 y decía "se pierde 0,0 %"
+// con toda confianza, cuando se estaban perdiendo 53,8 kg. Peor: la producción
+// tomaba ese 100 como base y el rendimiento que calculaba salía mal.
+//
+// Ahora cada línea aporta lo que de verdad entra: el BRUTO si su merma es de
+// cocción, el NETO si es de limpieza (esa pérdida pasa antes de la olla, así
+// que a la olla entra lo limpio). Qué técnica es cocción lo decide el mismo
+// reconocedor de nombres que ya usa el aviso, y por eso cuando entra en juego
+// la pantalla lo dice en lugar de cambiar el número en silencio.
+function _pesoQueEntraDetalle(r){
+  let neto = 0, entra = 0;
+  const lineasCoccion = [];
+  (r && r.ingredientes || []).forEach(ln=>{
+    if(!ln || ln.esCondimento) return;
+    const nt = +ln.neto || 0;
+    if(!(nt > 0)) return;
+    neto += nt;
+    let aporta = nt;
+    if(!ln.recetaId && ln.productoCP === undefined && _esTecnicaDeCoccion(ln.tecnica)){
+      // La misma cuenta que hace la tabla de ingredientes, no una propia.
+      const c = calcIngrediente(ln.ingId, ln.tecnica, nt, 1, false, null, ln);
+      if(c && !c.error && (+c.merma_pct || 0) > 0){
+        const bruto = +(c.bruto_con_desperdicio || c.bruto) || nt;
+        if(bruto > nt){
+          aporta = bruto;
+          const ing = getIngrediente(ln.ingId);
+          lineasCoccion.push({nombre: ing ? ing.nombre : 'Ingrediente',
+                              tecnica: ln.tecnica, pct: +c.merma_pct || 0, neto: nt, bruto});
+        }
+      }
+    }
+    entra += aporta;
+  });
+  return {neto, entra, hayCoccion: lineasCoccion.length > 0, lineasCoccion};
 }
+function _pesoQueEntra(r){ return _pesoQueEntraDetalle(r).entra; }
 function _statsProducciones(r){
   const regs = (r.producciones||[]).filter(x=>+x.entraG>0 && +x.saleG>0);
   if(!regs.length) return {n:0, regs:[]};
@@ -16243,7 +16283,8 @@ function adoptarRendimientoPromedio(){
   showToast('Rendimiento actualizado a '+fmtPeso(r, nuevo)+', el promedio de las últimas '+st.n,'success');
 }
 function _htmlProducciones(r){
-  const entraActual = _pesoQueEntra(r);
+  const _detEntra = _pesoQueEntraDetalle(r);
+  const entraActual = _detEntra.entra;
   const st = _statsProducciones(r);
   const rendActual = +r.rendimientoG || 0;
   const pctActual = entraActual>0 && rendActual>0 ? rendActual/entraActual*100 : null;
@@ -16269,14 +16310,16 @@ function _htmlProducciones(r){
         // La merma de cocción contada dos veces: en el ingrediente y en el
         // rendimiento. Se avisa, no se corrige — el que sabe cuál de las dos
         // corresponde es quien conoce el proceso.
-        const dob = _hayDobleConteoCoccion(r);
-        if(!dob) return '';
-        const lista = dob.map(d=>esc(d.nombre)+' ('+esc(d.tecnica)+', '+fmtD(d.pct,1)+'%)').join(' · ');
+        const des = _desacuerdoCoccion(r);
+        if(!des) return '';
+        const lista = des.lineas.map(d=>esc(d.nombre)+' ('+esc(d.tecnica)+', '+fmtD(d.pct,1)+'%)').join(' · ');
+        const sobra = des.dif > 0;
         return `<div style="background:#FCE8E8;border:1px solid #EFB2B2;color:#C02626;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5">
-          <strong>Ojo: la cocción puede estar descontada dos veces.</strong><br>
-          ${dob.length===1?'Este ingrediente tiene':'Estos ingredientes tienen'} una merma de cocción cargada en la técnica — ${lista} — y además esta preparación tiene un rendimiento, que ya recoge lo que se pierde en la olla.
-          <div style="margin-top:6px">Va en uno de los dos lados, no en los dos. Si la carne entra limpia y lo único que se pierde es cocinando, la técnica va <strong>sin merma</strong> y la pérdida queda en el rendimiento, que es el que se mide pesando.</div>
-          <div style="margin-top:6px;font-size:12px">Si esa merma es de limpieza y no de cocción, ignorá este aviso: está bien donde está.</div>
+          <strong>Dos números para la misma pérdida, y no coinciden.</strong><br>
+          Por la merma de la técnica — ${lista} — entran <strong>${fmtPeso(r, des.entra)}</strong> y tendrían que salir <strong>${fmtPeso(r, des.implicito)}</strong>.
+          El rendimiento cargado dice <strong>${fmtPeso(r, des.rend)}</strong>: ${fmtD(Math.abs(des.dif),1)}% ${sobra?'más':'menos'}.
+          <div style="margin-top:6px">El costeo está usando los dos a la vez, así que el costo por ${_enKg(r)?'kilo':'gramo'} sale ${fmtD(Math.abs(des.dif),1)}% ${sobra?'más barato':'más caro'} de lo que diría cualquiera de los dos solo.</div>
+          <div style="margin-top:6px">La técnica es un estándar de tabla; el rendimiento lo dio la balanza. Si confiás en la balanza, sacale la merma a la técnica. Si confiás en la tabla, poné ${fmtPeso(r, des.implicito)} de rendimiento.</div>
         </div>`;
       })()}
       ${(()=>{
@@ -16335,7 +16378,9 @@ function _htmlProducciones(r){
           <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Entra a la olla</div>
             <div style="font-size:20px;font-weight:700">${fmtPeso(r, entraActual)}</div>
-            <div style="font-size:11px;color:var(--gris-2)">suma de los ingredientes netos</div>
+            <div style="font-size:11px;color:var(--gris-2)">${_detEntra.hayCoccion
+              ? 'en crudo, antes de cocinar · los netos de la receta suman '+fmtPeso(r, _detEntra.neto)
+              : 'suma de los ingredientes netos'}</div>
           </div>
           <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Sale de la olla</div>
