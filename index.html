@@ -9178,7 +9178,7 @@ function _htmlFichaTrabajo(receta){
     +   '<span style="font-size:11px;color:var(--gris-2)">' + suf + '</span></div>'
     + '<div class="table-wrap"><table style="margin:0"><tbody>'
     +   fila('Este proceso', propio,
-             mo.etapas ? mo.etapas + (mo.etapas===1?' etapa':' etapas') + ' · ' + fmtD(mo.minTotalLote,0) + ' min-hombre del lote'
+             mo.etapas ? mo.etapas + (mo.etapas===1?' etapa':' etapas') + ' · ' + fmtTiempoH(mo.minTotalLote) + ' de trabajo en el lote'
                        : 'sin etapas propias cargadas')
     +   (heredado !== null
           ? fila('Viene en las subrecetas', heredado,
@@ -15857,6 +15857,35 @@ function fmtPesoNum(r, g){
   return t;
 }
 function fmtPeso(r, g){ return fmtPesoNum(r, g) + ' ' + _unidadPeso(r); }
+
+// ── TIEMPO DE TRABAJO: LA UNIDAD QUE SE LEE ───────────────────────────────
+//
+// El sistema guarda y calcula todo en minutos, pero el mismo dato se mira a
+// escalas muy distintas: un lote lleva 5 h 45, una etapa 45 min y una tarta
+// 19 segundos. Mostrar los tres en minutos deja dos de los tres ilegibles —
+// "0,31" no le dice nada a nadie, y es justo el número que más se mira, porque
+// es el de la unidad que se produce.
+//
+// Mismo criterio que con la plata y con el peso: el dato no cambia, cambia
+// cómo se escribe. Acá se guarda SIEMPRE en minutos.
+function _sinCerosFinales(t){
+  return t.indexOf(',') >= 0 ? t.replace(/0+$/,'').replace(/,$/,'') : t;
+}
+function fmtTiempoH(min){
+  const v = +min || 0;
+  if(!(v > 0)) return '—';
+  // La escala se elige DESPUÉS de redondear, no antes. Si no, 59,9 minutos se
+  // escriben "60 min" mientras que 60 se escriben "1 h": el mismo valor con dos
+  // caras, que se lee como un error del sistema aunque los dos sean correctos.
+  if(v < 1){
+    const seg = v * 60;
+    const txt = _sinCerosFinales(fmtD(seg, seg >= 10 ? 1 : 2));
+    if(txt !== '60') return txt + ' s';      // 59,97 s ya es un minuto
+  }
+  if(v < 59.5) return _sinCerosFinales(fmtD(v, v >= 10 ? 0 : 1)) + ' min';
+  const t = Math.round(v), hh = Math.floor(t/60), mm = t % 60;
+  return mm ? hh + ' h ' + mm + ' min' : hh + ' h';
+}
 // Para el value= de un input es OTRA cuenta: acá no se redondea nada, porque
 // lo que está en el campo es lo que se va a volver a guardar. Si mostrara
 // "113,6" donde hay 113636 g, el próximo cambio guardaría 113600 y nadie se
@@ -17246,7 +17275,7 @@ function _htmlProceso(r){
                     : `<input type="text" inputmode="decimal" value="${e.minTotal||''}" placeholder="0" style="width:80px;text-align:right"
                         title="Minutos en que hay alguien trabajando, para toda la tanda."
                         onchange="updEtapa('${escJs(e.id)}','minTotal',num(this.value))">
-                       ${(+e.minTotal>0 && mo.unidades>0)?`<div style="font-size:10px;color:var(--gris-2)">${unidLabel==='gramo'?fmtD((+e.minTotal)/mo.unidades*1000,2)+' por kilo':fmtD((+e.minTotal)/mo.unidades,2)+' por '+unidLabel}</div>`:''}`}
+                       ${(+e.minTotal>0 && mo.unidades>0)?`<div style="font-size:10px;color:var(--gris-2)">${unidLabel==='gramo'?fmtTiempoH((+e.minTotal)/mo.unidades*1000)+' por kilo':fmtTiempoH((+e.minTotal)/mo.unidades)+' por '+unidLabel}</div>`:''}`}
                   <label style="display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:10px;color:var(--gris-2);margin-top:4px;cursor:pointer"
                          title="Para las etapas donde la persona está de punta a punta: apanado con alguien en cada extremo, envasado. Los minutos de trabajo se toman de la duración.">
                     <input type="checkbox" ${e.todaLaEtapa?'checked':''} style="width:13px;height:13px"
@@ -17298,16 +17327,16 @@ function _htmlProceso(r){
     <div class="card-body" style="border-top:1px solid var(--crema-2)">
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)">Minutos-hombre</div>
-          <div style="font-size:20px;font-weight:700">${fmtD(mo.minTotalLote,0)} <span style="font-size:12px;font-weight:400;color:var(--gris-2)">todo el lote</span></div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gris-2)" title="Tiempo de una persona trabajando: hora-hombre, minuto-hombre o segundo-hombre según lo que se lea mejor. Dos personas media hora son una hora-hombre.">Tiempo de trabajo</div>
+          <div style="font-size:20px;font-weight:700">${fmtTiempoH(mo.minTotalLote)} <span style="font-size:12px;font-weight:400;color:var(--gris-2)">todo el lote</span></div>
           <div style="font-size:11px;color:var(--gris-2)">${mo.minHombrePorUnidad!==null
             ? (unidLabel==='gramo'
                 // Por gramo da 0,00125 y no se lee. Por kilo es el mismo dato legible.
-                ? fmtD(mo.minHombrePorUnidad*1000,2)+' por kilo'
-                : fmtD(mo.minHombrePorUnidad,2)+' por '+unidLabel)
+                ? fmtTiempoH(mo.minHombrePorUnidad*1000)+' por kilo'
+                : fmtTiempoH(mo.minHombrePorUnidad)+' por '+unidLabel)
             : 'falta el rendimiento'}</div>
           ${mo.heredada.lineas.length ? `<div style="font-size:11px;color:var(--gris-2);margin-top:4px;border-top:1px dashed var(--crema-2);padding-top:4px">
-            + ${mo.heredada.incompleta?'<span style="color:#C02626">?</span>':fmtD(mo.heredada.minutos,0)} de las subrecetas
+            + ${mo.heredada.incompleta?'<span style="color:#C02626">?</span>':fmtTiempoH(mo.heredada.minutos)} de las subrecetas
           </div>` : ''}
         </div>
         <div style="flex:1;min-width:150px;background:var(--crema);border-radius:10px;padding:12px 14px">
@@ -17355,7 +17384,7 @@ function _htmlMOHeredada(r, mo, unidLabel){
       + '<td style="font-size:13px;font-weight:600">' + esc(l.nombre) + '</td>'
       + '<td style="text-align:right;font-variant-numeric:tabular-nums">' + cantTxt + '</td>'
       + '<td style="text-align:right">' + (l.minutos !== null
-          ? '<span class="calc">' + fmtD(l.minutos, 1) + '</span>'
+          ? '<span class="calc">' + fmtTiempoH(l.minutos) + '</span>'
           : '<span style="color:var(--gris-3)">—</span>') + '</td>'
       + '<td style="text-align:right">' + (l.costo !== null
           ? '<span class="calc">$' + fmtMon(l.costo) + '</span>'
@@ -17371,13 +17400,13 @@ function _htmlMOHeredada(r, mo, unidLabel){
     + '<div class="table-wrap"><table style="margin:0">'
     +   '<thead><tr><th>Subreceta</th>'
     +   '<th style="text-align:right;width:120px">Cantidad</th>'
-    +   '<th style="text-align:right;width:120px" title="Minutos-hombre que ya se gastaron produciendo esa cantidad de la subreceta.">Min-hombre'
+    +   '<th style="text-align:right;width:120px" title="Tiempo de trabajo que ya se gastó produciendo esa cantidad de la subreceta.">Trabajo'
     +     '<div style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--gris-2)">'
     +     (esPrep ? 'de este lote' : 'de esta porción') + '</div></th>'
     +   '<th style="text-align:right;width:130px">Costo</th></tr></thead>'
     +   '<tbody>' + filas + '</tbody>'
     +   '<tfoot><tr style="background:var(--crema)"><td colspan="2" style="font-weight:700;font-size:13px">Total heredado</td>'
-    +     '<td style="text-align:right;font-weight:700">' + (her.incompleta ? '—' : fmtD(her.minutos,1)) + '</td>'
+    +     '<td style="text-align:right;font-weight:700">' + (her.incompleta ? '—' : fmtTiempoH(her.minutos)) + '</td>'
     +     '<td style="text-align:right;font-weight:700">' + (her.incompleta ? '—' : '$'+fmtMon(her.costo)) + '</td></tr>'
     +   '</tfoot>'
     + '</table></div>'
@@ -18232,7 +18261,7 @@ function descargarInformeProduccion(){
         <th>Producto</th><th class="num">Rinde el lote</th>
         <th class="num">Mercadería</th><th class="num">Mano de obra</th>
         <th class="num">Costo de producción</th>
-        <th class="num">Min-hombre</th><th class="num">% que es trabajo</th>
+        <th class="num">Trabajo</th><th class="num">% que es trabajo</th>
       </tr></thead>
       <tbody>
         ${listos.map(({r,mo,q})=>{
@@ -18248,7 +18277,7 @@ function descargarInformeProduccion(){
             <td class="num">$${fmtMon(e(q.mercPorUnidad))}</td>
             <td class="num">$${fmtMon(e(q.moPorUnidad))}</td>
             <td class="num"><strong>$${fmtMon(e(q.produccionPorUnidad))}</strong></td>
-            <td class="num">${fmtD(porKilo ? minU*1000 : minU, 2)}</td>
+            <td class="num">${fmtTiempoH(porKilo ? minU*1000 : minU)}<div style="font-size:11px;color:#5A5A52">por ${u}</div></td>
             <td class="num"><strong>${fmtD(pesoMO,1)}%</strong></td>
           </tr>`;
         }).join('')}
@@ -18268,7 +18297,7 @@ function descargarInformeProduccion(){
     <table>
       <thead><tr>
         <th>Etapa</th><th>Puesto</th><th class="num">Personas</th>
-        <th class="num">Min de reloj</th><th class="num">Min-hombre</th>
+        <th class="num">Min de reloj</th><th class="num">Trabajo (hombre)</th>
         <th class="num">Costo del lote</th><th class="num">Peso</th>
       </tr></thead>
       <tbody>
@@ -18278,7 +18307,7 @@ function descargarInformeProduccion(){
           <td>${f.puesto ? esc(f.puesto) : '<span style="color:#8A8A80">—</span>'}</td>
           <td class="num">${f.personas !== null ? f.personas : '—'}</td>
           <td class="num">${f.minReloj !== null ? fmtD(f.minReloj,0) : '—'}</td>
-          <td class="num">${fmtD(f.minHombre||0,1)}</td>
+          <td class="num">${fmtTiempoH(f.minHombre||0)}</td>
           <td class="num">${f.costoLote !== null ? '$'+fmt(f.costoLote) : '<span style="color:#C02626">'+esc(f.motivo||'falta el puesto')+'</span>'}</td>
           <td class="num">${f.peso !== null ? fmtD(f.peso,1)+'%' : '—'}</td>
         </tr>`).join('')}
@@ -18322,14 +18351,14 @@ function descargarInformeProduccion(){
 
     <div class="mets">
       <div class="met"><div class="l">Productos costeados</div><div class="v">${listos.length}${faltantes.length?' <span style="font-size:13px;font-weight:400">de '+todos.length+'</span>':''}</div></div>
-      <div class="met"><div class="l">Minutos-hombre por lote</div><div class="v">${fmtD(minTotalPlanta,0)}</div></div>
+      <div class="met"><div class="l">Trabajo por lote</div><div class="v">${fmtTiempoH(minTotalPlanta)}</div><div style="font-size:11px;color:#5A5A52">sumando todos los productos</div></div>
       <div class="met"><div class="l">Puestos con costo cargado</div><div class="v">${puestos.filter(p=>costoMinutoPuesto(p)!==null).length}</div></div>
     </div>
 
     <h2>Lo que vale una hora en cada puesto</h2>
     <div class="sub">Todo el informe sale de estos números. Si uno está mal, está mal todo lo de abajo.</div>
     <table>
-      <thead><tr><th>Puesto</th><th class="num">Costo mensual con cargas</th><th class="num">Horas por mes</th><th class="num">La hora</th><th class="num">El minuto</th></tr></thead>
+      <thead><tr><th>Puesto</th><th class="num">Costo mensual con cargas</th><th class="num">Horas por mes</th><th class="num">La hora</th><th class="num">El minuto</th><th class="num">El segundo</th></tr></thead>
       <tbody>
         ${puestos.map(p=>{
           const xmin = costoMinutoPuesto(p);
@@ -18337,7 +18366,8 @@ function descargarInformeProduccion(){
             <td class="num">${+p.costoMensual>0?'$'+fmt(p.costoMensual):'<span style="color:#C02626">falta</span>'}</td>
             <td class="num">${+p.horasMes>0?fmt(p.horasMes):'<span style="color:#C02626">falta</span>'}</td>
             <td class="num">${xmin!==null?'<strong>$'+fmt(xmin*60)+'</strong>':'—'}</td>
-            <td class="num">${xmin!==null?'$'+fmtMon(xmin):'—'}</td></tr>`;
+            <td class="num">${xmin!==null?'$'+fmtMon(xmin):'—'}</td>
+            <td class="num">${xmin!==null?'$'+fmtMon(xmin/60):'—'}</td></tr>`;
         }).join('')}
       </tbody>
     </table>
@@ -18369,6 +18399,9 @@ function descargarInformeProduccion(){
       <br><br>
       <strong>No entra al food cost, al prime cost ni al EBITDA.</strong> Esos tres se calculan sobre mercadería, y los sueldos ya están
       enteros en gastos fijos: sumar esto ahí contaría la mano de obra dos veces. Es un carril aparte y se lee aparte.
+      <br><br>
+      <strong>El tiempo de trabajo se escribe en la unidad que se lee.</strong> Un lote lleva horas, una etapa minutos y una unidad puede llevar segundos: es
+      siempre el mismo dato —tiempo de una persona trabajando— escrito a la escala que corresponde. Dos personas media hora son una hora-hombre.
       <br><br>
       <strong>La duración no cuesta sueldo.</strong> Una masa que leva dos horas no tiene a nadie mirándola. Los minutos de espera figuran
       porque definen cuántos lotes entran en un día y qué equipo queda ocupado, no porque se paguen.
