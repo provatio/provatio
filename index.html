@@ -2325,6 +2325,25 @@ function capsDeMiembro(m){
 }
 
 function puedeGestionarUsuarios(){ return esDueno() || tieneCap('gestionaEquipo'); }
+
+// ── CREAR, BORRAR Y REESTRUCTURAR OPERACIONES: SOLO EL DUEÑO ─────────────
+//
+// Esto NO es una capacidad que se pueda tildar en la ficha de alguien, a
+// propósito. Todo lo demás del sistema es reversible: un precio mal cargado se
+// corrige, una receta se vuelve a escribir. Borrar una operación se lleva
+// TODAS sus recetas, ingredientes, mermas y facturas de una, y no hay deshacer.
+// Y cambiarle el tipo o de quién recibe no borra nada pero mueve el piso: un
+// local que deja de colgar del CP pierde de golpe el costo de todo lo que
+// recibía, y nada en pantalla dice por qué.
+//
+// Un encargado que carga recetas todos los días no necesita ninguna de las
+// tres. Que exista el tilde ya sería un riesgo: tarde o temprano alguien lo
+// prende "para que pueda arreglar una cosita".
+//
+// Esta función es la puerta de la APP: esconde y bloquea el camino honesto.
+// La caja fuerte son las reglas de Firestore, que deciden quién puede escribir
+// de verdad — ver reglas-firestore-v11.
+function puedeEstructurarOperaciones(){ return esAdminProvatio() || esDueno(); }
 function verDinero(){ return tieneCap('verDinero'); }
 function verMargenCP(){ const r = getMiRol(); return r === 'dueno' || r === 'cp'; }
 
@@ -6226,8 +6245,9 @@ function renderDashboardOperacion(){
       </div>` : `
       <div class="empty">
         <h3>Sin locales vinculados</h3>
-        <p>Andá a Clientes y usá el botón "Cadena" para vincular locales a este Centro de Producción.</p>
-        <button class="btn btn-secondary" onclick="navigate('clientes')">Ir a Clientes</button>
+        <p>Creá el local con el botón de arriba, o abrí el local que ya existe y en
+           <strong>Modalidades de la operación</strong> elegí esta operación en "Recibe productos de".</p>
+        <button class="btn btn-primary" onclick="modalNuevaOperacion()">${ico('store',14)} + Crear el primer local</button>
       </div>`}
     `);
     return;
@@ -20852,6 +20872,10 @@ function renderClientes(){
 
 // ── Modal de datos de contacto del cliente ──
 window.modalVincularCadena = function(opId){
+  if(!puedeEstructurarOperaciones()){
+    showToast('Solo el dueño puede cambiar a qué cadena pertenece una operación','error');
+    return;
+  }
   const op = demoData.operaciones[opId];
   if(!op) return;
   // Cualquier OTRA operación puede ser la madre del vínculo: un CP formal,
@@ -20887,6 +20911,10 @@ window.modalVincularCadena = function(opId){
 };
 
 window.guardarVinculoCadena = async function(opId){
+  if(!puedeEstructurarOperaciones()){
+    showToast('Solo el dueño puede cambiar a qué cadena pertenece una operación','error');
+    return;
+  }
   const op = demoData.operaciones[opId];
   if(!op) return;
   const madreId = document.getElementById('vc-grupo').value || null;
@@ -21005,6 +21033,10 @@ window.guardarDatosCliente = function(opId){
 }
 
 function modalNuevaOperacion(){
+  if(!puedeEstructurarOperaciones()){
+    showToast('Solo el dueño puede crear operaciones nuevas','error');
+    return;
+  }
   openModal(`
     <div class="modal-header">
       <span class="modal-title">Nueva operación / cliente</span>
@@ -21055,6 +21087,10 @@ function modalNuevaOperacion(){
 }
 
 async function guardarNuevaOperacion(){
+  if(!puedeEstructurarOperaciones()){
+    showToast('Solo el dueño puede crear operaciones nuevas','error');
+    return;
+  }
   const nombre = document.getElementById('no-nombre').value.trim();
   if(!nombre){ showToast('Escribí el nombre de la operación','error'); return; }
 
@@ -21129,6 +21165,10 @@ async function guardarNuevaOperacion(){
 }
 
 async function delOperacion(id){
+  if(!puedeEstructurarOperaciones()){
+    showToast('Solo el dueño puede eliminar una operación','error');
+    return;
+  }
   const op = demoData.operaciones[id];
   const nombre = op ? op.nombre : 'esta operación';
   // Doble confirmación: es destructivo e irreversible.
@@ -23381,6 +23421,63 @@ function menuDiaEjemplo(fecha, servicio){
 // Qué se enciende y qué no. Cambiar esto no borra nada: una pantalla apagada
 // conserva sus datos y vuelven a aparecer si se enciende otra vez.
 // ═══════════════════════════════════════════════════════════════════════
+// Guarda las dos decisiones de cadena de UNA operación: qué es, y de quién
+// recibe. Reusa la misma persistencia que ya usaba la pantalla de Clientes —
+// no hay dos caminos para escribir lo mismo.
+async function guardarCadenaOperacion(){
+  // Esconder el botón no es un permiso. Si la función no comprueba, alcanza
+  // con llamarla desde la consola —o que una pantalla futura la invoque sin
+  // pensarlo— para reestructurar la cadena sin ser dueño.
+  if(!puedeEstructurarOperaciones()){
+    showToast('Solo el dueño puede cambiar el tipo de una operación o de quién recibe productos','error');
+    return;
+  }
+  const op = getOp(); if(!op) return;
+  const elTipo  = document.getElementById('cad-tipo');
+  const elGrupo = document.getElementById('cad-grupo');
+  if(!elTipo || !elGrupo) return;
+  const nuevoTipo = elTipo.value;
+  const madreId   = elGrupo.value || null;
+
+  // Una operación no puede recibir de sí misma: sería un ciclo y el catálogo
+  // se llamaría a sí mismo para costear.
+  if(madreId === currentOpId){ showToast('Una operación no puede recibir productos de sí misma','error'); return; }
+  // Ni de uno de sus propios locales: el ciclo sería de dos pasos en vez de uno.
+  if(madreId){
+    const _m = demoData.operaciones[madreId];
+    if(_m && _m.grupoId === currentOpId){
+      showToast('"'+(_m.nombre||'Esa operación')+'" ya recibe de esta. No pueden abastecerse mutuamente.','error');
+      return;
+    }
+  }
+
+  op.tipo = nuevoTipo;
+  op.grupoId = madreId;
+  // Si la cabecera elegida es un local común, pasa a ser CASA MADRE.
+  let _madreNueva = null;
+  if(madreId){
+    const madre = demoData.operaciones[madreId];
+    if(madre && !esCabeceraOp(madre)){ madre.proveeAlGrupo = true; _madreNueva = madre; }
+  }
+  try{
+    const eid = getEmpresaId();
+    if(eid){
+      await db.collection('empresas').doc(eid).collection('operaciones').doc(currentOpId)
+        .set({ tipo: nuevoTipo, grupoId: madreId }, {merge:true});
+      if(_madreNueva) await db.collection('empresas').doc(eid).collection('operaciones').doc(madreId)
+        .set({ proveeAlGrupo: true }, {merge:true});
+    }
+  }catch(err){ showToast('No se pudo guardar: '+err.message,'error'); return; }
+
+  // El menú cambia con el tipo (la sección Cadena aparece solo en una cabecera),
+  // así que hay que redibujarlo: si no, el usuario guarda y no ve nada nuevo.
+  buildSidebar(currentUser?.rol||'admin');
+  renderModalidades();
+  showToast(_madreNueva
+    ? '"'+_madreNueva.nombre+'" ahora es la cabecera de esta operación'
+    : 'Listo — si la hiciste centro de producción, el menú ya tiene la sección Cadena','success');
+}
+
 function renderModalidades(){
   const op = getOp();
   if(!op){ setContent('Modalidades', '<div class="card"><p>Abrí una operación primero.</p></div>'); return; }
@@ -23487,6 +23584,77 @@ function renderModalidades(){
         <button class="btn btn-primary" onclick="guardarModalidades()">Guardar</button>
       </div>
     </div>
+
+
+    ${(() => {
+      // ── CADENA: el tipo de la operación y de quién recibe ─────────────
+      //
+      // Estos tres controles vivían SOLO en la pantalla de Clientes, que es del
+      // equipo de Provatio porque lista a todos los usuarios de la plataforma.
+      // O sea: el dueño de una cadena real no tenía forma de convertir su
+      // cocina en Centro de Producción, ni de crear un local que dependiera de
+      // ella, ni de vincular uno que ya existiera. La función estaba entera y
+      // probada, sin puerta por la que entrar.
+      //
+      // Es el mismo error que ya había pasado dos veces —"Equipo y accesos" y
+      // la navegación de cadena— y por la misma razón: se construyó pensando en
+      // el admin y el dueño quedó afuera. Por eso va acá, en Modalidades, que
+      // es donde se configura qué ES esta operación.
+      if(!puedeEstructurarOperaciones()) return '';
+      const _ops = Object.entries(demoData.operaciones||{});
+      const _esCPahora = (op.tipo==='Centro de Producción'||op.tipo==='centroProduccion');
+      const _cabeceras = _ops.filter(([k,v])=>k!==currentOpId);
+      const _hijos = _ops.filter(([k,v])=>v.grupoId===currentOpId);
+      const _madre = op.grupoId ? demoData.operaciones[op.grupoId] : null;
+      return `
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin-top:0;font-size:15px">Cadena: centro de producción y locales</h3>
+      <p style="margin:0 0 14px;font-size:13px;color:var(--gris-1,#555)">
+        Una cocina que le produce a otros puntos de venta es un <strong>centro de producción</strong>:
+        arma su catálogo y le pasa los productos a sus locales a un precio de transferencia.
+        El local los recibe como insumos ya costeados y no vuelve a cargar esas recetas.
+      </p>
+
+      <div class="form-group">
+        <label>Qué es esta operación</label>
+        <select id="cad-tipo" style="width:100%;max-width:420px">
+          ${['Restaurante','Hotel','Catering','Viandas','Pastelería','Comedor empresarial','Dark Kitchen','Centro de Producción','Otro']
+            .map(t=>`<option value="${esc(t)}"${(op.tipo===t || (t==='Centro de Producción' && _esCPahora))?' selected':''}>${esc(t)}</option>`).join('')}
+        </select>
+        <div style="font-size:12px;color:var(--gris-2,#888);margin-top:6px">
+          Elegí <strong>Centro de Producción</strong> si esta cocina produce para otros locales.
+          ${_esCPahora ? 'Hoy lo es.' : 'Un local común también puede proveerle a otro — se convierte en casa madre solo, cuando lo vinculás.'}
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Recibe productos de</label>
+        <select id="cad-grupo" style="width:100%;max-width:420px">
+          <option value="">— No recibe de nadie, es independiente —</option>
+          ${_cabeceras.map(([k,v])=>`<option value="${esc(k)}"${op.grupoId===k?' selected':''}>${esc(v.nombre)}${esCabeceraOp(v)?'':' (pasa a ser casa madre)'}</option>`).join('')}
+        </select>
+        <div style="font-size:12px;color:var(--gris-2,#888);margin-top:6px">
+          ${_madre ? 'Hoy recibe de <strong>'+esc(_madre.nombre)+'</strong>.' : 'Hoy no recibe de ninguna otra operación.'}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px">
+        <button class="btn btn-primary" onclick="guardarCadenaOperacion()">Guardar</button>
+        <button class="btn btn-secondary" onclick="modalNuevaOperacion()" title="Crea otra operación. En el desplegable &quot;Pertenece a&quot; elegís esta para que dependa de ella.">
+          ${ico('store',14)} + Crear otro local
+        </button>
+      </div>
+
+      ${_hijos.length ? `
+      <div style="margin-top:16px;border-top:1px solid var(--crema-2,#E8E0D4);padding-top:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">Locales que reciben de esta operación (${_hijos.length})</div>
+        ${_hijos.map(([k,v])=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--crema,#F5F0E8)">
+          <span><strong>${esc(v.nombre)}</strong> <span style="font-size:12px;color:var(--gris-2,#888)">${esc(v.tipo||'')}</span></span>
+          <button class="btn btn-secondary btn-sm" onclick="abrirOperacion('${escJs(k)}')">Abrir →</button>
+        </div>`).join('')}
+      </div>` : ''}
+    </div>`;
+    })()}
 
     <div class="card" style="margin-top:16px">
       <h3 style="margin-top:0;font-size:15px">Qué habilita cada una</h3>
