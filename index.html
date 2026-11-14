@@ -4847,6 +4847,7 @@ function buildSidebar(rol){
     // la plataforma no corresponde: ahí se gestiona desde Admin Provatio.
     ...(puedeGestionarUsuarios() && !esAdminProvatio() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
     ...(esAdminProvatio() ? [
+      {icon:'store', label:'Operaciones y cadena', vista:'clientes'},
       {icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'},
       {icon:'user', label:'Equipo Provatio', vista:'equipoProvatio'},
     ] : []),
@@ -4858,6 +4859,7 @@ function buildSidebar(rol){
     {section:'Principal'},
     {icon:'chart', label:'Panel general', vista:'dashboard'},
     ...(puedeGestionarUsuarios() || !getEmpresaId() ? [{icon:'user', label:'Equipo y accesos', vista:'equipo'}] : []),
+    ...(esAdminProvatio() && getEmpresaId() ? [{icon:'store', label:'Operaciones y cadena', vista:'clientes'}] : []),
     ...(esAdminProvatio() ? [
       {icon:'shield', label:'⚙ Admin Provatio', vista:'adminProvatio'},
       {icon:'user', label:'Equipo Provatio', vista:'equipoProvatio'},
@@ -10267,9 +10269,14 @@ function _getProductosCPInterno(cp){
   const desdeRecetas = recetasCP
     .map(r => {
       const costoProd = calcularCostoRecetaCP(r, cp);
+      // El trabajo viaja en la misma escala que la mercadería y se convierte a
+      // $/kg con la misma división, para que no haya forma de que uno quede en
+      // una escala y el otro en otra.
+      const trabProd = calcularTrabajoRecetaCP(r, cp);
       if(esRecetaPorPeso(r)){
         if(!(r.rendimientoG > 0)) return null;
         const costoXkg = costoProd / r.rendimientoG * 1000;
+        const trabXkg = trabProd === null ? null : trabProd / r.rendimientoG * 1000;
         return {
           id: 'cp-rec-' + r.id,
           nombre: r.nombre,
@@ -10284,6 +10291,7 @@ function _getProductosCPInterno(cp){
           _unidadesLote: r.unidadesLote || 0,
           _pesoUnidadAuto: (r.unidadesLote > 0) ? r.rendimientoG / r.unidadesLote : 0,
           costoProduccionXkg: costoXkg,
+          costoTrabajoXkg: trabXkg,
           // Si la receta del CP tiene precio de venta cargado, ese es el precio
           // al que se lo pasa al local (salvo que se pise a mano más abajo).
           _transfSugerido: r.precioVenta > 0 ? r.precioVenta / r.rendimientoG * 1000 : 0,
@@ -10291,6 +10299,7 @@ function _getProductosCPInterno(cp){
       }
       const pesoPorcion = pesoPorcionDirecto(r);
       const costoXkg = pesoPorcion > 0 ? costoProd / pesoPorcion * 1000 : 0;
+      const trabXkgD = trabProd === null ? null : (pesoPorcion > 0 ? trabProd / pesoPorcion * 1000 : 0);
       return {
         id: 'cp-rec-' + r.id,
         nombre: r.nombre,
@@ -10301,6 +10310,7 @@ function _getProductosCPInterno(cp){
         _origenAuto: true,
         _pesoPorcionAuto: pesoPorcion,
         costoProduccionXkg: costoXkg,
+        costoTrabajoXkg: trabXkgD,
         pesoFaltaParaKg: !(pesoPorcion > 0),
         _transfSugerido: (r.precioVenta > 0 && pesoPorcion > 0) ? r.precioVenta / pesoPorcion * 1000 : 0,
       };
@@ -10309,7 +10319,7 @@ function _getProductosCPInterno(cp){
 
   // Productos manuales cargados desde la pantalla "Centro de Producción"
   const manuales = (cp._productos || []).map(p => {
-    let costoXkg = 0, transfSugerido = 0, pesoFaltaParaKg = false, costoUnidad = null;
+    let costoXkg = 0, transfSugerido = 0, pesoFaltaParaKg = false, costoUnidad = null, trabXkgM = 0;
     if(p.tipoProd === 'porcionado'){
       const ing = ingsCP.find(i => i.id === p.ingId);
       if(ing && ing.precio > 0){
@@ -10320,6 +10330,8 @@ function _getProductosCPInterno(cp){
       // Si está vinculado a un ingrediente real de "Mis ingredientes", el costo
       // sale de ahí (y de paso permite saber si se mide por kilo o por unidad,
       // como el huevo). Lo cargado a mano sigue mandando si el CP lo tipeó.
+      // Un producto manual solo arrastra trabajo si está ligado a una receta
+      // del CP. Si es algo que el CP compra y revende, el cero es un cero real.
       if(p.precioXkg > 0){
         costoXkg = p.precioXkg;
       } else if(p.ingId){
@@ -10342,12 +10354,15 @@ function _getProductosCPInterno(cp){
       if(receta && receta.rendimientoG > 0){
         const costoProd = calcularCostoRecetaCP(receta, cp);
         costoXkg = costoProd / receta.rendimientoG * 1000;
+        const _tp = calcularTrabajoRecetaCP(receta, cp);
+        trabXkgM = _tp === null ? null : _tp / receta.rendimientoG * 1000;
         transfSugerido = receta.precioVenta > 0 ? receta.precioVenta / receta.rendimientoG * 1000 : 0;
       }
     }
     return {
       ...p,
       costoProduccionXkg: costoXkg,
+      costoTrabajoXkg: trabXkgM,
       costoProduccionUnidad: costoUnidad,
       _transfSugerido: transfSugerido,
       pesoFaltaParaKg,
@@ -10372,6 +10387,9 @@ function _getProductosCPInterno(cp){
         ingId: i.id,
         _origenAuto: true,
         costoProduccionXkg: c || 0,   // lo que la compra el CP
+        // Un insumo que el CP compra y redistribuye no lleva trabajo propio:
+        // acá el cero sí es un cero de verdad, no un dato faltante.
+        costoTrabajoXkg: 0,
         costoProduccionUnidad: cUnidad,
         // Sin peso no hay $/kg, pero si se compra por unidad el costo por
         // unidad igual se sabe exacto — eso no es un dato faltante.
@@ -10388,10 +10406,30 @@ function _getProductosCPInterno(cp){
     .map(p => {
       const d = _desp[p.id] || {};
 
-      // PRECIO DE TRANSFERENCIA. Orden: lo que el CP cargó a mano manda sobre
-      // todo; después el precio de venta de la receta; y si no hay ninguno,
-      // se transfiere AL COSTO (margen cero) y la pantalla del CP lo avisa.
+      // SOBRE QUÉ SE TRANSFIERE. Dos bases posibles, y la elige el CP producto
+      // por producto:
+      //
+      //   mercadería  → solo la materia prima. Es lo que hacía el sistema
+      //                 siempre, y sirve cuando el CP absorbe el trabajo a
+      //                 propósito (una casa madre que le cocina a su propio local).
+      //   producción  → materia prima MÁS el trabajo de producirlo. Es el costo
+      //                 de transferencia de verdad: cocinar un pollo cuesta, y
+      //                 si el local lo recibe sin eso, el CP le está regalando
+      //                 la mano de obra sin que ningún número lo muestre.
+      //
+      // Para el local que recibe, lo que paga ES su materia prima —igual que si
+      // le comprara el relleno a un proveedor de afuera, que no le detalla
+      // cuánto fue sueldo y cuánto fue pollo—. Por eso incluir el trabajo acá
+      // no rompe los dos carriles: la mano de obra del local sigue en la suya.
+      //
+      // Si el trabajo no se puede costear (una etapa sin puesto, un rendimiento
+      // sin cargar), NO se transfiere como cero: se usa la mercadería sola y la
+      // pantalla avisa que falta. Un cero silencioso acá sale caro todos los días.
       const costoProd = p.costoProduccionXkg || 0;
+      const trabajoXkg = p.costoTrabajoXkg;                  // null = no se sabe
+      const baseTransf = (d.baseTransf === 'produccion') ? 'produccion' : 'mercaderia';
+      const trabajoCuenta = (baseTransf === 'produccion' && trabajoXkg !== null);
+      const costoBase = trabajoCuenta ? costoProd + (trabajoXkg||0) : costoProd;
 
       // Cómo se despacha: por kilo, por porción, o por unidad entera (huevo,
       // lata, botella — no tiene sentido pedirlos "en gramos"). Esto se
@@ -10436,13 +10474,13 @@ function _getProductosCPInterno(cp){
            : (gramos > 0 ? _valGuardado * gramos/1000 : 0));
 
       const transf = transfManual > 0 ? transfManual
-                   : (p._transfSugerido > 0 ? p._transfSugerido : costoProd);
+                   : (p._transfSugerido > 0 ? p._transfSugerido : costoBase);
       const definido = _valGuardado > 0 || p._transfSugerido > 0;
 
       // Costo en la unidad de despacho. Para lo que se compra por unidad es
       // exacto (precio del maple ÷ unidades) y no necesita ningún peso.
       const costoUnidad = (p.costoProduccionUnidad > 0) ? p.costoProduccionUnidad
-                        : (porUnidad && gramos > 0) ? costoProd * gramos/1000
+                        : (porUnidad && gramos > 0) ? costoBase * gramos/1000
                         : null;
       const precioUnidad = !porUnidad ? null
         : (transfManualUnidad > 0 ? transfManualUnidad
@@ -10455,7 +10493,16 @@ function _getProductosCPInterno(cp){
         precioTransfManual: transfManual,
         margenPct: d.margenPct,
         tienePrecioTransferencia: definido,
-        margenXkg: transf - costoProd,
+        // El margen se mide contra la base elegida: si el trabajo entra al
+        // costo, un precio que antes dejaba 30% puede estar dejando 5% o menos.
+        // Ese es justamente el número que el CP tiene que poder ver.
+        margenXkg: transf - costoBase,
+        costoBaseXkg: costoBase,
+        baseTransf,
+        trabajoXkg,
+        trabajoCuenta,
+        // El trabajo existe pero no se puede costear: no es cero, falta un dato.
+        trabajoDesconocido: (trabajoXkg === null),
         despachoUnidad: unidad,
         gramosPorcion: gramos,
         modoUso: d.modoUso || p.modoUso || 'directo',
@@ -10719,6 +10766,36 @@ function calcularCostoRecetaCP(receta, cp){
   }
 }
 
+// El TRABAJO de una receta del CP, en la MISMA escala en que calcularCostoRecetaCP
+// devuelve la mercadería —el lote para una preparación, la porción para lo demás—
+// así los dos se suman sin convertir nada y sin que haya dos reglas de escala
+// conviviendo.
+//
+// Se le pasa el CP como operación dueña porque este catálogo se arma estando
+// parado en el local: los puestos y las subrecetas que esta receta usa son del
+// CP, no de donde esté mirando el usuario.
+function calcularTrabajoRecetaCP(receta, cp){
+  if(!receta) return 0;
+  if(_cpCalcEnCurso.has(receta.id)) return 0;
+  _cpCalcEnCurso.add(receta.id);
+  try {
+    const mo = calcManoObra(receta, cp);
+    // Sin proceso cargado el trabajo es cero de verdad: nadie cargó etapas.
+    if(!mo.etapas && !mo.heredada.lineas.length) return 0;
+    // Con proceso cargado pero incompleto NO es cero: es desconocido, y
+    // devolver cero acá transferiría el producto como si el trabajo fuera gratis.
+    if(mo.costoTotalPorUnidad === null) return null;
+    return receta.esPreparacion
+      ? mo.costoTotalPorUnidad * (mo.unidades || 0)
+      : mo.costoTotalPorUnidad;
+  } catch(e){
+    console.warn('[Provatio] no pude costear el trabajo de la receta del CP:', receta && receta.nombre, e);
+    return null;
+  } finally {
+    _cpCalcEnCurso.delete(receta.id);
+  }
+}
+
 // ── CRUD de productos del CP ─────────────────────────────────────────────────
 
 function nuevoProductoCP(){
@@ -10878,7 +10955,7 @@ async function margenEnLoteCP(){
   const cp = getCentroProduccion();
   if(!cp) return;
   const productos = getProductosCP();
-  const sinPrecio = productos.filter(p => !p.tienePrecioTransferencia && (p.costoUnidad > 0 || p.costoProduccionXkg > 0));
+  const sinPrecio = productos.filter(p => !p.tienePrecioTransferencia && (p.costoUnidad > 0 || p.costoBaseXkg > 0));
   const yaTienen = productos.length - sinPrecio.length;
   if(!sinPrecio.length){
     showToast('Todos los productos con costo ya tienen precio de transferencia', 'info');
@@ -10901,7 +10978,7 @@ async function margenEnLoteCP(){
     // El % corre sobre el costo en la unidad en la que se despacha el producto,
     // igual que cuando se carga a mano — para un huevo, sobre lo que sale el huevo.
     const porUnidad = (p.despachoUnidad === 'unidades' || p.despachoUnidad === 'porcion');
-    const costo = porUnidad && p.costoUnidad > 0 ? p.costoUnidad : p.costoProduccionXkg;
+    const costo = porUnidad && p.costoUnidad > 0 ? p.costoUnidad : p.costoBaseXkg;
     if(!(costo > 0)) return;
     cp._despacho[p.id].margenPct = pct;
     cp._despacho[p.id].precioTransf = Math.round(costo * (1 + pct/100) * 100) / 100;
@@ -10917,6 +10994,28 @@ async function margenEnLoteCP(){
 // La subcategoría se guarda en el mismo lugar que el resto de la configuración
 // de despacho del producto (cp._despacho[id]), así funciona igual para los tres
 // tipos — incluso para las filas que se arman solas y no viven en cp._productos.
+// Sobre qué costo se transfiere este producto. Se guarda junto al resto de la
+// configuración de despacho, así vale igual para las filas que se arman solas
+// desde una receta y no viven en cp._productos.
+//
+// Cambiar la base NO toca un precio ya cargado a mano: lo que cambia es contra
+// qué se mide. Un precio que parecía dejar 30% puede pasar a dejar 4%, y ver
+// eso es justamente el punto. Lo que sí sigue a la base es el precio de los
+// productos que se transfieren al costo, que no tienen nada cargado que pisar.
+function setBaseTransfCP(prodId, valor){
+  const cp = getCentroProduccion();
+  if(!cp) return;
+  if(!cp._despacho) cp._despacho = {};
+  if(!cp._despacho[prodId]) cp._despacho[prodId] = { gramos:0 };
+  if(valor === 'produccion') cp._despacho[prodId].baseTransf = 'produccion';
+  else delete cp._despacho[prodId].baseTransf;
+  guardarEnFirestore();
+  renderCP();
+  showToast(valor === 'produccion'
+    ? 'Este producto se transfiere sobre mercadería + trabajo'
+    : 'Este producto se transfiere sobre la mercadería sola', 'info');
+}
+
 function setSubcatCP(prodId, valor){
   const cp = getCentroProduccion();
   if(!cp) return;
@@ -10998,7 +11097,10 @@ function renderCP(){
     // distintos, cada uno en su lugar.
     // Costo de referencia sobre el que corre el %: en la unidad en la que se
     // despacha, para que el % y el precio hablen del mismo número.
-    const _costoRefT = _porUnidadT ? (p.costoUnidad != null ? p.costoUnidad : 0) : (p.costoProduccionXkg||0);
+    // El % corre sobre la BASE elegida (mercadería, o mercadería + trabajo):
+    // si corriera siempre sobre la mercadería, un 25% sobre un producto que
+    // transfiere a costo de producción daría un precio por debajo del costo.
+    const _costoRefT = _porUnidadT ? (p.costoUnidad != null ? p.costoUnidad : 0) : (p.costoBaseXkg||0);
     const _precioMostrarT = _porUnidadT
       ? (p.tienePrecioTransferencia && p.precioUnidad != null ? Math.round(p.precioUnidad) : '')
       : (p.tienePrecioTransferencia ? Math.round(p.costoXkg) : '');
@@ -11008,7 +11110,7 @@ function renderCP(){
         <input type="text" inputmode="decimal" step="1"
           value="${_margenPctT}"
           placeholder="%"
-          title="% de margen sobre el costo de producción — completa el precio de acá abajo, que después podés seguir editando a mano"
+          title="% de margen sobre el costo base de este producto (mercadería, o mercadería + trabajo según lo que esté elegido al lado) — completa el precio de acá abajo, que después podés seguir editando a mano"
           onchange="aplicarMargenCP('${escJs(p.id)}', this.value, ${_costoRefT}, '${escJs(_dUnT)}')"
           style="font-size:12px;width:46px;text-align:right">
         <span style="font-size:10px;color:var(--gris-2)">% margen s/costo</span>
@@ -11032,7 +11134,7 @@ function renderCP(){
     const costoProd = (_porUnidadT && p.costoUnidad != null)
       ? `<div style="font-weight:600;color:var(--negro)">$${fmt(p.costoUnidad)} <span style="font-weight:400;font-size:11px">la ${_nombreUnidadT}</span></div>
          ${p.costoProduccionXkg > 0 ? `<div style="font-size:10px;color:var(--gris-3)" title="Aproximado: depende del peso estimado de la unidad">≈ $${fmt(p.costoProduccionXkg)}/kg</div>` : ''}`
-      : p.costoProduccionXkg > 0 ? `$${fmt(p.costoProduccionXkg)}/kg`
+      : p.costoBaseXkg > 0 ? `$${fmt(p.costoBaseXkg)}/kg`
       : p.pesoFaltaParaKg ? `<span class="calc calc-err" title="${p.modoRendimiento==='porcion' ? 'Esta receta todavía no tiene ningún ingrediente con peso (Neto en g) cargado — el costo por kilo se calcula solo apenas cargues al menos uno' : 'Este producto se compra por unidad — cargá cuánto pesa una (el peso neto) en Mis Ingredientes o acá al lado, en \'g por unidad\', para poder calcular el costo por kilo'}">⚠ falta el peso</span>`
       : '—';
     const margen = (_porUnidadT && p.margenUnidad != null)
@@ -11043,6 +11145,26 @@ function renderCP(){
       : p.costoXkg > 0
       ? `<span style="color:${p.margenXkg>=0?'var(--oliva)':'var(--bordo)'}">$${fmt(Math.abs(p.margenXkg))}/kg</span>`
       : '—';
+    // SOBRE QUÉ SE TRANSFIERE. Solo aparece en lo que el CP produce: un insumo
+    // que compra y revende no lleva trabajo propio y el selector sería ruido.
+    const _selBase = (() => {
+      if(p.tipoProd !== 'elaborado') return '';
+      if(!p.trabajoDesconocido && !(p.trabajoXkg > 0)) return '';
+      const esProd = p.baseTransf === 'produccion';
+      const bt = (v, txt, act) => '<button onclick="setBaseTransfCP(\''+escJs(p.id)+'\',\''+v+'\')" '
+        + 'style="border:none;cursor:pointer;padding:2px 7px;font-size:10px;font-weight:700;'
+        + (act ? 'background:var(--azul);color:#fff' : 'background:transparent;color:var(--gris-2)') + '">' + txt + '</button>';
+      return '<div style="margin-top:5px">'
+        + '<span style="display:inline-flex;border:1px solid var(--crema-2);border-radius:6px;overflow:hidden"'
+        + ' title="Sobre qué costo se arma el precio de transferencia. Mercadería sola es lo que hacía el sistema siempre y sirve cuando el CP absorbe el trabajo a propósito. Con el trabajo incluido es el costo de producción de verdad: el local paga lo que cuesta hacerlo.">'
+        + bt('mercaderia','mercadería',!esProd) + bt('produccion','+ trabajo',esProd) + '</span>'
+        + (p.trabajoDesconocido
+            ? '<div style="font-size:10px;color:#C02626;margin-top:3px;max-width:140px">⚠ falta un dato para costear el trabajo — mientras tanto se transfiere solo la mercadería</div>'
+            : esProd
+              ? '<div style="font-size:10px;color:var(--oliva);margin-top:3px">incluye $' + fmt(p.trabajoXkg) + '/kg de trabajo</div>'
+              : '<div style="font-size:10px;color:#B8540A;margin-top:3px;max-width:140px">el trabajo ($' + fmt(p.trabajoXkg) + '/kg) no se le cobra al local</div>')
+        + '</div>';
+    })();
     const costoDisplay = precioTransf;
 
     const selector = (p._origenAuto && p.tipoProd==='elaborado')
@@ -11184,7 +11306,7 @@ function renderCP(){
       tipo:     `<td>${tipoCell}</td>`,
       arma:     `<td>${selector}</td>`,
       despacho: `<td>${despachoCell}</td>`,
-      costo:    `<td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}</td>`,
+      costo:    `<td style="text-align:right;color:var(--gris-2);font-size:13px">${costoProd}${_selBase}</td>`,
       precio:   `<td style="text-align:right;font-weight:700;color:var(--negro)">${precioTransf}</td>`,
       margen:   `<td style="text-align:right">${margen}</td>`,
       accion:   `<td>${accionBorrar}</td>`,
@@ -16786,16 +16908,20 @@ function _moVacia(){
 // mercadería: para una preparación es el lote entero, para un plato ya es por
 // porción. La conversión a "por unidad" la hace calcManoObra con la misma regla
 // que usa la mercadería, para que los dos números se puedan sumar.
-function _moDeSubrecetas(r){
+function _moDeSubrecetas(r, opDuena){
   const out = {costo:0, minutos:0, lineas:[], faltan:[], incompleta:false};
   (r && r.ingredientes || []).forEach(ln=>{
     if(!ln || !ln.recetaId) return;
     const cant = +ln.neto || 0;
     if(!(cant > 0)) return;
-    const sub = getRecetas().find(x=>x.id===ln.recetaId);
+    // Las subrecetas de una receta del CP viven en el CP, no en la operación
+    // activa: si se buscaran en la activa, una subreceta del CP mirada desde
+    // un local no aparecería y su trabajo se perdería en silencio.
+    const _recs = opDuena ? ((opDuena._datos && opDuena._datos.recetas) || []) : getRecetas();
+    const sub = _recs.find(x=>x.id===ln.recetaId);
     if(!sub) return;
     const enUnid = _rindeEnUnidades(sub);
-    const m = calcManoObra(sub);
+    const m = calcManoObra(sub, opDuena);
     const fila = {nombre: sub.nombre || 'Subreceta sin nombre', cant, enUnid,
                   costo: null, minutos: null, motivo: null};
     if(m.circular){
@@ -16823,7 +16949,10 @@ function _moDeSubrecetas(r){
   return out;
 }
 
-function calcManoObra(r){
+// opDueña: de qué operación son los puestos y las subrecetas de esta receta.
+// Se omite para la operación activa, que es el caso normal; el catálogo del CP
+// la pasa explícitamente porque se arma desde el local.
+function calcManoObra(r, opDuena){
   // Guarda contra cadenas circulares: una subreceta que termina usándose a sí
   // misma colgaría el navegador. Se corta y se avisa, como en calcReceta.
   const _idMO = r && r.id;
@@ -16832,12 +16961,12 @@ function calcManoObra(r){
     _moEnCurso.add(_idMO);
   }
   try {
-  return _calcManoObraBase(r);
+  return _calcManoObraBase(r, opDuena);
   } finally { if(_idMO) _moEnCurso.delete(_idMO); }
 }
-function _calcManoObraBase(r){
+function _calcManoObraBase(r, opDuena){
   const etapas = getEtapas(r);
-  const puestos = getPuestos();
+  const puestos = getPuestos(opDuena);
   const unidades = _unidadesDelLote(r);
   let minLoteH = 0, minUnidH = 0, costoLote = 0, costoUnidad = 0, duracionTotal = 0;
   // minLoteH = la parte FIJA del trabajo, la que no cambia con el tamaño.
@@ -16896,7 +17025,7 @@ function _calcManoObraBase(r){
   // pantalla (_htmlProceso): una preparación se divide por lo que rinde, un
   // plato ya viene por porción. Si los dos no usaran la misma regla, se estaría
   // sumando un costo por lote con uno por porción.
-  const her = _moDeSubrecetas(r);
+  const her = _moDeSubrecetas(r, opDuena);
   const herXUnidad = r.esPreparacion
     ? (unidades > 0 ? her.costo / unidades : null)
     : her.costo;
@@ -17131,11 +17260,16 @@ function abrirLote(id){
 //
 // Las jefaturas no son un puesto de producción: su sueldo es estructura y se
 // queda en Gastos fijos.
-function getPuestos(){
-  const op = getOp();
-  if(!op) return [];
-  if(!op.puestos) op.puestos = [];
-  return op.puestos;
+// Los puestos son de UNA operación. Por defecto la activa, pero el catálogo
+// del CP se arma estando parado en el local, y ahí la activa es la equivocada:
+// las etapas de la receta del CP apuntan a puestos del CP, que no existen en el
+// local. Sin poder decir "los de aquella operación", la mano de obra del CP
+// salía como dato faltante en cuanto alguien la miraba desde un local.
+function getPuestos(op){
+  const o = op || getOp();
+  if(!o) return [];
+  if(!o.puestos) o.puestos = [];
+  return o.puestos;
 }
 // Lo que vale un minuto de ese puesto. De acá sale todo el costeo de tiempos.
 function costoMinutoPuesto(p){
