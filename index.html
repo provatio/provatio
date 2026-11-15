@@ -1056,8 +1056,14 @@ input:focus, select:focus, textarea:focus {
     <line x1="14" y1="50" x2="46" y2="50" stroke="#2D2D28" stroke-width="2.5" stroke-linecap="round"/>
   </svg>
   <div style="font-size:13px;color:#6B6B60;letter-spacing:.04em">Cargando Provatio…</div>
-  <div id="boot-lento" style="display:none;font-size:12px;color:#8A8A80;max-width:300px;text-align:center;line-height:1.5">
-    Está tardando más de lo normal. Si no abre, recargá la página.
+  <div id="boot-paso" style="font-size:11px;color:#A8A89C;letter-spacing:.03em;min-height:14px"></div>
+  <div id="boot-lento" style="display:none;font-size:12px;color:#8A8A80;max-width:320px;text-align:center;line-height:1.5">
+    Está tardando más de lo normal. El paso que figura arriba es el que está esperando.
+    <div style="margin-top:12px">
+      <button onclick="location.reload()"
+              style="font:inherit;font-size:12px;padding:7px 16px;border:1px solid #C8A96E;background:#fff;
+                     color:#6B4A08;border-radius:6px;cursor:pointer">Recargar</button>
+    </div>
   </div>
 </div>
 
@@ -2178,24 +2184,61 @@ const _CLAVE_LIMPIAR = 'provatio_limpiar_cache';
 // que al segundo ande. Una recarga —una sola, y solo después de cerrar sesión—
 // deja la página limpia de verdad y cuesta menos que un error que no se
 // entiende.
+// ═══════════════════════════════════════════════════════════════════════
+// EL ARRANQUE TIENE QUE TERMINAR
+//
+// Es la misma regla que ya aplicamos al cierre de sesión. Un paso del
+// arranque puede FALLAR sin drama —la app sigue igual— pero no puede
+// QUEDARSE ESPERANDO: abrir la base local, limpiarla o activar el modo
+// offline son operaciones que, con otra pestaña abierta o con el disco
+// ocupado, no contestan nunca. Sin tope, la app se queda mirando el techo.
+//
+// Y además se anota cada paso con el tiempo que llevó. Si mañana vuelve a
+// tardar, no hay que adivinar: el paso que quedó escrito en la pantalla de
+// arranque es el que se trabó.
+// ═══════════════════════════════════════════════════════════════════════
+const _T0_ARRANQUE = Date.now();
+window._pasosArranque = [];
+function _paso(nombre){
+  const ms = Date.now() - _T0_ARRANQUE;
+  window._pasosArranque.push(nombre + ' · ' + ms + ' ms');
+  console.log('[Provatio] arranque:', nombre, ms + ' ms');
+  const el = document.getElementById('boot-paso');
+  if(el) el.textContent = nombre + ' · ' + (ms/1000).toFixed(1) + ' s';
+}
+// Devuelve siempre, pase lo que pase. No rechaza: si se pasa del tope o si
+// falla, avisa por consola y sigue. Ninguno de estos pasos es imprescindible.
+function _conTope(promesa, ms, que){
+  let listo = false;
+  return Promise.race([
+    Promise.resolve(promesa).then(v => { listo = true; return v; },
+                                  e => { listo = true; console.warn('[Provatio] '+que+' falló, sigo igual:', e); return null; }),
+    new Promise(res => setTimeout(() => {
+      if(!listo) console.warn('[Provatio] '+que+' pasó los '+ms+' ms — sigo sin eso');
+      res(null);
+    }, ms))
+  ]);
+}
+
 async function _limpiezaPendienteDeCache(){
   let pendiente = false;
   try{ pendiente = localStorage.getItem(_CLAVE_LIMPIAR) === '1'; }catch(_){}
   if(!pendiente) return false;
   // Se borra ANTES de intentar: si la limpieza falla, no queda recargando en círculo.
   try{ localStorage.removeItem(_CLAVE_LIMPIAR); }catch(_){}
-  try{
-    await db.clearPersistence();
+  _paso('limpiando caché local');
+  // Con tope: con otra pestaña abierta esto puede no contestar nunca, y era
+  // uno de los lugares donde el arranque se quedaba colgado.
+  const limpio = await _conTope(db.clearPersistence().then(()=>true), 4000, 'limpiar la caché local');
+  if(limpio === true){
     console.warn('[Provatio] caché local limpiada — recargando con la base en cero');
     location.replace(location.pathname + location.search);
     return true;
-  }catch(e){
-    // Falla si hay otra pestaña abierta. No es grave y no bloquea nada: la
-    // instancia sigue sana y la caché se limpiará en el próximo arranque que
-    // encuentre una sola pestaña.
-    console.warn('[Provatio] no se pudo limpiar la caché local (¿otra pestaña abierta?)', e);
-    return false;
   }
+  // Falla o se pasa del tope si hay otra pestaña abierta. No es grave: la
+  // instancia sigue sana y la caché se limpiará en el próximo arranque que
+  // encuentre una sola pestaña.
+  return false;
 }
 // Deja la nota y recarga. Lo usan el cierre de sesión y el cambio de cuenta.
 function _pedirLimpiezaYRecargar(destino){
@@ -2214,12 +2257,17 @@ function _pedirLimpiezaYRecargar(destino){
 // de que todo salió bien —puede fallar y no importa— sino de que ya terminó de
 // intentarse y la base quedó en condiciones de usarse.
 const _firestoreListo = (async () => {
+  _paso('abriendo la base');
   const seVaARecargar = await _limpiezaPendienteDeCache();
   // La página se está yendo: no arrancar nada más ni dejar que nadie use la
   // base. Una promesa que no resuelve deja todo quieto hasta la recarga.
   if(seVaARecargar) return new Promise(() => {});
+  _paso('activando el modo offline');
   try{
-    await db.enablePersistence({ synchronizeTabs: true });
+    // Tope de 3 segundos: el modo offline es una comodidad, no un requisito.
+    // Si no se activa, la app funciona igual mientras haya señal. Lo que NO
+    // puede pasar es que la persona espere mirando una pantalla vacía.
+    await _conTope(db.enablePersistence({ synchronizeTabs: true }), 3000, 'activar el modo offline');
   }catch(err){
     if(err && err.code === 'failed-precondition'){
       console.warn('[Provatio] modo offline: no se pudo activar en esta pestaña (conflicto con otra pestaña)');
@@ -2378,7 +2426,7 @@ function opActivaId(){
 // con cada entrega. Si el número que figura no es el de la última entrega,
 // lo que está abierto es la versión vieja y no hay nada que depurar.
 // ═══════════════════════════════════════════════════════════════════════
-const VERSION_APP = '15/11 11:20';
+const VERSION_APP = '15/11 11:40';
 function pintarSelloVersion(){
   const el = document.getElementById('sello-version');
   if(el) el.textContent = 'versión ' + VERSION_APP;
@@ -4088,10 +4136,11 @@ async function cargarUsuarioFirebase(firebaseUser){
     // configurada: si sale antes, Firestore ya quedó "usado" y la persistencia
     // no se puede activar más en esta sesión.
     await _firestoreListo;
+    _paso('leyendo tu perfil');
     window._miembroEmpresa = null;   // limpiar estado de cualquier sesión anterior
     // 20 s era demasiado: con la base trabada, la persona miraba una pantalla
     // sin respuesta veinte segundos antes de que el sistema admitiera el problema.
-    const userDoc = await conTimeout(db.collection('usuarios').doc(firebaseUser.uid).get(), 10000, 'La carga del perfil');
+    const userDoc = await conTimeout(db.collection('usuarios').doc(firebaseUser.uid).get(), 6000, 'La carga del perfil');
     _registrarEnIndiceEmails(firebaseUser.uid, firebaseUser.email);   // alta o refresco del índice
     // Si el usuario pertenece a una empresa, cargar su ficha de miembro (rol y locales)
     try{
@@ -4527,8 +4576,12 @@ function _ocultarArranque(){
 setTimeout(() => {
   const l = document.getElementById('boot-lento');
   if(l) l.style.display = 'block';
-}, 6000);
-setTimeout(_ocultarArranque, 15000);
+}, 10000);
+// NO se saca sola la pantalla de arranque. Antes se quitaba a los 15 segundos
+// y, si la app todavía no había dibujado nada, lo que quedaba era una pantalla
+// vacía: el peor de los dos mundos, porque ni informa ni deja hacer nada.
+// Ahora se queda puesta hasta que haya algo que mostrar, y a los 10 segundos
+// ofrece el botón de recargar.
 
 function showAuthError(msg){
   _ocultarArranque();
@@ -25936,8 +25989,9 @@ document.addEventListener('keydown', e=>{
 // Detecta si ya hay una sesión activa al abrir la app
 auth.onAuthStateChanged(async firebaseUser => {
   // Sin sesión, lo que corresponde es el login: ese es un final del arranque.
-  if(!firebaseUser){ _ocultarArranque(); return; }
+  if(!firebaseUser){ _paso('sin sesión: al login'); _ocultarArranque(); return; }
   if(currentUser) return;
+  _paso('sesión reconocida');
   // ── SI CAMBIÓ LA PERSONA, SE ARRANCA LIMPIO ─────────────────────────────
   // Cinturón para el caso de arriba: aunque alguien haya cerrado sesión mal
   // (una pestaña vieja, un cierre a la fuerza, una versión anterior de la app),
