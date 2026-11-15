@@ -1014,6 +1014,26 @@ input:focus, select:focus, textarea:focus {
 </head>
 <body>
 
+<!-- ARRANQUE: lo primero que se ve, antes de que corra una línea de JS.
+     Sin esto, entre que la página carga y la app decide qué mostrar hay un
+     hueco en blanco. Con conexión buena dura un parpadeo; con conexión mala,
+     o si Firestore tarda en arrancar, son treinta segundos de pantalla vacía
+     en los que no hay forma de saber si la app está trabajando o se colgó. -->
+<div id="boot-screen" style="position:fixed;inset:0;z-index:9000;background:#F5F0E8;
+     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+     font-family:'Inter',system-ui,sans-serif">
+  <svg width="54" height="58" viewBox="0 0 64 68" aria-hidden="true">
+    <circle cx="30" cy="34" r="30" fill="none" stroke="#C8A96E" stroke-width="2.5"/>
+    <line x1="22" y1="50" x2="22" y2="16" stroke="#C8A96E" stroke-width="5" stroke-linecap="round"/>
+    <path d="M22 18 h9 a10 10 0 0 1 0 20 h-9" fill="none" stroke="#2D2D28" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="14" y1="50" x2="46" y2="50" stroke="#2D2D28" stroke-width="2.5" stroke-linecap="round"/>
+  </svg>
+  <div style="font-size:13px;color:#6B6B60;letter-spacing:.04em">Cargando Provatio…</div>
+  <div id="boot-lento" style="display:none;font-size:12px;color:#8A8A80;max-width:300px;text-align:center;line-height:1.5">
+    Está tardando más de lo normal. Si no abre, recargá la página.
+  </div>
+</div>
+
 <!-- AUTH SCREEN -->
 <div id="auth-screen">
   <!-- Lado izquierdo — propuesta de valor -->
@@ -2140,18 +2160,30 @@ function _pedirLimpiezaYRecargar(destino){
   location.replace(destino || (location.pathname + location.search));
 }
 
-try{
-  _limpiezaPendienteDeCache();
-  db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-    if(err.code === 'failed-precondition'){
+// ORDEN, NO SIMULTANEIDAD. Firestore solo acepta clearPersistence() y
+// enablePersistence() ANTES de que la instancia se use, y uno después del otro.
+// Lanzados a la vez se pisan: la limpieza todavía está abriendo la base cuando
+// la persistencia intenta configurarla, Firestore se queda esperando y la app
+// arranca con una pantalla en blanco hasta que algún timeout la destraba.
+//
+// Por eso esto es una secuencia con un resultado que se puede esperar. Todo el
+// que vaya a usar la base espera a _firestoreListo primero: no es una promesa
+// de que todo salió bien —puede fallar y no importa— sino de que ya terminó de
+// intentarse y la base quedó en condiciones de usarse.
+const _firestoreListo = (async () => {
+  await _limpiezaPendienteDeCache();
+  try{
+    await db.enablePersistence({ synchronizeTabs: true });
+  }catch(err){
+    if(err && err.code === 'failed-precondition'){
       console.warn('[Provatio] modo offline: no se pudo activar en esta pestaña (conflicto con otra pestaña)');
-    } else if(err.code === 'unimplemented'){
+    } else if(err && err.code === 'unimplemented'){
       console.warn('[Provatio] este navegador no soporta guardado local — sin señal, la app no va a poder cargar ni guardar');
     } else {
       console.warn('[Provatio] no se pudo activar el modo offline:', err);
     }
-  });
-}catch(e){ console.warn('[Provatio] enablePersistence no disponible en este SDK:', e); }
+  }
+})().catch(e => { console.warn('[Provatio] arranque de Firestore con problemas, sigo igual:', e); });
 
 // ── ESTADO GLOBAL ──
 let currentUser = null;
@@ -3977,6 +4009,10 @@ async function _recuperarEmpresaPerdida(uid){
 
 async function cargarUsuarioFirebase(firebaseUser){
   try {
+    // La primera lectura de la app no puede salir antes de que la base esté
+    // configurada: si sale antes, Firestore ya quedó "usado" y la persistencia
+    // no se puede activar más en esta sesión.
+    await _firestoreListo;
     window._miembroEmpresa = null;   // limpiar estado de cualquier sesión anterior
     const userDoc = await conTimeout(db.collection('usuarios').doc(firebaseUser.uid).get(), 20000, 'La carga del perfil');
     _registrarEnIndiceEmails(firebaseUser.uid, firebaseUser.email);   // alta o refresco del índice
@@ -4070,6 +4106,7 @@ async function cargarUsuarioFirebase(firebaseUser){
     // de Provatio — y desde las reglas v6 no hay forma de ir a mirar.
     if(tieneDatos) actualizarResumenEmpresa();
     _navegarAlArranque();
+    _ocultarArranque();   // ya hay algo dibujado: el arranque terminó
     if(tieneDatos){
       showToast('Datos cargados desde la nube', 'success');
     }
@@ -4370,7 +4407,22 @@ async function logout(){
   }
 }
 
+// Saca el cartel de arranque. Se llama desde TODOS los finales posibles del
+// arranque —entró, no hay sesión, hubo error— y además hay una red de
+// seguridad por tiempo: si algo no previsto no llama a esto, el cartel se va
+// igual y la persona ve la pantalla que haya, en vez de quedar en blanco.
+function _ocultarArranque(){
+  const b = document.getElementById('boot-screen');
+  if(b) b.remove();
+}
+setTimeout(() => {
+  const l = document.getElementById('boot-lento');
+  if(l) l.style.display = 'block';
+}, 6000);
+setTimeout(_ocultarArranque, 15000);
+
 function showAuthError(msg){
+  _ocultarArranque();
   const el = document.getElementById('auth-error');
   el.textContent = msg;
   el.style.display = 'block';
@@ -25228,6 +25280,7 @@ const _origNavigate = navigate;
 // ══════════════════════════════════════════════════════════════════════
 
 function mostrarPendienteActivacion(user){
+  _ocultarArranque();
   // Ocultar todo — verificar que los elementos existan
   const as = document.getElementById('auth-screen');
   const ap = document.getElementById('app');
@@ -25730,7 +25783,9 @@ document.addEventListener('keydown', e=>{
 // ── FIREBASE AUTH STATE ──
 // Detecta si ya hay una sesión activa al abrir la app
 auth.onAuthStateChanged(async firebaseUser => {
-  if(!firebaseUser || currentUser) return;
+  // Sin sesión, lo que corresponde es el login: ese es un final del arranque.
+  if(!firebaseUser){ _ocultarArranque(); return; }
+  if(currentUser) return;
   // ── SI CAMBIÓ LA PERSONA, SE ARRANCA LIMPIO ─────────────────────────────
   // Cinturón para el caso de arriba: aunque alguien haya cerrado sesión mal
   // (una pestaña vieja, un cierre a la fuerza, una versión anterior de la app),
