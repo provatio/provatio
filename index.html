@@ -2537,9 +2537,22 @@ function esDarkKitchen(){
 // (CASA MADRE — escalón 2 del crecimiento escalonado). Mismo circuito de
 // transferencia; la diferencia es solo el precio que cada uno decide cargar
 // (la casa madre suele transferir al costo; el CP con su margen).
+// "¿Esta operación produce para otras?" se podía contestar de DOS maneras y el
+// sistema solo miraba una. El tipo de operación decía "Centro de Producción",
+// pero también existía la modalidad "Centro de producción" en la pantalla de
+// Modalidades, tildable aparte. Quien tildaba la modalidad —que es el lugar
+// natural para buscarla, porque ahí está la explicación de qué hace— quedaba
+// con un CP que el sistema no reconocía como tal: sin catálogo, sin precio de
+// transferencia y sin la sección Cadena en el menú. Nada avisaba nada.
+//
+// Es el mismo error que ya nos mordió cuatro veces: una decisión tomada en un
+// lugar que no rige en los demás. Acá se arregla preguntando en los dos.
 function esCabeceraOp(op){
-  return !!op && (op.tipo==='Centro de Producción' || op.tipo==='centroProduccion'
-                  || op.proveeAlGrupo === true);
+  if(!op) return false;
+  if(op.tipo==='Centro de Producción' || op.tipo==='centroProduccion') return true;
+  if(op.proveeAlGrupo === true) return true;
+  // La modalidad tildada a mano vale igual que el tipo.
+  return Array.isArray(op.modalidades) && op.modalidades.indexOf('centroProduccion') >= 0;
 }
 // ¿Esta operación recibe mercadería de un Centro de Producción?
 // Solo tiene sentido en una cadena: un local suelto compra todo a proveedores y
@@ -23763,11 +23776,11 @@ async function guardarCadenaOperacion(){
     return;
   }
   const op = getOp(); if(!op) return;
-  const elTipo  = document.getElementById('cad-tipo');
   const elGrupo = document.getElementById('cad-grupo');
-  if(!elTipo || !elGrupo) return;
-  const nuevoTipo = elTipo.value;
-  const madreId   = elGrupo.value || null;
+  if(!elGrupo) return;
+  // El tipo ya no se elige acá: lo decide el tilde de "Centro de producción"
+  // de la lista de modalidades, que es un solo lugar y con su explicación.
+  const madreId = elGrupo.value || null;
 
   // Una operación no puede recibir de sí misma: sería un ciclo y el catálogo
   // se llamaría a sí mismo para costear.
@@ -23781,7 +23794,6 @@ async function guardarCadenaOperacion(){
     }
   }
 
-  op.tipo = nuevoTipo;
   op.grupoId = madreId;
   // Si la cabecera elegida es un local común, pasa a ser CASA MADRE.
   let _madreNueva = null;
@@ -23793,7 +23805,7 @@ async function guardarCadenaOperacion(){
     const eid = getEmpresaId();
     if(eid){
       await db.collection('empresas').doc(eid).collection('operaciones').doc(currentOpId)
-        .set({ tipo: nuevoTipo, grupoId: madreId }, {merge:true});
+        .set({ grupoId: madreId }, {merge:true});
       if(_madreNueva) await db.collection('empresas').doc(eid).collection('operaciones').doc(madreId)
         .set({ proveeAlGrupo: true }, {merge:true});
     }
@@ -23805,7 +23817,36 @@ async function guardarCadenaOperacion(){
   renderModalidades();
   showToast(_madreNueva
     ? '"'+_madreNueva.nombre+'" ahora es la cabecera de esta operación'
-    : 'Listo — si la hiciste centro de producción, el menú ya tiene la sección Cadena','success');
+    : (madreId ? 'Vínculo guardado' : 'Esta operación ya no recibe de ninguna otra'),'success');
+}
+
+// Lo que un centro de producción necesita tener a mano apenas se declara como
+// tal: a quién le despacha, y cómo sumar el primero.
+//
+// Va pegado al tilde de "Centro de producción" y no en otra pantalla, porque es
+// ahí donde la persona está parada cuando toma la decisión. Un botón que existe
+// pero vive tres pantallas más allá es, en la práctica, un botón que no existe
+// — ya nos pasó tres veces con esto mismo.
+function _htmlLocalesDelCP(op){
+  if(!puedeEstructurarOperaciones()) return '';
+  const hijos = Object.entries(demoData.operaciones||{}).filter(([k,v])=>v.grupoId===currentOpId);
+  // onclick con stopPropagation: esto vive adentro de la etiqueta del tilde, y sin eso un
+  // clic en el botón destildaría la modalidad al mismo tiempo que abre el modal.
+  const btn = '<button class="btn btn-secondary btn-sm" style="margin-top:4px"'
+    + ' onclick="event.preventDefault();event.stopPropagation();modalNuevaOperacion()">'
+    + '+ Crear un local que reciba de acá</button>';
+  if(!hijos.length){
+    return '<div style="margin-top:10px;padding:10px 12px;background:var(--blanco,#fff);'
+      + 'border:1px solid var(--crema-2,#E8E0D4);border-radius:8px;font-size:12px;color:var(--gris-1,#555);line-height:1.5">'
+      + 'Todavía no hay locales que reciban de esta cocina. '
+      + 'Cuando crees uno, elegí <strong>' + esc(op.nombre||'esta operación') + '</strong> en “Pertenece a”.'
+      + '<div>' + btn + '</div></div>';
+  }
+  return '<div style="margin-top:10px;padding:10px 12px;background:var(--blanco,#fff);'
+    + 'border:1px solid var(--crema-2,#E8E0D4);border-radius:8px;font-size:12px;color:var(--gris-1,#555);line-height:1.5">'
+    + '<strong>Le despacha a ' + hijos.length + ' local' + (hijos.length>1?'es':'') + ':</strong> '
+    + hijos.map(([k,v])=>esc(v.nombre||'Sin nombre')).join(' · ')
+    + '<div>' + btn + '</div></div>';
 }
 
 function renderModalidades(){
@@ -23825,6 +23866,7 @@ function renderModalidades(){
           <div style="font-weight:600;font-size:15px;margin-bottom:3px">${m.icono} ${m.label}</div>
           <div style="font-size:13px;color:var(--gris-1,#555);line-height:1.45">${m.desc}</div>
           <div style="font-size:12px;color:var(--gris-2,#888);margin-top:5px"><em>${m.ejemplo}</em></div>
+          ${(clave==='centroProduccion' && on) ? _htmlLocalesDelCP(op) : ''}
         </div>
       </label>`;
   };
@@ -23945,16 +23987,10 @@ function renderModalidades(){
         El local los recibe como insumos ya costeados y no vuelve a cargar esas recetas.
       </p>
 
-      <div class="form-group">
-        <label>Qué es esta operación</label>
-        <select id="cad-tipo" style="width:100%;max-width:420px">
-          ${['Restaurante','Hotel','Catering','Viandas','Pastelería','Comedor empresarial','Dark Kitchen','Centro de Producción','Otro']
-            .map(t=>`<option value="${esc(t)}"${(op.tipo===t || (t==='Centro de Producción' && _esCPahora))?' selected':''}>${esc(t)}</option>`).join('')}
-        </select>
-        <div style="font-size:12px;color:var(--gris-2,#888);margin-top:6px">
-          Elegí <strong>Centro de Producción</strong> si esta cocina produce para otros locales.
-          ${_esCPahora ? 'Hoy lo es.' : 'Un local común también puede proveerle a otro — se convierte en casa madre solo, cuando lo vinculás.'}
-        </div>
+      <div style="font-size:13px;color:var(--gris-1,#555);background:var(--crema,#F5F0E8);border-radius:8px;padding:11px 14px;margin-bottom:14px">
+        ${_esCPahora
+          ? '<strong>Esta operación es un centro de producción.</strong> Tiene catálogo y precio de transferencia, y los locales de abajo le compran.'
+          : 'Esta operación <strong>no</strong> es un centro de producción. Si produce para otros locales, tildá <strong>Centro de producción</strong> en la lista de arriba y guardá.'}
       </div>
 
       <div class="form-group">
@@ -24027,7 +24063,13 @@ async function guardarModalidades(){
   const _chkEq = document.getElementById('mod-equipos');
   if(_chkEq) op.equiposCoccion = _chkEq.checked;
   await guardarEnFirestore();
-  showToast('Modalidades guardadas');
+  // Tildar "Centro de producción" cambia el menú entero: aparece la sección
+  // Cadena, el catálogo y el precio de transferencia. Conviene decirlo, si no
+  // parece que guardar no hizo nada.
+  const _ahoraEsCP = elegidas.indexOf('centroProduccion') >= 0;
+  showToast(_ahoraEsCP
+    ? 'Guardado — esta operación es centro de producción: ya tenés la sección Cadena en el menú'
+    : 'Modalidades guardadas');
   buildSidebar(currentUser?.rol||'cliente');
   navigate('modalidades');
 }
