@@ -4228,33 +4228,59 @@ async function completarRegistro(email, pass){
 // Al lado había otra salida —el cierre por inactividad— que sí hacía lo
 // correcto: guardar y recargar. Dos caminos para lo mismo, uno bien y otro mal;
 // el de siempre. Ahora los dos hacen lo mismo.
+// Cada paso de acá adentro estaba envuelto en try/catch, que cubre el caso de
+// que FALLE. Pero ninguno cubría el caso de que NO TERMINE NUNCA, y ese es el
+// que pasa de verdad: clearPersistence() se queda esperando cuando hay otra
+// pestaña abierta con la app, o cuando el navegador no suelta la base. Un await
+// sobre una promesa que no resuelve no tira error y no se cae: se queda ahí.
+// El resultado para el que aprieta el botón es que no pasa nada. Ni cartel, ni
+// error, ni sesión cerrada. Tiene que cerrar la app a mano.
+//
+// La regla: salir SIEMPRE tiene que terminar. Guardar, cerrar en Firebase y
+// limpiar la caché son todos deseables, ninguno imprescindible. Por eso cada
+// uno tiene tiempo máximo, y la recarga —que es lo que de verdad cierra la
+// sesión de cara al usuario— va en un finally del que no se escapa nadie.
 async function logout(){
-  // 1. No perder trabajo cargado.
-  try{
-    if(currentUser && currentOpId) await guardarEnFirestore();
-  }catch(e){ console.warn('[Provatio] no se pudo guardar antes de cerrar sesión', e); }
+  // Corre la promesa, pero no la espera para siempre: a los ms indicados sigue
+  // de largo y deja el motivo en la consola.
+  const conTope = (promesa, ms, que) => Promise.race([
+    Promise.resolve().then(() => promesa)
+      .catch(e => { console.warn('[Provatio] ' + que + ': falló, sigo igual', e); }),
+    new Promise(r => setTimeout(() => {
+      console.warn('[Provatio] ' + que + ': tardó más de ' + ms + 'ms, sigo igual');
+      r();
+    }, ms)),
+  ]);
 
-  // 2. Cerrar en Firebase.
-  try{ await auth.signOut(); }catch(e){ console.warn('[Provatio] signOut', e); }
-
-  // 3. Borrar la caché local de Firestore. Esa caché NO está separada por
-  //    usuario: si no se limpia, la próxima persona que entre en esta máquina
-  //    puede recibir documentos que leyó la anterior. Firebase recomienda
-  //    hacerlo justamente al cerrar sesión.
   try{
-    await db.terminate();
-    await db.clearPersistence();
-  }catch(e){
-    // Falla si quedan otras pestañas abiertas con la app. No es motivo para
-    // dejar la sesión a medio cerrar: se recarga igual y se avisa por consola.
-    console.warn('[Provatio] no se pudo limpiar la caché local (¿otra pestaña abierta?)', e);
+    // 1. No perder trabajo cargado.
+    if(currentUser && currentOpId){
+      await conTope(guardarEnFirestore(), 8000, 'guardar antes de salir');
+    }
+
+    // 2. Cerrar en Firebase.
+    await conTope(auth.signOut(), 6000, 'cerrar sesión en Firebase');
+
+    // 3. Borrar la caché local de Firestore. Esa caché NO está separada por
+    //    usuario: si no se limpia, la próxima persona que entre en esta máquina
+    //    puede recibir documentos que leyó la anterior. Firebase recomienda
+    //    hacerlo justamente al cerrar sesión.
+    //    Es el paso que se cuelga, y el menos grave de los tres: la recarga de
+    //    abajo igual se lleva puesta toda la memoria.
+    await conTope(
+      Promise.resolve().then(() => db.terminate()).then(() => db.clearPersistence()),
+      5000, 'limpiar la caché local'
+    );
+  } catch(e){
+    console.warn('[Provatio] el cierre de sesión tuvo problemas, salgo igual', e);
+  } finally {
+    // 4. Recargar SIN el hash: si quedara, la próxima persona entraría a la
+    //    pantalla donde estaba trabajando la anterior. Y es la única forma de
+    //    garantizar que no quede nada en memoria: ni operaciones, ni
+    //    ingredientes, ni la operación activa.
+    //    Va en finally a propósito: pase lo que pase arriba, de acá se sale.
+    location.replace(location.pathname + location.search);
   }
-
-  // 4. Recargar SIN el hash: si quedara, la próxima persona entraría a la
-  //    pantalla donde estaba trabajando la anterior. Y es la única forma de
-  //    garantizar que no quede nada en memoria: ni operaciones, ni
-  //    ingredientes, ni la operación activa.
-  location.replace(location.pathname + location.search);
 }
 
 function showAuthError(msg){
