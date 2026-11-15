@@ -1069,6 +1069,13 @@ input:focus, select:focus, textarea:focus {
 
 <!-- AUTH SCREEN -->
 <div id="auth-screen">
+<!-- El sello también acá, ADENTRO del login: en esa pantalla no hay menú
+     lateral, y es justo cuando más falta hace saber qué versión corre, porque
+     es cuando no se puede entrar. Adentro y no afuera para que se vaya junto
+     con el login y no quede flotando encima del menú. -->
+<div class="sello-version" style="position:absolute;left:14px;bottom:10px;z-index:30;
+     font-size:10px;letter-spacing:.3px;color:#9A9A90;font-family:'Inter',system-ui,sans-serif;
+     pointer-events:none"></div>
   <!-- Lado izquierdo — propuesta de valor -->
   <div class="auth-left">
     <div class="auth-bg-img"></div>
@@ -1201,7 +1208,7 @@ input:focus, select:focus, textarea:focus {
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px" title="1978 · 1986 · 2022 · 15 jul 2026 — Las Malvinas son argentinas">
         <svg viewBox="0 0 250 42" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:230px;height:auto" role="img"><title>Argentina · 1978 1986 2022 · Malvinas 15 jul 2026 — Las Malvinas son argentinas</title><defs><linearGradient id="orop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5D77A"/><stop offset="0.55" stop-color="#D4A017"/><stop offset="1" stop-color="#8A6A10"/></linearGradient></defs><g transform="translate(4,6)"><rect width="40" height="27" rx="2" fill="#74ACDF"/><rect y="9" width="40" height="9" fill="#fff"/><line x1="24.0" y1="13.5" x2="26.0" y2="13.5" stroke="#D4A017" stroke-width="0.9"/><line x1="23.5" y1="15.5" x2="25.2" y2="16.5" stroke="#D4A017" stroke-width="0.9"/><line x1="22.0" y1="17.0" x2="23.0" y2="18.7" stroke="#D4A017" stroke-width="0.9"/><line x1="20.0" y1="17.5" x2="20.0" y2="19.5" stroke="#D4A017" stroke-width="0.9"/><line x1="18.0" y1="17.0" x2="17.0" y2="18.7" stroke="#D4A017" stroke-width="0.9"/><line x1="16.5" y1="15.5" x2="14.8" y2="16.5" stroke="#D4A017" stroke-width="0.9"/><line x1="16.0" y1="13.5" x2="14.0" y2="13.5" stroke="#D4A017" stroke-width="0.9"/><line x1="16.5" y1="11.5" x2="14.8" y2="10.5" stroke="#D4A017" stroke-width="0.9"/><line x1="18.0" y1="10.0" x2="17.0" y2="8.3" stroke="#D4A017" stroke-width="0.9"/><line x1="20.0" y1="9.5" x2="20.0" y2="7.5" stroke="#D4A017" stroke-width="0.9"/><line x1="22.0" y1="10.0" x2="23.0" y2="8.3" stroke="#D4A017" stroke-width="0.9"/><line x1="23.5" y1="11.5" x2="25.2" y2="10.5" stroke="#D4A017" stroke-width="0.9"/><circle cx="20" cy="13.5" r="4" fill="#F6B40E" stroke="#D4A017" stroke-width="0.4"/></g><line x1="52" y1="6" x2="52" y2="27" stroke="#C9A227" stroke-width="0.5" opacity="0.4"/><g transform="translate(66,13) scale(0.4)"><path d="M0,-22 L6.5,-6.8 L22,-6.8 L9.5,3 L14,18 L0,8.5 L-14,18 L-9.5,3 L-22,-6.8 L-6.5,-6.8 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/></g><g transform="translate(85,13) scale(0.4)"><path d="M0,-22 L6.5,-6.8 L22,-6.8 L9.5,3 L14,18 L0,8.5 L-14,18 L-9.5,3 L-22,-6.8 L-6.5,-6.8 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/></g><g transform="translate(104,13) scale(0.4)"><path d="M0,-22 L6.5,-6.8 L22,-6.8 L9.5,3 L14,18 L0,8.5 L-14,18 L-9.5,3 L-22,-6.8 L-6.5,-6.8 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/></g><g transform="translate(120,4) scale(0.5)"><path d="M44.2,3.4 L38.4,3.0 L38.5,7.1 L37.0,1.8 L29.0,0.0 L28.1,8.9 L18.5,17.3 L23.5,21.7 L22.5,17.5 L28.3,19.7 L26.5,14.5 L33.9,17.7 L29.1,11.0 L36.2,13.4 L44.1,9.8 L40.0,5.9 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/><path d="M0.5,16.2 L5.9,19.8 L25.7,3.2 L12.6,5.1 L4.7,1.7 L13.6,9.1 L5.2,7.1 L8.6,10.4 L6.0,13.4 L9.2,13.6 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/></g><text x="180" y="17" text-anchor="middle" fill="#C9A227" style="font-family:Georgia,serif;font-weight:700;font-size:11px;letter-spacing:0.3px">15 jul 2026</text></svg>
         <span style="font-size:9px;letter-spacing:.4px;color:#C9A227;opacity:.85">Hecho en Argentina 🇦🇷</span>
-        <span id="sello-version" style="font-size:9px;letter-spacing:.3px;color:#C9A227;opacity:.55"></span>
+        <span class="sello-version" style="font-size:9px;letter-spacing:.3px;color:#C9A227;opacity:.55"></span>
       </div>
       </div>
     </div>
@@ -1910,7 +1917,9 @@ async function guardarEnFirestore(opts){
     console.error('Error guardando:', err);
     // Un error SÍ se avisa siempre, incluso en autoguardado: no se puede dejar
     // creer que quedó guardado algo que no subió.
-    showToast(`NO se guardó${err.code?' ['+err.code+']':''}: ${err.message}. Reintentá (los datos siguen en pantalla).`, 'error');
+    showToast(esRechazoDePermisos(err)
+      ? 'NO se guardó. ' + explicarRechazo(err)
+      : `NO se guardó${err.code?' ['+err.code+']':''}: ${err.message}. Reintentá (los datos siguen en pantalla).`, 'error');
     return false;
   } finally {
     window._guardando = false;      // liberar el lock pase lo que pase
@@ -2042,7 +2051,9 @@ async function cargarDesdeFirestore(uid){
 
     if(!Object.keys(demoData.operaciones).length){
       hideLoading();
-      showToast('Todavía no tenés locales asignados. Pedile al administrador que te habilite uno.', 'error');
+      showToast(esAdminProvatio()
+        ? 'Esta empresa no tiene operaciones, o el dueño no habilitó el soporte de Provatio.'
+        : 'Todavía no tenés locales asignados. Pedile al administrador que te habilite uno.', 'error');
       navigate('dashboard');
       return false;
     }
@@ -2197,6 +2208,7 @@ const _CLAVE_LIMPIAR = 'provatio_limpiar_cache';
 // tardar, no hay que adivinar: el paso que quedó escrito en la pantalla de
 // arranque es el que se trabó.
 // ═══════════════════════════════════════════════════════════════════════
+const _CLAVE_SIN_PERSISTENCIA = 'provatio_sin_persistencia';
 const _T0_ARRANQUE = Date.now();
 window._pasosArranque = [];
 function _paso(nombre){
@@ -2229,9 +2241,19 @@ async function _limpiezaPendienteDeCache(){
   _paso('limpiando caché local');
   // Con tope: con otra pestaña abierta esto puede no contestar nunca, y era
   // uno de los lugares donde el arranque se quedaba colgado.
-  const limpio = await _conTope(db.clearPersistence().then(()=>true), 4000, 'limpiar la caché local');
-  if(limpio === true){
+  let estado = 'tope';
+  await _conTope(db.clearPersistence().then(()=>{ estado='ok'; }, ()=>{ estado='falla'; }),
+                 4000, 'limpiar la caché local');
+  if(estado === 'ok'){
     console.warn('[Provatio] caché local limpiada — recargando con la base en cero');
+    location.replace(location.pathname + location.search);
+    return true;
+  }
+  if(estado === 'tope'){
+    // No contestó. Igual que arriba: no se sigue con la base a medio abrir.
+    // La nota ya se borró, así que la recarga no vuelve a intentar limpiar.
+    try{ sessionStorage.setItem(_CLAVE_SIN_PERSISTENCIA, '1'); }catch(_){}
+    console.warn('[Provatio] la limpieza no contestó — recargando para entrar sin modo offline');
     location.replace(location.pathname + location.search);
     return true;
   }
@@ -2262,12 +2284,27 @@ const _firestoreListo = (async () => {
   // La página se está yendo: no arrancar nada más ni dejar que nadie use la
   // base. Una promesa que no resuelve deja todo quieto hasta la recarga.
   if(seVaARecargar) return new Promise(() => {});
+  // Si en el intento anterior el modo offline no contestó, en esta carga ni se
+  // intenta. Así la segunda vuelta entra derecho.
+  let _saltear = false;
+  try{ _saltear = sessionStorage.getItem(_CLAVE_SIN_PERSISTENCIA) === '1'; }catch(_){}
+  if(_saltear){ _paso('entrando sin modo offline'); return; }
+
   _paso('activando el modo offline');
   try{
-    // Tope de 3 segundos: el modo offline es una comodidad, no un requisito.
-    // Si no se activa, la app funciona igual mientras haya señal. Lo que NO
-    // puede pasar es que la persona espere mirando una pantalla vacía.
-    await _conTope(db.enablePersistence({ synchronizeTabs: true }), 3000, 'activar el modo offline');
+    // Tope de 3 segundos. OJO con lo que se hace al vencer: seguir de largo
+    // dejaría a Firestore a medio configurar —la instancia ya arrancó pero la
+    // persistencia sigue en el aire— y en ese estado los guardados se vuelven
+    // impredecibles. Por eso al vencer NO se sigue: se recarga una sola vez y
+    // la carga siguiente entra sin modo offline. Acotado y sin estados raros.
+    const r = await _conTope(db.enablePersistence({ synchronizeTabs: true })
+                               .then(()=>'ok', e=>{ throw e; }), 3000, 'activar el modo offline');
+    if(r !== 'ok'){
+      try{ sessionStorage.setItem(_CLAVE_SIN_PERSISTENCIA, '1'); }catch(_){}
+      console.warn('[Provatio] el modo offline no contestó — recargando para entrar sin él');
+      location.replace(location.pathname + location.search);
+      return new Promise(() => {});
+    }
   }catch(err){
     if(err && err.code === 'failed-precondition'){
       console.warn('[Provatio] modo offline: no se pudo activar en esta pestaña (conflicto con otra pestaña)');
@@ -2426,10 +2463,15 @@ function opActivaId(){
 // con cada entrega. Si el número que figura no es el de la última entrega,
 // lo que está abierto es la versión vieja y no hay nada que depurar.
 // ═══════════════════════════════════════════════════════════════════════
-const VERSION_APP = '15/11 11:40';
+const VERSION_APP = '15/11 13:05';
+// Se pinta en TODOS los lugares donde está puesto, no en uno.
+// El primero vivía solo en el menú lateral, que no existe en la pantalla de
+// login: justo cuando más falta hace saber qué versión se está corriendo
+// —porque no se puede entrar— el sello era invisible.
 function pintarSelloVersion(){
-  const el = document.getElementById('sello-version');
-  if(el) el.textContent = 'versión ' + VERSION_APP;
+  document.querySelectorAll('.sello-version').forEach(el => {
+    el.textContent = 'versión ' + VERSION_APP;
+  });
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pintarSelloVersion);
 else pintarSelloVersion();
@@ -2533,10 +2575,45 @@ function verDinero(){ return tieneCap('verDinero'); }
 function verMargenCP(){ const r = getMiRol(); return r === 'dueno' || r === 'cp'; }
 
 // Operaciones que el usuario tiene permitidas (lista vacía en dueño = todas)
+// ═══════════════════════════════════════════════════════════════════════
+// CUANDO FIRESTORE DICE QUE NO, HAY QUE DECIR POR QUÉ
+//
+// "Missing or insufficient permissions" no le sirve a nadie. Los motivos
+// reales son pocos y se distinguen por quién sos, así que se nombran. Sin
+// esto, un rechazo de las reglas se vive como "la app no guarda nada" y no
+// hay forma de saber que el problema está del lado de los permisos.
+// ═══════════════════════════════════════════════════════════════════════
+function esRechazoDePermisos(err){
+  const c = (err && (err.code || '')) + '';
+  const m = (err && (err.message || '')) + '';
+  return c === 'permission-denied' || /insufficient permissions|permission-denied/i.test(m);
+}
+function explicarRechazo(err){
+  if(!esRechazoDePermisos(err)) return (err && err.message) || 'error desconocido';
+  if(esAdminProvatio() && !esDueno()){
+    return 'Firestore rechazó la operación. Entraste como equipo de Provatio a la empresa de un cliente, '
+         + 'y el dueño no tiene habilitado el soporte. Sin eso no se puede ver ni tocar nada de esa empresa. '
+         + 'Entrá con la cuenta dueña, o pedile que active el soporte de Provatio.';
+  }
+  if(!esDueno()){
+    return 'Firestore rechazó la operación. Tu usuario no es dueño de esta empresa y esta acción es solo del dueño '
+         + '(crear, borrar o reestructurar operaciones). Entrá con la cuenta dueña.';
+  }
+  return 'Firestore rechazó la operación aunque figurás como dueño. Suele ser la ficha de miembro desincronizada: '
+       + 'en empresas/<tu empresa>/miembros/<tu usuario> tienen que estar rol:"dueno" y activo:true.';
+}
+
 function misOperacionesPermitidas(){
   // Sin empresa (modelo anterior): el dueño de la cuenta ve todo lo suyo
   if(!getEmpresaId()) return null;               // null = sin restricción
   if(esDueno()) return null;
+  // El admin de Provatio NO es miembro de la empresa del cliente: no tiene
+  // ficha ni operaciones asignadas. Con la lista vacía la app le mostraba
+  // "todavía no tenés locales asignados" y cero operaciones, aunque la empresa
+  // tuviera veinte. Las reglas sí lo dejan listar —siempre que el dueño tenga
+  // el soporte habilitado—, así que acá tiene que pedir todo. Si el dueño no
+  // lo habilitó, Firestore rechaza el listado y la app lo explica (más abajo).
+  if(esAdminProvatio()) return null;
   const l = (currentUser && currentUser.operacionesAsignadas) || [];
   return Array.isArray(l) ? l : [];
 }
@@ -9232,7 +9309,7 @@ async function actualizarFotoFicha(input, recetaId){
     mostrarProgreso('Guardando foto…');
     const dataUrl = await _comprimirImagenADataURL(file);
     const r = demoData.recetas.find(x=>x.id===recetaId);
-    if(r){ r.fotoData = dataUrl; await guardarEnFirestore(); }
+    if(r){ r.fotoData = dataUrl; if(await guardarEnFirestore() === false) return; }
     ocultarProgreso();
     showToast('Foto guardada','success');
     renderFichaPlato(recetaId);
@@ -9246,7 +9323,7 @@ async function actualizarFotoFicha(input, recetaId){
 async function quitarFotoFicha(recetaId){
   if(!await pedirConfirmacionSimple('¿Sacar la foto de este plato?')) return;
   const r = demoData.recetas.find(x=>x.id===recetaId);
-  if(r){ delete r.fotoData; await guardarEnFirestore(); }
+  if(r){ delete r.fotoData; if(await guardarEnFirestore() === false) return; }
   showToast('Foto sacada','success');
   renderFichaPlato(recetaId);
 }
@@ -14286,7 +14363,8 @@ async function borrarDesperdicio(regId){
   if(!await pedirConfirmacionSimple('¿Borrar este registro de desperdicio?')) return;
   op.desperdiciosLog = (op.desperdiciosLog||[]).filter(r=>r.id!==regId);
   op.desperdicios = (op.desperdicios||[]).filter(d=>d.regId!==regId);
-  await guardarEnFirestore();
+  // Si no se guardó, no se canta victoria: guardarEnFirestore ya explicó por qué.
+  if(await guardarEnFirestore() === false){ renderDesperdicio(); return; }
   showToast('Registro borrado','success');
   renderDesperdicio();
 }
@@ -21435,11 +21513,17 @@ window.guardarDatosCliente = function(opId){
   }, 100);
 }
 
-function modalNuevaOperacion(){
+// grupoPorDefecto: de qué operación recibe el local que se va a crear.
+// Cuando se entra por el botón "Crear un local que reciba de acá", ese botón
+// YA dijo de quién recibe: volver a preguntarlo —y peor, arrancar en
+// "independiente"— hacía que el local naciera suelto y el dueño nunca
+// consiguiera su operación dependiente, aunque todo se guardara bien.
+function modalNuevaOperacion(grupoPorDefecto){
   if(!puedeEstructurarOperaciones()){
     showToast('Solo el dueño puede crear operaciones nuevas','error');
     return;
   }
+  const _grupoFijo = (grupoPorDefecto && demoData.operaciones[grupoPorDefecto]) ? grupoPorDefecto : '';
   openModal(`
     <div class="modal-header">
       <span class="modal-title">Nueva operación / cliente</span>
@@ -21465,8 +21549,8 @@ function modalNuevaOperacion(){
       <div class="form-group" id="no-grupo-wrap">
         <label>Pertenece a (recibe productos de otro local o CP)</label>
         <select id="no-grupo">
-          <option value="">— Operación independiente —</option>
-          ${Object.entries(demoData.operaciones||{}).map(([k,v])=>`<option value="${k}">${esc(v.nombre)}${esCabeceraOp(v)?'':' (se convierte en casa madre)'}</option>`).join('')}
+          <option value="" ${_grupoFijo?'':'selected'}>— Operación independiente —</option>
+          ${Object.entries(demoData.operaciones||{}).map(([k,v])=>`<option value="${k}" ${k===_grupoFijo?'selected':''}>${esc(v.nombre)}${esCabeceraOp(v)?'':' (se convierte en casa madre)'}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -21565,7 +21649,7 @@ async function guardarNuevaOperacion(){
       // vez de dejar una que se ve en pantalla y no está en ningún lado.
       delete demoData.operaciones[id];
       currentOpId = null;
-      showToast('No se pudo crear la operación: '+err.message,'error');
+      showToast('No se pudo crear la operación: ' + explicarRechazo(err), 'error');
       _refrescarTrasCambioDeOperaciones();
       return;
     }
@@ -23915,13 +23999,14 @@ function _htmlLocalesDelCP(op){
   // onclick con stopPropagation: esto vive adentro de la etiqueta del tilde, y sin eso un
   // clic en el botón destildaría la modalidad al mismo tiempo que abre el modal.
   const btn = '<button class="btn btn-secondary btn-sm" style="margin-top:4px"'
-    + ' onclick="event.preventDefault();event.stopPropagation();modalNuevaOperacion()">'
+    + ' onclick="event.preventDefault();event.stopPropagation();'
+    + "modalNuevaOperacion('" + currentOpId + "')\">"
     + '+ Crear un local que reciba de acá</button>';
   if(!hijos.length){
     return '<div style="margin-top:10px;padding:10px 12px;background:var(--blanco,#fff);'
       + 'border:1px solid var(--crema-2,#E8E0D4);border-radius:8px;font-size:12px;color:var(--gris-1,#555);line-height:1.5">'
       + 'Todavía no hay locales que reciban de esta cocina. '
-      + 'Cuando crees uno, elegí <strong>' + esc(op.nombre||'esta operación') + '</strong> en “Pertenece a”.'
+      + 'El botón lo crea ya colgado de <strong>' + esc(op.nombre||'esta operación') + '</strong>.'
       + '<div>' + btn + '</div></div>';
   }
   return '<div style="margin-top:10px;padding:10px 12px;background:var(--blanco,#fff);'
@@ -24146,7 +24231,11 @@ async function guardarModalidades(){
   if(_chkMO) op.costeoManoObra = _chkMO.checked;
   const _chkEq = document.getElementById('mod-equipos');
   if(_chkEq) op.equiposCoccion = _chkEq.checked;
-  await guardarEnFirestore();
+  // NO se anuncia "guardado" sin mirar si se guardó. Acá estaba el peor de los
+  // engaños: si Firestore rechazaba la escritura, la pantalla igual decía
+  // "Guardado", el tilde quedaba puesto en memoria, y al recargar no estaba.
+  // Eso es lo que se vive como "la app no guarda nada".
+  if(await guardarEnFirestore() === false) return;
   // Tildar "Centro de producción" cambia el menú entero: aparece la sección
   // Cadena, el catálogo y el precio de transferencia. Conviene decirlo, si no
   // parece que guardar no hizo nada.
@@ -24161,7 +24250,7 @@ async function guardarModalidades(){
 async function restablecerModalidades(){
   const op = getOp(); if(!op) return;
   delete op.modalidades;
-  await guardarEnFirestore();
+  if(await guardarEnFirestore() === false) return;
   showToast('Vuelto a lo que corresponde por el tipo de operación');
   buildSidebar(currentUser?.rol||'cliente');
   navigate('modalidades');
