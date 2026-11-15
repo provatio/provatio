@@ -1195,6 +1195,7 @@ input:focus, select:focus, textarea:focus {
         <div style="display:flex;flex-direction:column;align-items:center;gap:4px" title="1978 · 1986 · 2022 · 15 jul 2026 — Las Malvinas son argentinas">
         <svg viewBox="0 0 250 42" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:230px;height:auto" role="img"><title>Argentina · 1978 1986 2022 · Malvinas 15 jul 2026 — Las Malvinas son argentinas</title><defs><linearGradient id="orop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5D77A"/><stop offset="0.55" stop-color="#D4A017"/><stop offset="1" stop-color="#8A6A10"/></linearGradient></defs><g transform="translate(4,6)"><rect width="40" height="27" rx="2" fill="#74ACDF"/><rect y="9" width="40" height="9" fill="#fff"/><line x1="24.0" y1="13.5" x2="26.0" y2="13.5" stroke="#D4A017" stroke-width="0.9"/><line x1="23.5" y1="15.5" x2="25.2" y2="16.5" stroke="#D4A017" stroke-width="0.9"/><line x1="22.0" y1="17.0" x2="23.0" y2="18.7" stroke="#D4A017" stroke-width="0.9"/><line x1="20.0" y1="17.5" x2="20.0" y2="19.5" stroke="#D4A017" stroke-width="0.9"/><line x1="18.0" y1="17.0" x2="17.0" y2="18.7" stroke="#D4A017" stroke-width="0.9"/><line x1="16.5" y1="15.5" x2="14.8" y2="16.5" stroke="#D4A017" stroke-width="0.9"/><line x1="16.0" y1="13.5" x2="14.0" y2="13.5" stroke="#D4A017" stroke-width="0.9"/><line x1="16.5" y1="11.5" x2="14.8" y2="10.5" stroke="#D4A017" stroke-width="0.9"/><line x1="18.0" y1="10.0" x2="17.0" y2="8.3" stroke="#D4A017" stroke-width="0.9"/><line x1="20.0" y1="9.5" x2="20.0" y2="7.5" stroke="#D4A017" stroke-width="0.9"/><line x1="22.0" y1="10.0" x2="23.0" y2="8.3" stroke="#D4A017" stroke-width="0.9"/><line x1="23.5" y1="11.5" x2="25.2" y2="10.5" stroke="#D4A017" stroke-width="0.9"/><circle cx="20" cy="13.5" r="4" fill="#F6B40E" stroke="#D4A017" stroke-width="0.4"/></g><line x1="52" y1="6" x2="52" y2="27" stroke="#C9A227" stroke-width="0.5" opacity="0.4"/><g transform="translate(66,13) scale(0.4)"><path d="M0,-22 L6.5,-6.8 L22,-6.8 L9.5,3 L14,18 L0,8.5 L-14,18 L-9.5,3 L-22,-6.8 L-6.5,-6.8 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/></g><g transform="translate(85,13) scale(0.4)"><path d="M0,-22 L6.5,-6.8 L22,-6.8 L9.5,3 L14,18 L0,8.5 L-14,18 L-9.5,3 L-22,-6.8 L-6.5,-6.8 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/></g><g transform="translate(104,13) scale(0.4)"><path d="M0,-22 L6.5,-6.8 L22,-6.8 L9.5,3 L14,18 L0,8.5 L-14,18 L-9.5,3 L-22,-6.8 L-6.5,-6.8 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/></g><g transform="translate(120,4) scale(0.5)"><path d="M44.2,3.4 L38.4,3.0 L38.5,7.1 L37.0,1.8 L29.0,0.0 L28.1,8.9 L18.5,17.3 L23.5,21.7 L22.5,17.5 L28.3,19.7 L26.5,14.5 L33.9,17.7 L29.1,11.0 L36.2,13.4 L44.1,9.8 L40.0,5.9 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/><path d="M0.5,16.2 L5.9,19.8 L25.7,3.2 L12.6,5.1 L4.7,1.7 L13.6,9.1 L5.2,7.1 L8.6,10.4 L6.0,13.4 L9.2,13.6 Z" fill="url(#orop)" stroke="#7A5C0E" stroke-width="0.7"/></g><text x="180" y="17" text-anchor="middle" fill="#C9A227" style="font-family:Georgia,serif;font-weight:700;font-size:11px;letter-spacing:0.3px">15 jul 2026</text></svg>
         <span style="font-size:9px;letter-spacing:.4px;color:#C9A227;opacity:.85">Hecho en Argentina 🇦🇷</span>
+        <span id="sello-version" style="font-size:9px;letter-spacing:.3px;color:#C9A227;opacity:.55"></span>
       </div>
       </div>
     </div>
@@ -2369,6 +2370,22 @@ function opActivaId(){
 // (distinto de ser "dueño" de una empresa cliente). Puede ver y activar
 // los registros pendientes de onboarding.
 // ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// EL SELLO DE VERSIÓN
+// Se perdieron horas sin saber si la pantalla que se estaba mirando tenía
+// el arreglo adentro o era la copia vieja del navegador. Esto lo contesta
+// de un vistazo: abajo a la izquierda, siempre a la vista. Se sube a mano
+// con cada entrega. Si el número que figura no es el de la última entrega,
+// lo que está abierto es la versión vieja y no hay nada que depurar.
+// ═══════════════════════════════════════════════════════════════════════
+const VERSION_APP = '15/11 11:20';
+function pintarSelloVersion(){
+  const el = document.getElementById('sello-version');
+  if(el) el.textContent = 'versión ' + VERSION_APP;
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', pintarSelloVersion);
+else pintarSelloVersion();
+
 const ADMINS_PROVATIO = ['elementosfood@gmail.com'];
 function esAdminProvatio(){
   return currentUser && ADMINS_PROVATIO.includes((currentUser.email||'').toLowerCase());
@@ -23827,6 +23844,18 @@ async function guardarCadenaOperacion(){
 // ahí donde la persona está parada cuando toma la decisión. Un botón que existe
 // pero vive tres pantallas más allá es, en la práctica, un botón que no existe
 // — ya nos pasó tres veces con esto mismo.
+// El bloque de locales tiene que aparecer APENAS se tilda, no recién después
+// de guardar. Antes se dibujaba sólo si la modalidad ya estaba guardada: el
+// usuario tildaba, no pasaba nada, y parecía que la función no existía.
+// No se vuelve a dibujar la pantalla entera a propósito: eso perdería los
+// otros tildes que todavía no se guardaron.
+function _toggleLocalesCP(){
+  const chk = document.querySelector('.mod-chk[value="centroProduccion"]');
+  const box = document.getElementById('bloque-locales-cp');
+  if(!chk || !box) return;
+  box.style.display = chk.checked ? 'block' : 'none';
+}
+
 function _htmlLocalesDelCP(op){
   if(!puedeEstructurarOperaciones()) return '';
   const hijos = Object.entries(demoData.operaciones||{}).filter(([k,v])=>v.grupoId===currentOpId);
@@ -23861,12 +23890,14 @@ function renderModalidades(){
     return `
       <label style="display:flex;gap:14px;align-items:flex-start;padding:16px;border:1.5px solid ${on?'var(--dorado,#C9A961)':'var(--crema-2,#E8E0D4)'};
                     border-radius:10px;cursor:pointer;background:${on?'rgba(201,169,97,.07)':'transparent'};margin-bottom:10px">
-        <input type="checkbox" class="mod-chk" value="${clave}" ${on?'checked':''} style="margin-top:3px;width:17px;height:17px;cursor:pointer">
+        <input type="checkbox" class="mod-chk" value="${clave}" ${on?'checked':''} onchange="_toggleLocalesCP()" style="margin-top:3px;width:17px;height:17px;cursor:pointer">
         <div style="flex:1">
           <div style="font-weight:600;font-size:15px;margin-bottom:3px">${m.icono} ${m.label}</div>
           <div style="font-size:13px;color:var(--gris-1,#555);line-height:1.45">${m.desc}</div>
           <div style="font-size:12px;color:var(--gris-2,#888);margin-top:5px"><em>${m.ejemplo}</em></div>
-          ${(clave==='centroProduccion' && on) ? _htmlLocalesDelCP(op) : ''}
+          ${clave==='centroProduccion'
+              ? `<div id="bloque-locales-cp" style="display:${on?'block':'none'}">${_htmlLocalesDelCP(op)}</div>`
+              : ''}
         </div>
       </label>`;
   };
