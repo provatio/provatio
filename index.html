@@ -2140,18 +2140,33 @@ const db = firebase.firestore();
 // recién nacida y la base todavía sin estrenar. Nadie vuelve a matar una base
 // que después va a necesitar.
 const _CLAVE_LIMPIAR = 'provatio_limpiar_cache';
+// Devuelve true si limpió y la página se va a recargar: el que llama no tiene
+// que seguir haciendo nada.
+//
+// Después de clearPersistence() NO se sigue usando esta instancia. Aunque la
+// documentación diga que solo hace falta llamarla antes de arrancar el cliente,
+// en la práctica lo que queda después no es confiable: el síntoma es un
+// "The client has already been terminated" en el primer intento de entrar, y
+// que al segundo ande. Una recarga —una sola, y solo después de cerrar sesión—
+// deja la página limpia de verdad y cuesta menos que un error que no se
+// entiende.
 async function _limpiezaPendienteDeCache(){
   let pendiente = false;
   try{ pendiente = localStorage.getItem(_CLAVE_LIMPIAR) === '1'; }catch(_){}
-  if(!pendiente) return;
+  if(!pendiente) return false;
+  // Se borra ANTES de intentar: si la limpieza falla, no queda recargando en círculo.
   try{ localStorage.removeItem(_CLAVE_LIMPIAR); }catch(_){}
   try{
     await db.clearPersistence();
-    console.warn('[Provatio] caché local limpiada en el arranque');
+    console.warn('[Provatio] caché local limpiada — recargando con la base en cero');
+    location.replace(location.pathname + location.search);
+    return true;
   }catch(e){
     // Falla si hay otra pestaña abierta. No es grave y no bloquea nada: la
-    // caché se limpiará en el próximo arranque que encuentre una sola pestaña.
+    // instancia sigue sana y la caché se limpiará en el próximo arranque que
+    // encuentre una sola pestaña.
     console.warn('[Provatio] no se pudo limpiar la caché local (¿otra pestaña abierta?)', e);
+    return false;
   }
 }
 // Deja la nota y recarga. Lo usan el cierre de sesión y el cambio de cuenta.
@@ -2171,7 +2186,10 @@ function _pedirLimpiezaYRecargar(destino){
 // de que todo salió bien —puede fallar y no importa— sino de que ya terminó de
 // intentarse y la base quedó en condiciones de usarse.
 const _firestoreListo = (async () => {
-  await _limpiezaPendienteDeCache();
+  const seVaARecargar = await _limpiezaPendienteDeCache();
+  // La página se está yendo: no arrancar nada más ni dejar que nadie use la
+  // base. Una promesa que no resuelve deja todo quieto hasta la recarga.
+  if(seVaARecargar) return new Promise(() => {});
   try{
     await db.enablePersistence({ synchronizeTabs: true });
   }catch(err){
@@ -4014,7 +4032,9 @@ async function cargarUsuarioFirebase(firebaseUser){
     // no se puede activar más en esta sesión.
     await _firestoreListo;
     window._miembroEmpresa = null;   // limpiar estado de cualquier sesión anterior
-    const userDoc = await conTimeout(db.collection('usuarios').doc(firebaseUser.uid).get(), 20000, 'La carga del perfil');
+    // 20 s era demasiado: con la base trabada, la persona miraba una pantalla
+    // sin respuesta veinte segundos antes de que el sistema admitiera el problema.
+    const userDoc = await conTimeout(db.collection('usuarios').doc(firebaseUser.uid).get(), 10000, 'La carga del perfil');
     _registrarEnIndiceEmails(firebaseUser.uid, firebaseUser.email);   // alta o refresco del índice
     // Si el usuario pertenece a una empresa, cargar su ficha de miembro (rol y locales)
     try{
@@ -4107,11 +4127,17 @@ async function cargarUsuarioFirebase(firebaseUser){
     if(tieneDatos) actualizarResumenEmpresa();
     _navegarAlArranque();
     _ocultarArranque();   // ya hay algo dibujado: el arranque terminó
+    // Entró bien: la próxima vez que haga falta, la recarga automática está
+    // disponible de nuevo.
+    try{ sessionStorage.removeItem(_CLAVE_RECARGA_AUTO); }catch(_){}
     if(tieneDatos){
       showToast('Datos cargados desde la nube', 'success');
     }
     
   } catch(err) {
+    // Si lo que falló es que la base quedó muerta, no hay nada que explicarle
+    // al usuario: se recarga y listo.
+    if(_recuperarseDeBaseMuerta(err)) return;
     showAuthError('Error al cargar perfil: ' + err.message);
     auth.signOut();
   }
@@ -4411,6 +4437,32 @@ async function logout(){
 // arranque —entró, no hay sesión, hubo error— y además hay una red de
 // seguridad por tiempo: si algo no previsto no llama a esto, el cartel se va
 // igual y la persona ve la pantalla que haya, en vez de quedar en blanco.
+// ── SI LA BASE QUEDÓ INUTILIZABLE, RECUPERARSE SOLA ──────────────────────
+//
+// "The client has already been terminated" no tiene arreglo dentro de la misma
+// página: la instancia de Firestore no vuelve a la vida. La única salida es
+// recargar. Antes eso lo tenía que adivinar el usuario, viendo un error en
+// inglés que no explica nada y que además se arregla solo al segundo intento —
+// la peor clase de error, el que enseña a desconfiar de la app.
+//
+// Una sola recarga automática por pestaña: si después de recargar vuelve a
+// pasar, es otra cosa y hay que verla, no seguir recargando en círculo.
+const _CLAVE_RECARGA_AUTO = 'provatio_recarga_auto';
+function _esBaseMuerta(err){
+  const m = (err && (err.message || err.code) || '') + '';
+  return /already been terminated|client has been terminated|INTERNAL ASSERTION/i.test(m);
+}
+function _recuperarseDeBaseMuerta(err){
+  if(!_esBaseMuerta(err)) return false;
+  let yaLoIntente = false;
+  try{ yaLoIntente = sessionStorage.getItem(_CLAVE_RECARGA_AUTO) === '1'; }catch(_){}
+  if(yaLoIntente) return false;
+  try{ sessionStorage.setItem(_CLAVE_RECARGA_AUTO, '1'); }catch(_){}
+  console.warn('[Provatio] la base quedó inutilizable en esta página — recargando una vez', err);
+  location.replace(location.pathname + location.search);
+  return true;
+}
+
 function _ocultarArranque(){
   const b = document.getElementById('boot-screen');
   if(b) b.remove();
