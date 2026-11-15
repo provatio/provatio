@@ -2098,7 +2098,50 @@ const db = firebase.firestore();
 // solo apenas vuelve la conexión — nada se pierde por quedarse sin señal
 // en la cocina. `synchronizeTabs` evita el único motivo común de que esto
 // falle (dos pestañas del mismo navegador abiertas a la vez).
+// ── LIMPIAR LA CACHÉ LOCAL: ACÁ Y EN NINGÚN OTRO LADO ─────────────────────
+//
+// Esto estaba en dos lugares que corren con la app YA ANDANDO: al cerrar sesión
+// y al detectar un cambio de cuenta. Los dos hacían db.terminate() seguido de
+// location.reload(). El problema es que terminate() mata la base para TODA la
+// vida de esa página, y reload() no es inmediato: se encola. Entre una cosa y
+// la otra la página sigue viva, y cualquier cosa que toque la base explota con
+// "The client has already been terminated".
+//
+// Eso es exactamente lo que pasó: Javier alterna entre su cuenta de dueño y la
+// del equipo de Provatio, cada cambio de cuenta disparaba el terminate, y si la
+// recarga no llegaba a tiempo quedaba una pantalla de login con la base muerta
+// donde ya no se podía entrar con ninguna cuenta. Y cuando sí recargaba pero la
+// carga del perfil había quedado cortada por el medio, la cuenta aparecía sin
+// empresa: la pantalla de "tu cuenta está activa, creá tu operación".
+//
+// La forma correcta es la que pide Firebase: clearPersistence() se llama ANTES
+// de usar la instancia. Así que el que quiere limpiar no limpia — deja una nota
+// y recarga. La limpieza ocurre acá, en el arranque siguiente, con la página
+// recién nacida y la base todavía sin estrenar. Nadie vuelve a matar una base
+// que después va a necesitar.
+const _CLAVE_LIMPIAR = 'provatio_limpiar_cache';
+async function _limpiezaPendienteDeCache(){
+  let pendiente = false;
+  try{ pendiente = localStorage.getItem(_CLAVE_LIMPIAR) === '1'; }catch(_){}
+  if(!pendiente) return;
+  try{ localStorage.removeItem(_CLAVE_LIMPIAR); }catch(_){}
+  try{
+    await db.clearPersistence();
+    console.warn('[Provatio] caché local limpiada en el arranque');
+  }catch(e){
+    // Falla si hay otra pestaña abierta. No es grave y no bloquea nada: la
+    // caché se limpiará en el próximo arranque que encuentre una sola pestaña.
+    console.warn('[Provatio] no se pudo limpiar la caché local (¿otra pestaña abierta?)', e);
+  }
+}
+// Deja la nota y recarga. Lo usan el cierre de sesión y el cambio de cuenta.
+function _pedirLimpiezaYRecargar(destino){
+  try{ localStorage.setItem(_CLAVE_LIMPIAR, '1'); }catch(_){}
+  location.replace(destino || (location.pathname + location.search));
+}
+
 try{
+  _limpiezaPendienteDeCache();
   db.enablePersistence({ synchronizeTabs: true }).catch(err => {
     if(err.code === 'failed-precondition'){
       console.warn('[Provatio] modo offline: no se pudo activar en esta pestaña (conflicto con otra pestaña)');
@@ -3890,6 +3933,48 @@ function login(){
     });
 }
 
+// ── EL VÍNCULO CON LA EMPRESA SE REPARA SOLO ──────────────────────────────
+//
+// Todo lo que una persona ve cuelga de un único campo: usuarios/{uid}.empresaId.
+// Si ese puntero se pierde —se lo liberó por error desde el panel, una carga
+// quedó cortada por el medio— la app no encuentra nada y lo manda a la pantalla
+// de "creá tu operación". Alguien que ya tiene su cocina entera cargada ve que
+// le ofrecen empezar de cero. Nada se borró, pero no hay forma de saberlo desde
+// ahí, y el botón que tiene adelante le arma una empresa paralela.
+//
+// El dato para repararlo existe: el documento de la empresa y la ficha de
+// miembro quedan intactos cuando se libera una cuenta — solo se borra el
+// puntero. Así que guardamos la última empresa conocida en esta máquina y, si
+// el puntero falta, probamos volver a leerla. Si las reglas nos dejan leerla,
+// es porque seguimos siendo miembros: el vínculo era real y se restituye.
+// Si no nos dejan, no era nuestra y no se toca nada.
+const _CLAVE_ULTIMA_EMPRESA = 'provatio_ultima_empresa';
+function _recordarEmpresa(id){
+  try{ if(id) localStorage.setItem(_CLAVE_ULTIMA_EMPRESA, id); }catch(_){}
+}
+async function _recuperarEmpresaPerdida(uid){
+  let ultima = null;
+  try{ ultima = localStorage.getItem(_CLAVE_ULTIMA_EMPRESA); }catch(_){}
+  if(!ultima) return null;
+  try{
+    // Las reglas solo dejan leer esto a un miembro activo o al equipo de
+    // Provatio. Que la lectura funcione ES la prueba de que el vínculo existe.
+    const emp = await db.collection('empresas').doc(ultima).get();
+    if(!emp.exists) return null;
+    const miem = await db.collection('empresas').doc(ultima).collection('miembros').doc(uid).get();
+    const esDuena = (emp.data().duenoUid === uid);
+    if(!esDuena && !(miem.exists && miem.data().activo !== false)) return null;
+    await db.collection('usuarios').doc(uid).set({ empresaId: ultima }, {merge:true});
+    console.warn('[Provatio] el vínculo con la empresa se había perdido y se restituyó:', ultima);
+    showToast('Recuperamos el vínculo con tu empresa — no se perdió nada', 'success');
+    return ultima;
+  }catch(e){
+    // Permiso denegado = no somos miembros de esa empresa. Correcto que falle.
+    console.warn('[Provatio] no se pudo recuperar la empresa', ultima, e);
+    return null;
+  }
+}
+
 async function cargarUsuarioFirebase(firebaseUser){
   try {
     window._miembroEmpresa = null;   // limpiar estado de cualquier sesión anterior
@@ -3898,6 +3983,12 @@ async function cargarUsuarioFirebase(firebaseUser){
     // Si el usuario pertenece a una empresa, cargar su ficha de miembro (rol y locales)
     try{
       const _ud = userDoc.exists ? userDoc.data() : null;
+      // Antes de dar por hecho que esta persona no tiene empresa, probar repararlo.
+      if(_ud && !_ud.empresaId){
+        const _rec = await _recuperarEmpresaPerdida(firebaseUser.uid);
+        if(_rec) _ud.empresaId = _rec;
+      }
+      _recordarEmpresa(_ud && _ud.empresaId);
       window._empresaDuenoUid = null;
       window._soporteProvatio = false;
       window._soporteCambiadoEn = null;
@@ -4261,16 +4352,12 @@ async function logout(){
     // 2. Cerrar en Firebase.
     await conTope(auth.signOut(), 6000, 'cerrar sesión en Firebase');
 
-    // 3. Borrar la caché local de Firestore. Esa caché NO está separada por
-    //    usuario: si no se limpia, la próxima persona que entre en esta máquina
-    //    puede recibir documentos que leyó la anterior. Firebase recomienda
-    //    hacerlo justamente al cerrar sesión.
-    //    Es el paso que se cuelga, y el menos grave de los tres: la recarga de
-    //    abajo igual se lleva puesta toda la memoria.
-    await conTope(
-      Promise.resolve().then(() => db.terminate()).then(() => db.clearPersistence()),
-      5000, 'limpiar la caché local'
-    );
+    // 3. La caché local NO está separada por usuario: si no se limpia, la
+    //    próxima persona que entre en esta máquina puede recibir documentos que
+    //    leyó la anterior. Pero acá NO se limpia: se deja la nota y se limpia en
+    //    el arranque siguiente, con la base sin estrenar. Matarla en esta página
+    //    la deja inutilizable para todo lo que venga después, incluida la propia
+    //    pantalla de login.
   } catch(e){
     console.warn('[Provatio] el cierre de sesión tuvo problemas, salgo igual', e);
   } finally {
@@ -4279,7 +4366,7 @@ async function logout(){
     //    garantizar que no quede nada en memoria: ni operaciones, ni
     //    ingredientes, ni la operación activa.
     //    Va en finally a propósito: pase lo que pase arriba, de acá se sale.
-    location.replace(location.pathname + location.search);
+    _pedirLimpiezaYRecargar();
   }
 }
 
@@ -5620,12 +5707,36 @@ function renderArranque(){
         </button>
       </div>
 
+      <div style="background:var(--crema);border-radius:10px;padding:14px 16px;margin-bottom:20px;text-align:left;font-size:13px;color:var(--gris-1);line-height:1.6">
+        <strong>¿Ya tenías una operación cargada y no la ves?</strong>
+        No crees una nueva: te quedarían los datos partidos en dos.
+        Esta pantalla aparece cuando se perdió el vínculo entre tu cuenta y tu empresa,
+        y eso se repara — tus recetas, ingredientes y costos siguen donde estaban.
+        <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="reintentarVinculoEmpresa()">
+          Buscar mi operación
+        </button>
+      </div>
+
       <a href="https://wa.me/5492664728720?text=Hola!%20Mi%20cuenta%20de%20Provatio%20ya%20est%C3%A1%20activa%20y%20quiero%20coordinar%20el%20onboarding" target="_blank" rel="noopener"
         style="font-size:13px;color:var(--gris-1);text-decoration:underline">
         💬 ¿Preferís que lo armemos juntos? Escribinos
       </a>
     </div>
   `);
+}
+
+// El botón de "Buscar mi operación" de la pantalla de bienvenida. Hace el
+// mismo intento de reparación que corre solo al entrar, pero a pedido: sirve
+// cuando el vínculo se pierde con la sesión ya abierta.
+async function reintentarVinculoEmpresa(){
+  if(!currentUser || !currentUser.uid){ showToast('No hay sesión activa','error'); return; }
+  showToast('Buscando…','info');
+  const id = await _recuperarEmpresaPerdida(currentUser.uid);
+  if(id){
+    setTimeout(()=>location.replace(location.pathname + location.search), 1200);
+    return;
+  }
+  showToast('No encontré una empresa vinculada a esta cuenta desde esta computadora. Si tenías una, pedile al equipo de Provatio que te la vuelva a asignar — los datos están intactos.', 'error');
 }
 
 function modalCrearMiOperacion(){
@@ -5674,6 +5785,30 @@ async function crearEmpresaYOperacion(){
   // como los que se generaron al probar). Lo manda a su operación existente.
   if(getEmpresaId()){
     showToast('Ya tenés una empresa. No se puede crear otra desde acá.','error');
+    return;
+  }
+
+  // BLINDAJE 1-bis: lo de arriba mira la MEMORIA, y la memoria puede estar
+  // equivocada. Si la carga del perfil quedó cortada por el medio —pasa cuando
+  // una recarga interrumpe el arranque— el usuario llega a esta pantalla sin
+  // empresa en memoria aunque la tenga en la base. Crear acá le armaría una
+  // empresa paralela y dejaría su operación real huérfana, sin ningún aviso.
+  //
+  // Así que antes de crear se le pregunta AL SERVIDOR, no a la caché. Un viaje
+  // de red contra el riesgo de partir los datos de alguien en dos: barato.
+  try{
+    const _yo = await db.collection('usuarios').doc(currentUser.uid).get({ source: 'server' });
+    const _emp = _yo.exists ? _yo.data().empresaId : null;
+    if(_emp){
+      showToast('Ya tenés una empresa cargada — la pantalla estaba desactualizada. Recargando…','error');
+      setTimeout(()=>location.replace(location.pathname + location.search), 1500);
+      return;
+    }
+  }catch(e){
+    // Sin señal no se puede verificar, y crear a ciegas es justamente lo que
+    // hay que evitar: mejor no hacer nada y que lo intente con conexión.
+    console.warn('[Provatio] no pude verificar si ya tenés empresa:', e);
+    showToast('No pude verificar si ya tenés una empresa. Probá de nuevo con conexión.','error');
     return;
   }
 
@@ -20224,7 +20359,14 @@ async function modalGestionarCuenta(uid){
 }
 
 async function _gestLiberar(uid){
-  if(!await pedirConfirmacionSimple('¿Liberar esta cuenta de su empresa?\n\nQueda sin empresa, lista para asignarla a otra. Los datos de la empresa no se borran.')) return;
+  // El aviso decía qué pasaba con los datos pero no qué le pasa a la PERSONA,
+  // que es lo que más confunde: entra y ve la pantalla de "creá tu operación",
+  // como si nunca hubiera cargado nada.
+  if(!await pedirConfirmacionSimple(
+      '¿Liberar esta cuenta de su empresa?\n\n'
+    + 'Los datos de la empresa NO se borran: siguen enteros.\n\n'
+    + 'Pero esta persona, al entrar, va a ver la pantalla de bienvenida como si fuera nueva, '
+    + 'y no va a poder llegar a sus recetas hasta que se la vuelva a asignar a una empresa.')) return;
   try{
     // Borrar AMBOS vínculos: el del modelo nuevo (empresaId) y el legacy (operacionId).
     // Si queda operacionId viejo, la cuenta sigue medio enganchada aunque se libere.
@@ -25600,8 +25742,11 @@ auth.onAuthStateChanged(async firebaseUser => {
     if(_ultimo && _ultimo !== firebaseUser.uid){
       localStorage.setItem('provatio_uid', firebaseUser.uid);
       console.warn('[Provatio] cambió la cuenta en esta máquina — se limpia la caché local');
-      try{ await db.terminate(); await db.clearPersistence(); }catch(e){ console.warn(e); }
-      location.reload();
+      // Nota + recarga. Antes acá se hacía terminate() y después reload(), y
+      // entre los dos la página seguía viva con la base muerta: era el camino
+      // por el que se llegaba a "The client has already been terminated" en la
+      // pantalla de login, sin poder entrar con ninguna cuenta.
+      _pedirLimpiezaYRecargar();
       return;
     }
     localStorage.setItem('provatio_uid', firebaseUser.uid);
