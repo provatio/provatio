@@ -41,15 +41,42 @@
       b.appendChild(d);
     }catch(e){ console.warn("[Provatio] error no crítico:", e); }
   }
+  /* RUIDO CONOCIDO DEL NAVEGADOR. Estas tres no son fallas de Provatio y
+     aparecen solas en cualquier página: la primera es un aviso interno de
+     Chrome al redibujar, la segunda pasa cuando un video de fondo se pausa
+     antes de terminar de arrancar, la tercera es un aviso de Firebase sobre
+     una función que van a renombrar. Mostrarlas en una barra roja a pantalla
+     completa le dice al usuario que algo se rompió cuando no se rompió nada,
+     y de paso entrena a ignorar la barra — que el día que avise de verdad,
+     ya nadie la mira. Van a la consola y no a la cara. */
+  function esRuidoConocido(msg){
+    return /ResizeObserver loop|The play\(\) request was interrupted|will be deprecated/i.test(msg || '');
+  }
+  /* Un rechazo puede traer un objeto sin .message, y entonces se veía
+     "[object Object]", que no sirve para nada. Se arma algo legible. */
+  function describir(r){
+    if(!r) return 'promesa rechazada sin motivo';
+    if(typeof r === 'string') return r;
+    var p = [];
+    if(r.code)    p.push('código ' + r.code);
+    if(r.name && r.name !== 'Error') p.push(r.name);
+    if(r.message) p.push(r.message);
+    if(!p.length){
+      try{ p.push(JSON.stringify(r).slice(0, 200)); }catch(e){ p.push(String(r)); }
+    }
+    return p.join(' — ');
+  }
   window.onerror = function(msg, src, line, col){
     // Errores opacos de scripts externos ("Script error." con línea 0) no dan info útil
     if((msg==='Script error.' || msg==='Script error') && !line){ return false; }
+    if(esRuidoConocido(msg)){ console.warn('[Provatio] ruido del navegador:', msg); return false; }
     var t = msg + ' (' + (src||'').split('/').pop() + ':' + line + ':' + (col||'') + ')';
     window.__provErrores.push(t); mostrar(t);
     return false;
   };
   window.addEventListener('unhandledrejection', function(ev){
-    var r = ev && ev.reason ? (ev.reason.message || String(ev.reason)) : 'promesa rechazada';
+    var r = describir(ev && ev.reason);
+    if(esRuidoConocido(r)){ console.warn('[Provatio] ruido del navegador:', r); return; }
     window.__provErrores.push(r); mostrar('Promesa: ' + r);
   });
   /* Vigía: si a los 25s la app no marcó arranque, diagnosticar */
