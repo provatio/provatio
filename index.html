@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!--PROVATIO_VERSION:16/11 02:00-->
+<!--PROVATIO_VERSION:16/11 02:40-->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -1074,9 +1074,13 @@ input:focus, select:focus, textarea:focus {
      lateral, y es justo cuando más falta hace saber qué versión corre, porque
      es cuando no se puede entrar. Adentro y no afuera para que se vaya junto
      con el login y no quede flotando encima del menú. -->
-<div class="sello-version" style="position:absolute;left:14px;bottom:10px;z-index:30;
+<div class="sello-version" style="position:fixed;left:14px;bottom:10px;z-index:30;
      font-size:10px;letter-spacing:.3px;color:#9A9A90;font-family:'Inter',system-ui,sans-serif;
      pointer-events:none"></div>
+<!-- position:fixed y NO absolute: el panel del login es más alto que la
+     pantalla, así que con absolute el sello quedaba abajo de todo, fuera de
+     la vista, justo cuando más falta hace. Va adentro de #auth-screen para
+     que desaparezca solo al entrar a la app. -->
   <!-- Lado izquierdo — propuesta de valor -->
   <div class="auth-left">
     <div class="auth-bg-img"></div>
@@ -2479,7 +2483,7 @@ function opActivaId(){
 // Ese comentario está arriba de todo a propósito: permite preguntarle al
 // servidor qué versión hay publicada leyendo los primeros bytes del archivo,
 // sin bajarse el mega y medio entero.
-const VERSION_APP = '16/11 02:00';
+const VERSION_APP = '16/11 02:40';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ¿HAY UNA VERSIÓN MÁS NUEVA PUBLICADA?
