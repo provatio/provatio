@@ -2209,6 +2209,11 @@ const _CLAVE_LIMPIAR = 'provatio_limpiar_cache';
 // arranque es el que se trabó.
 // ═══════════════════════════════════════════════════════════════════════
 const _CLAVE_SIN_PERSISTENCIA = 'provatio_sin_persistencia';
+// Nota de "estoy cerrando sesión". Vive en localStorage porque tiene que
+// sobrevivir a la recarga: es la única forma de saber, al volver a arrancar,
+// que esta sesión que Firebase todavía da por buena en realidad ya fue cerrada
+// a mano y hay que terminar de cerrarla.
+const _CLAVE_CERRANDO = 'provatio_cerrando_sesion';
 const _T0_ARRANQUE = Date.now();
 window._pasosArranque = [];
 function _paso(nombre){
@@ -2233,6 +2238,12 @@ function _conTope(promesa, ms, que){
 }
 
 async function _limpiezaPendienteDeCache(){
+  // PRIMERO SE TERMINA DE CERRAR SESIÓN. Si hay un cierre a medias, la
+  // limpieza espera: su recarga interrumpía el segundo intento de signOut
+  // antes de que contestara, la nota se perdía por el camino y la persona
+  // volvía a entrar logueada. La nota de limpieza no se borra: se hace en el
+  // arranque siguiente.
+  try{ if(localStorage.getItem(_CLAVE_CERRANDO)) return false; }catch(_){}
   let pendiente = false;
   try{ pendiente = localStorage.getItem(_CLAVE_LIMPIAR) === '1'; }catch(_){}
   if(!pendiente) return false;
@@ -2463,7 +2474,7 @@ function opActivaId(){
 // con cada entrega. Si el número que figura no es el de la última entrega,
 // lo que está abierto es la versión vieja y no hay nada que depurar.
 // ═══════════════════════════════════════════════════════════════════════
-const VERSION_APP = '15/11 13:05';
+const VERSION_APP = '16/11 01:10';
 // Se pinta en TODOS los lugares donde está puesto, no en uno.
 // El primero vivía solo en el menú lateral, que no existe en la pantalla de
 // login: justo cuando más falta hace saber qué versión se está corriendo
@@ -4234,18 +4245,25 @@ async function cargarUsuarioFirebase(firebaseUser){
       if(_ud && _ud.empresaId){
         // Leer el duenoUid de la empresa: si esta persona es la dueña, la
         // reconocemos como tal aunque su ficha de miembro esté desincronizada.
-        try{
-          const empDoc = await db.collection('empresas').doc(_ud.empresaId).get();
-          if(empDoc.exists){
-            const _emp = empDoc.data();
-            window._empresaDuenoUid = _emp.duenoUid || null;
-            // Estado del acceso de soporte: lo muestra la tarjeta del panel.
-            window._soporteProvatio   = !!_emp.soporteProvatio;
-            window._soporteCambiadoEn = _emp.soporteCambiadoEn || null;
-          }
-        }catch(_){}
-        const miem = await db.collection('empresas').doc(_ud.empresaId)
-          .collection('miembros').doc(firebaseUser.uid).get();
+        // LOS DOS JUNTOS, NO UNO DESPUÉS DEL OTRO. El documento de la empresa
+        // y la ficha de miembro no dependen entre sí: los dos salen del
+        // empresaId que ya tenemos. Pedirlos en fila costaba un viaje entero a
+        // la nube de más en cada arranque, y con una conexión lenta eso se
+        // nota. Van en paralelo.
+        _paso('leyendo tu empresa');
+        const [_empRes, _miemRes] = await Promise.all([
+          db.collection('empresas').doc(_ud.empresaId).get().catch(e => ({ _error: e })),
+          db.collection('empresas').doc(_ud.empresaId)
+            .collection('miembros').doc(firebaseUser.uid).get(),
+        ]);
+        if(_empRes && !_empRes._error && _empRes.exists){
+          const _emp = _empRes.data();
+          window._empresaDuenoUid = _emp.duenoUid || null;
+          // Estado del acceso de soporte: lo muestra la tarjeta del panel.
+          window._soporteProvatio   = !!_emp.soporteProvatio;
+          window._soporteCambiadoEn = _emp.soporteCambiadoEn || null;
+        }
+        const miem = _miemRes;
         if(miem.exists){
           const m = miem.data();
           if(m.activo === false){
@@ -4256,6 +4274,23 @@ async function cargarUsuarioFirebase(firebaseUser){
           // Si la empresa dice que es la dueña, el rol efectivo es 'dueno'
           // (aunque la ficha diga otra cosa) — evita el bug de no ver operaciones.
           const _esDuenaEmpresa = (window._empresaDuenoUid === firebaseUser.uid);
+          // ── TERMINAR DE NOMBRAR AL DUEÑO ──────────────────────────────────
+          // Las reglas prohíben al equipo de Provatio escribir `duenoUid`: el
+          // interruptor del cliente no valdría nada si pudiéramos. Entonces,
+          // cuando el admin nombra a alguien dueño, la ficha de miembro se
+          // guarda pero el documento de la empresa queda sin actualizar, y la
+          // empresa queda con un dueño viejo o sin ninguno.
+          // Lo completa la propia persona nombrada en su primer ingreso: para
+          // las reglas ya es dueña (lo dice su ficha), así que SÍ puede
+          // escribirlo. Es mejor esfuerzo: si falla, no pasa nada, porque el
+          // rol efectivo sale igual de la ficha.
+          if(!_esDuenaEmpresa && m.rol === 'dueno' && m.activo !== false){
+            db.collection('empresas').doc(_ud.empresaId)
+              .set({ duenoUid: firebaseUser.uid }, {merge:true})
+              .then(()=>{ window._empresaDuenoUid = firebaseUser.uid;
+                          console.log('[Provatio] me registré como dueño de la empresa'); })
+              .catch(e => console.warn('[Provatio] no pude registrarme como dueño:', e));
+          }
           window._miembroEmpresa = {
             empresaId: _ud.empresaId,
             rolEmpresa: _esDuenaEmpresa ? 'dueno' : (m.rol || 'encargado'),
@@ -4596,6 +4631,12 @@ async function logout(){
     }
 
     // 2. Cerrar en Firebase.
+    // Se deja la nota ANTES de intentar. Si signOut no contesta —y es lo que
+    // pasa con la base trabada— igual se recarga, y al volver Firebase sigue
+    // teniendo la sesión viva: la persona apretó "Cerrar sesión", la app se
+    // recargó, y volvió a entrar sola. Con la nota puesta, el arranque lo
+    // detecta y termina el trabajo en vez de dejarla adentro.
+    try{ localStorage.setItem(_CLAVE_CERRANDO, '1'); }catch(_){}
     await conTope(auth.signOut(), 6000, 'cerrar sesión en Firebase');
 
     // 3. La caché local NO está separada por usuario: si no se limpia, la
@@ -20689,19 +20730,34 @@ async function _gestCambiarRol(uid, empresaId){
 
     // Sincronizar el duenoUid de la empresa con el rol, para que no queden
     // los dos lados en contradicción (era el bug: dueña por un lado, encargada por otro).
+    // Esto va en su PROPIO try: las reglas no dejan que el equipo de Provatio
+    // escriba `duenoUid`, y hacer que ese rechazo se lleve puesto el guardado
+    // de la ficha —que sí entró— es lo que dejaba todo a medias y sin explicar.
     const empRef = db.collection('empresas').doc(empresaId);
-    const empSnap = await empRef.get();
-    const duenoActual = empSnap.exists ? empSnap.data().duenoUid : null;
-    if(rol==='dueno'){
-      await empRef.set({ duenoUid: uid }, {merge:true});
-    } else if(duenoActual === uid){
-      // Dejó de ser dueño: soltar el duenoUid para que no quede como dueño fantasma
-      await empRef.update({ duenoUid: firebase.firestore.FieldValue.delete() }).catch(()=>{});
+    let avisoDueno = '';
+    try{
+      const empSnap = await empRef.get();
+      const duenoActual = empSnap.exists ? empSnap.data().duenoUid : null;
+      if(rol==='dueno'){
+        if(duenoActual !== uid) await empRef.set({ duenoUid: uid }, {merge:true});
+      } else if(duenoActual === uid){
+        // Dejó de ser dueño: soltar el duenoUid para que no quede como dueño fantasma
+        await empRef.update({ duenoUid: firebase.firestore.FieldValue.delete() });
+      }
+    }catch(e){
+      if(esRechazoDePermisos(e) && rol === 'dueno'){
+        avisoDueno = ' La ficha quedó guardada y a efectos de permisos ya es dueño. '
+                   + 'Lo que no pude es marcarlo en el documento de la empresa: las reglas no dejan que '
+                   + 'el equipo de Provatio toque quién es el dueño. Se completa solo la primera vez que entre esa cuenta.';
+      }else{
+        avisoDueno = ' (no se pudo sincronizar el dueño de la empresa: ' + (e.message||e) + ')';
+      }
+      console.warn('[Provatio] sincronización de duenoUid:', e);
     }
 
-    showToast('Rol y locales actualizados ✓','success');
+    showToast('Rol y locales actualizados ✓' + avisoDueno, avisoDueno ? 'info' : 'success');
     closeModal(); renderAdminProvatio();
-  }catch(err){ showToast('Error: '+err.message,'error'); }
+  }catch(err){ showToast('No se pudo guardar el rol. ' + explicarRechazo(err), 'error'); }
 }
 
 
@@ -26078,7 +26134,41 @@ document.addEventListener('keydown', e=>{
 // Detecta si ya hay una sesión activa al abrir la app
 auth.onAuthStateChanged(async firebaseUser => {
   // Sin sesión, lo que corresponde es el login: ese es un final del arranque.
-  if(!firebaseUser){ _paso('sin sesión: al login'); _ocultarArranque(); return; }
+  if(!firebaseUser){
+    // Llegó al login: si quedaba la nota de cierre, el trabajo está hecho.
+    try{ localStorage.removeItem(_CLAVE_CERRANDO); }catch(_){}
+    _paso('sin sesión: al login'); _ocultarArranque(); return;
+  }
+  // ── SE PIDIÓ CERRAR SESIÓN Y FIREBASE TODAVÍA LA DA POR VIVA ────────────
+  // Pasa cuando signOut no contestó antes de la recarga. Sin esto la persona
+  // vuelve a entrar sola y la app parece ignorar el botón de salir.
+  // La nota guarda cuántos intentos van, no un sí/no: así se reintenta sin
+  // quedar en un bucle eterno de recargas.
+  let _intentos = 0;
+  try{ _intentos = parseInt(localStorage.getItem(_CLAVE_CERRANDO) || '0', 10) || 0; }catch(_){}
+  if(_intentos > 0){
+    _paso('terminando de cerrar sesión');
+    _ocultarArranque();
+    if(_intentos >= 3){
+      try{ localStorage.removeItem(_CLAVE_CERRANDO); }catch(_){}
+      try{ showAuthError('No pude cerrar la sesión: Firebase no responde. Cerrá la app y volvé a abrirla.'); }
+      catch(_){ console.warn('[Provatio] no se pudo cerrar la sesión'); }
+      return;
+    }
+    try{ localStorage.setItem(_CLAVE_CERRANDO, String(_intentos + 1)); }catch(_){}
+    let salio = false;
+    try{
+      await Promise.race([
+        auth.signOut().then(()=>{ salio = true; }, e=>{ console.warn('[Provatio] reintento de cierre falló', e); }),
+        new Promise(r => setTimeout(r, 6000)),
+      ]);
+    }catch(e){ console.warn('[Provatio] reintento de cierre falló', e); }
+    if(salio){ try{ localStorage.removeItem(_CLAVE_CERRANDO); }catch(_){} }
+    else{
+      try{ showAuthError('Estoy cerrando la sesión y Firebase no responde. Recargá la página.'); }catch(_){}
+    }
+    return;   // pase lo que pase, acá NO se entra a la app
+  }
   if(currentUser) return;
   _paso('sesión reconocida');
   // ── SI CAMBIÓ LA PERSONA, SE ARRANCA LIMPIO ─────────────────────────────
