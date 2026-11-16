@@ -17,7 +17,19 @@
 // cuando la red no contesta.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const CACHE = 'provatio-v3';
+// LA ETIQUETA DE VERSIÓN. Subirle el número obliga a todos los teléfonos a
+// tirar la copia vieja y bajarse la nueva. Se cambia cuando se sube un arreglo
+// que tiene que llegar sí o sí, sin depender de que cada uno cierre la app.
+// v2 — 30/8/2026: arreglo de la operación fantasma.
+// v3 — 15/11/2026: arranque de Firestore en orden y recuperación automática
+//      cuando la base queda inutilizable. Tiene que llegar sí o sí: la versión
+//      vieja deja la app sin abrir en el primer intento.
+// v4 — 16/11/2026: el HTML se pide SIEMPRE a la red de verdad, salteando la
+//      caché del navegador. Pedirlo normal no alcanzaba: GitHub Pages manda el
+//      index.html con permiso de guardarlo diez minutos, y en la app instalada
+//      no existe Ctrl+Shift+R. Resultado: se subía un arreglo y se seguía
+//      usando el archivo viejo, sin forma de saberlo ni de evitarlo.
+const CACHE = 'provatio-v4';
 const ESENCIALES = [
   '/',
   '/index.html',
@@ -54,8 +66,14 @@ self.addEventListener('fetch', e => {
   // sincronización offline de Firestore, que ya sabe hacer su trabajo.
   if (url.origin !== self.location.origin) return;
 
+  // EL HTML, SIEMPRE FRESCO. `cache: 'reload'` obliga al navegador a ir a la
+  // red aunque su copia todavía figure como vigente. Para el resto (íconos,
+  // manifiesto) se usa el pedido normal: no cambian y no vale la pena.
+  const esPagina = req.mode === 'navigate' || /\/(index\.html)?(\?|$)/.test(url.pathname + url.search);
+  const pedido = esPagina ? fetch(req, { cache: 'reload' }) : fetch(req);
+
   e.respondWith(
-    fetch(req)
+    pedido
       .then(res => {
         if (res && res.ok) {
           const copia = res.clone();
