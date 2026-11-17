@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!--PROVATIO_VERSION:16/11 02:40-->
+<!--PROVATIO_VERSION:16/11 23:00-->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -1346,6 +1346,18 @@ function sanear(v){
   return null;
 }
 
+// Hay errores que NO se arreglan insistiendo. Si Firestore dice que no
+// tenés permiso, no vas a tenerlo dentro de un segundo y medio: reintentar
+// es tiempo tirado. Y era mucho tiempo — cuatro intentos con tope de 15
+// segundos cada uno y esperas crecientes dan más de un minuto de nada, que
+// es lo que hacía que todo pareciera lento, incluido cerrar sesión (que
+// espera a que termine el último guardado).
+function esErrorDefinitivo(err){
+  if(typeof esRechazoDePermisos === 'function' && esRechazoDePermisos(err)) return true;
+  const txt = ((err && err.code) || '') + ' ' + ((err && err.message) || '');
+  return /unauthenticated|invalid-argument|not-found|already-exists|unauthorized/i.test(txt);
+}
+
 // Reintenta una promesa hasta N veces con espera creciente
 async function conReintento(fn, intentos, etiqueta){
   let ultimoError;
@@ -1353,11 +1365,21 @@ async function conReintento(fn, intentos, etiqueta){
     try { return await conTimeout(fn(), 15000, etiqueta); }
     catch(err){
       ultimoError = err;
+      // Se devuelve EL ERROR ORIGINAL, no uno nuevo. Envolverlo perdía el
+      // código ('permission-denied') y entonces quien lo recibía no podía
+      // explicar qué pasó: mostraba un texto genérico en vez del motivo.
+      if(esErrorDefinitivo(err)){
+        ocultarProgreso();
+        throw err;
+      }
       mostrarProgreso(`Reintentando ${etiqueta}… (intento ${i+2})`);
       await new Promise(r=>setTimeout(r, 1500*(i+1)));
     }
   }
-  throw new Error(`${etiqueta}: no se pudo tras ${intentos} intentos (${ultimoError?.message||'sin respuesta'})`);
+  const e = new Error(`${etiqueta}: no se pudo tras ${intentos} intentos (${ultimoError?.message||'sin respuesta'})`);
+  e.code = ultimoError && ultimoError.code;   // el código sobrevive
+  e.causa = ultimoError;
+  throw e;
 }
 
 // Muestra progreso de guardado en pantalla (overlay no bloqueante)
@@ -2483,7 +2505,7 @@ function opActivaId(){
 // Ese comentario está arriba de todo a propósito: permite preguntarle al
 // servidor qué versión hay publicada leyendo los primeros bytes del archivo,
 // sin bajarse el mega y medio entero.
-const VERSION_APP = '16/11 02:40';
+const VERSION_APP = '16/11 23:00';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ¿HAY UNA VERSIÓN MÁS NUEVA PUBLICADA?
