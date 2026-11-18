@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!--PROVATIO_VERSION:16/11 23:00-->
+<!--PROVATIO_VERSION:17/11 23:30-->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -2335,7 +2335,17 @@ const _firestoreListo = (async () => {
     // persistencia sigue en el aire— y en ese estado los guardados se vuelven
     // impredecibles. Por eso al vencer NO se sigue: se recarga una sola vez y
     // la carga siguiente entra sin modo offline. Acotado y sin estados raros.
-    const r = await _conTope(db.enablePersistence({ synchronizeTabs: true })
+    // synchronizeTabs: false — ESTE ES EL CAMBIO QUE IMPORTA.
+    // Con `true`, Firestore intenta compartir el mismo cache entre todas las
+    // pestañas abiertas y coordinarlas. Con varias pestañas de Provatio más la
+    // app instalada —que es como se trabaja acá todos los días— esa
+    // coordinación se rompe: el cliente queda inutilizable y todo lo que venga
+    // después falla con "The client has already been terminated". Esa es la
+    // pantalla que aparecía al intentar entrar.
+    // Con `false`, la primera pestaña se queda el modo offline y las demás
+    // entran sin él, online. Pierden la comodidad de trabajar sin señal, pero
+    // ninguna rompe a las otras, que es lo único que no se puede negociar.
+    const r = await _conTope(db.enablePersistence({ synchronizeTabs: false })
                                .then(()=>'ok', e=>{ throw e; }), 3000, 'activar el modo offline');
     if(r !== 'ok'){
       try{ sessionStorage.setItem(_CLAVE_SIN_PERSISTENCIA, '1'); }catch(_){}
@@ -2505,7 +2515,7 @@ function opActivaId(){
 // Ese comentario está arriba de todo a propósito: permite preguntarle al
 // servidor qué versión hay publicada leyendo los primeros bytes del archivo,
 // sin bajarse el mega y medio entero.
-const VERSION_APP = '16/11 23:00';
+const VERSION_APP = '17/11 23:30';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ¿HAY UNA VERSIÓN MÁS NUEVA PUBLICADA?
@@ -4258,6 +4268,8 @@ function login(){
   if(!email||!pass){ showAuthError('Completá email y contraseña'); return; }
 
   const btn = document.querySelector('#auth-screen .btn-primary');
+  // Se guarda ANTES de pisarlo: después ya dice "Ingresando…" y se pierde.
+  if(!btn.dataset.textoOriginal) btn.dataset.textoOriginal = btn.textContent.trim();
   btn.textContent = 'Ingresando...';
   btn.disabled = true;
 
@@ -4469,7 +4481,13 @@ async function cargarUsuarioFirebase(firebaseUser){
     // Si lo que falló es que la base quedó muerta, no hay nada que explicarle
     // al usuario: se recarga y listo.
     if(_recuperarseDeBaseMuerta(err)) return;
-    showAuthError('Error al cargar perfil: ' + err.message);
+    // Si llegó acá con la base muerta, ya se recargó una vez y sin modo
+    // offline, y aun así no anda. "The client has already been terminated" no
+    // le dice nada a nadie: se nombra la causa real y qué hacer.
+    showAuthError(_esBaseMuerta(err)
+      ? 'La base de datos de esta pestaña quedó inutilizable. Suele pasar cuando hay varias '
+        + 'pestañas de Provatio abiertas al mismo tiempo: cerrá las otras y volvé a entrar en esta.'
+      : 'Error al cargar perfil: ' + err.message);
     auth.signOut();
   }
 }
@@ -4795,7 +4813,13 @@ function _recuperarseDeBaseMuerta(err){
   try{ yaLoIntente = sessionStorage.getItem(_CLAVE_RECARGA_AUTO) === '1'; }catch(_){}
   if(yaLoIntente) return false;
   try{ sessionStorage.setItem(_CLAVE_RECARGA_AUTO, '1'); }catch(_){}
-  console.warn('[Provatio] la base quedó inutilizable en esta página — recargando una vez', err);
+  // RECARGAR IGUAL NO ALCANZA. Lo que deja la base inutilizable es el modo
+  // offline peleándose consigo mismo cuando hay varias pestañas de Provatio
+  // abiertas. Si se recarga sin cambiar nada, se vuelve a chocar con lo mismo
+  // y el segundo intento ya no reintenta: queda el error crudo en pantalla.
+  // Por eso la recarga se hace SIN modo offline: distinta, no la misma.
+  try{ sessionStorage.setItem(_CLAVE_SIN_PERSISTENCIA, '1'); }catch(_){}
+  console.warn('[Provatio] la base quedó inutilizable — recargando sin modo offline', err);
   location.replace(location.pathname + location.search);
   return true;
 }
@@ -4819,6 +4843,21 @@ function showAuthError(msg){
   const el = document.getElementById('auth-error');
   el.textContent = msg;
   el.style.display = 'block';
+  // EL BOTÓN TIENE QUE VOLVER. login() lo pone en "Ingresando…" y lo devuelve
+  // sólo si falla el propio signIn. Si el login sale bien pero después falla
+  // la carga del perfil, nadie lo devolvía: quedaba "Ingresando…" apagado para
+  // siempre, con el error arriba y sin forma de reintentar más que recargar.
+  // Acá es el único lugar por el que pasan todos esos finales.
+  const btn = document.querySelector('#auth-screen .btn-primary');
+  if(btn){
+    // Se guarda el texto original la primera vez, en vez de escribir uno a
+    // mano: así el botón vuelve a decir lo que decía y no "Ingresar" pelado.
+    if(!btn.dataset.textoOriginal && !/Ingresando/.test(btn.textContent)){
+      btn.dataset.textoOriginal = btn.textContent.trim();
+    }
+    btn.textContent = btn.dataset.textoOriginal || 'Ingresar';
+    btn.disabled = false;
+  }
 }
 
 // ── INIT APP ──
