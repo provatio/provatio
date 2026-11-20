@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!--PROVATIO_VERSION:18/11 21:40-->
+<!--PROVATIO_VERSION:19/11 22:10-->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -2520,7 +2520,7 @@ function opActivaId(){
 // Ese comentario está arriba de todo a propósito: permite preguntarle al
 // servidor qué versión hay publicada leyendo los primeros bytes del archivo,
 // sin bajarse el mega y medio entero.
-const VERSION_APP = '18/11 21:40';
+const VERSION_APP = '19/11 22:10';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ¿HAY UNA VERSIÓN MÁS NUEVA PUBLICADA?
@@ -6765,7 +6765,7 @@ async function renderDashboardAdmin(){
     ${bloqueAccion('Esperando que las actives', pendientes, AMBAR,
       pendientes.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">
         <div style="font-size:13px">
-          <strong>${esc(c.displayName || c.email || c.uid)}</strong>
+          <strong>${esc(c.displayName || c.email || '⚠ Ficha incompleta')}</strong>${(!c.displayName && !c.email) ? `<span style="font-size:10px;opacity:.6"> · ${esc(String(c.uid||'').slice(0,8))}…</span>` : ''}
           <span style="opacity:.75"> · ${esc(c.email||'')}</span>
           <div style="font-size:11px;opacity:.75">${esc(c.tipoOperacion||'sin tipo')}${c.ciudad?' · '+esc(c.ciudad):''} · se registró ${_admHace(c.fechaRegistro)}</div>
         </div>
@@ -6776,7 +6776,7 @@ async function renderDashboardAdmin(){
       `<div style="font-size:12px;margin-bottom:10px">Entraron y no cargaron nada. Acá es donde se pierde un cliente: si la carga inicial no arranca, no vuelve.</div>` +
       trabadas.map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">
         <div style="font-size:13px">
-          <strong>${esc(c.displayName || c.email || c.uid)}</strong>
+          <strong>${esc(c.displayName || c.email || '⚠ Ficha incompleta')}</strong>${(!c.displayName && !c.email) ? `<span style="font-size:10px;opacity:.6"> · ${esc(String(c.uid||'').slice(0,8))}…</span>` : ''}
           <div style="font-size:11px;opacity:.75">${esc(c.email||'')} · registrada ${_admHace(c.fechaRegistro)} · última vez ${_admHace(c.ultimoAcceso)}</div>
         </div>
         <a class="btn btn-secondary btn-sm" href="mailto:${esc(c.email||'')}?subject=${encodeURIComponent('¿Te damos una mano para arrancar con Provatio?')}">Escribirle</a>
@@ -6785,7 +6785,7 @@ async function renderDashboardAdmin(){
     ${bloqueAccion(`Sin entrar hace más de ${ADM_DIAS_AUSENTE} días`, ausentes, ROJO,
       ausentes.slice(0,12).map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(0,0,0,.06)">
         <div style="font-size:13px">
-          <strong>${esc(c.displayName || c.email || c.uid)}</strong>
+          <strong>${esc(c.displayName || c.email || '⚠ Ficha incompleta')}</strong>${(!c.displayName && !c.email) ? `<span style="font-size:10px;opacity:.6"> · ${esc(String(c.uid||'').slice(0,8))}…</span>` : ''}
           <div style="font-size:11px;opacity:.75">${esc(c.email||'')} · ${_admHace(c.ultimoAcceso)}</div>
         </div>
         <a class="btn btn-secondary btn-sm" href="mailto:${esc(c.email||'')}">Escribirle</a>
@@ -23025,8 +23025,8 @@ function renderImportExport(){
         <div class="card-header"><span class="card-title" style="color:var(--bordo)">⚠ Zona de peligro</span></div>
         <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
           <button class="btn btn-danger" onclick="limpiarTodosLosDatos()" style="justify-content:flex-start;padding:14px;height:auto;flex-direction:column;align-items:flex-start;gap:4px">
-            <strong>Borrar todas las operaciones y datos</strong>
-            <span style="font-size:12px;opacity:.85">Elimina todas las operaciones de Firebase. No se puede deshacer.</span>
+            <strong>Vaciar los datos de todas las operaciones</strong>
+            <span style="font-size:12px;opacity:.85">Borra ingredientes, recetas, mermas, eventos y facturas de todas tus operaciones. Las operaciones y tu cuenta NO se borran. No se puede deshacer.</span>
           </button>
         </div>
       </div>
@@ -23036,32 +23036,65 @@ function renderImportExport(){
 }
 
 async function limpiarTodosLosDatos(){
-  if(!await pedirConfirmacionSimple('⚠ ATENCIÓN: Esto va a eliminar TODAS las operaciones y datos de Firebase.\n\n¿Estás seguro? Esta acción no se puede deshacer.')) return;
-  if(!await pedirConfirmacionSimple('Segunda confirmación: ¿Confirmar el borrado total?')) return;
+  if(!await pedirConfirmacionSimple('⚠ Esto vacía los ingredientes, recetas, mermas, eventos y facturas de TODAS tus operaciones.\n\nLas operaciones y tu cuenta no se borran. No se puede deshacer.\n\n¿Seguimos?')) return;
+  if(!await pedirConfirmacionSimple('Segunda confirmación: ¿vaciar los datos de todas las operaciones?')) return;
 
-  const db = firebase.firestore();
-  const uid = currentUser?.uid;
-  if(!uid){ showToast('Error: no hay usuario autenticado','error'); return; }
+  // ═══════════════════════════════════════════════════════════════════
+  // ESTE BOTÓN ESTUVO ROTO Y ERA PELIGROSO. Lo que hacía antes:
+  //
+  //   db.collection('usuarios').doc(uid).set({ operaciones:{}, nextId:{...} })
+  //
+  // Un `set` SIN merge no vacía un campo: REEMPLAZA el documento entero. Se
+  // llevaba puestos el nombre, el mail, el rol, el estado de la cuenta y la
+  // fecha de registro de la persona. La cuenta quedaba viva en Firebase pero
+  // sin identidad: en el panel aparecía como un código sin nombre, "sin tipo",
+  // "nunca entró". Así apareció una cuenta rota el 19/11.
+  //
+  // Y encima no borraba nada de lo que prometía: `operaciones` y `nextId` son
+  // del modelo viejo, anterior a las empresas. Hoy los datos viven en
+  // empresas/{empresaId}/operaciones/{opId}._datos. O sea: destruía el perfil
+  // y dejaba los datos intactos. Lo peor de los dos mundos.
+  //
+  // Ahora hace lo que dice el botón —vaciar los datos— y NO toca la identidad
+  // de nadie ni borra las operaciones en sí.
+  // ═══════════════════════════════════════════════════════════════════════
+  if(!esDueno()){
+    showToast('Solo el dueño de la empresa puede vaciar los datos','error');
+    return;
+  }
+  const _empresaId = getEmpresaId();
+  if(!_empresaId){ showToast('No encuentro tu empresa','error'); return; }
+  const _ops = Object.keys(demoData.operaciones || {});
+  if(!_ops.length){ showToast('No hay operaciones para vaciar','error'); return; }
 
-  db.collection('usuarios').doc(uid).set({
-    operaciones: {},
-    nextId: { i: 1, r: 1, m: 1 },
-  }).then(()=>{
-    // Limpiar memoria
-    demoData.operaciones = {};
-    demoData.ingredientes = [];
-    demoData.mermas = [];
-    demoData.recetas = [];
-    demoData.eventos = [];
-    demoData.buffets = [];
-    demoData.nextId = { i: 1, r: 1, m: 1 };
-    currentOpId = null;
-    buildSidebar(currentUser?.rol||'admin');
-    navigate('dashboard');
-    showToast('Todos los datos eliminados correctamente','success');
-  }).catch(err=>{
-    showToast('Error al limpiar: '+err.message,'error');
+  const _vacio = { ingredientes: [], mermas: [], recetas: [], eventos: [], facturas: [] };
+  try{
+    const lote = db.batch();
+    _ops.forEach(opId => {
+      lote.set(db.collection('empresas').doc(_empresaId).collection('operaciones').doc(opId),
+               { _datos: _vacio }, { merge: true });
+    });
+    await lote.commit();
+  }catch(err){
+    showToast('No se pudo vaciar: ' + explicarRechazo(err), 'error');
+    return;
+  }
+
+  // En pantalla pasa lo mismo que en la base: las operaciones SIGUEN, vacías.
+  // Antes se borraban también de la memoria y la app quedaba como si no
+  // hubiera ninguna, hasta recargar. Eso asustaba de más y no era cierto.
+  _ops.forEach(opId => {
+    if(demoData.operaciones[opId]) demoData.operaciones[opId]._datos = JSON.parse(JSON.stringify(_vacio));
   });
+  demoData.ingredientes = [];
+  demoData.mermas = [];
+  demoData.recetas = [];
+  demoData.eventos = [];
+  demoData.buffets = [];
+  demoData.nextId = { i: 1, r: 1, m: 1 };
+  buildSidebar(currentUser?.rol||'admin');
+  navigate('dashboard');
+  showToast('Listo: ' + _ops.length + ' operación(es) quedaron vacías. Las operaciones siguen ahí.','success');
 }
 
 function exportarSoloRecetas(){
